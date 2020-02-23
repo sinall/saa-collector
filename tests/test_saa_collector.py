@@ -1,6 +1,5 @@
-
-from pytest import raises
 from saa_collector.main import SaaCollectorTest
+
 
 def test_saa_collector():
     # test saa_collector without any subcommands or arguments
@@ -22,15 +21,15 @@ def test_command1():
     argv = ['command1']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
-        data,output = app.last_rendered
+        data, output = app.last_rendered
         assert data['foo'] == 'bar'
         assert output.find('Foo => bar')
 
 
-    # test command1 with arguments
-    argv = ['command1', '--foo', 'not-bar']
+def test_collect_stocks():
+    argv = ['collect-stocks', '-s', '000001']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
-        data,output = app.last_rendered
-        assert data['foo'] == 'not-bar'
-        assert output.find('Foo => not-bar')
+        data, output = app.last_rendered
+        assert data['symbol'] == '000001'
+        assert output.find('Symbol => 000001')

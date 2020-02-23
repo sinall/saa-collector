@@ -1,12 +1,15 @@
+from os.path import join
 
 from cement import App, TestApp, init_defaults
 from cement.core.exc import CaughtSignal
 from .core.exc import SaaCollectorError
 from .controllers.base import Base
+from .controllers.stock import Stock
 
 # configuration defaults
 CONFIG = init_defaults('saa_collector')
 CONFIG['saa_collector']['foo'] = 'bar'
+CONFIG['saa_collector']['symbol'] = '000001'
 
 
 class SaaCollector(App):
@@ -42,15 +45,20 @@ class SaaCollector(App):
 
         # register handlers
         handlers = [
-            Base
+            Base,
+            Stock,
         ]
 
 
-class SaaCollectorTest(TestApp,SaaCollector):
+class SaaCollectorTest(TestApp, SaaCollector):
     """A sub-class of SaaCollector that is better suited for testing."""
 
     class Meta:
         label = 'saa_collector'
+
+        core_user_config_files = [
+            join('{home_dir}', '.{label}', 'config', '{label}_test{suffix}'),
+        ]
 
 
 def main():
