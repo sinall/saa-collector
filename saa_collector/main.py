@@ -2,9 +2,12 @@ from os.path import join
 
 from cement import App, TestApp, init_defaults
 from cement.core.exc import CaughtSignal
-from .core.exc import SaaCollectorError
+
+from saa_collector.controllers.statement import Statement
+from saa_collector.utils.log import LoggingInitializer
 from .controllers.base import Base
 from .controllers.stock import Stock
+from .core.exc import SaaCollectorError
 
 # configuration defaults
 CONFIG = init_defaults('saa_collector')
@@ -47,6 +50,7 @@ class SaaCollector(App):
         handlers = [
             Base,
             Stock,
+            Statement,
         ]
 
 
@@ -57,11 +61,13 @@ class SaaCollectorTest(TestApp, SaaCollector):
         label = 'saa_collector'
 
         core_user_config_files = [
-            join('{home_dir}', '.{label}', 'config', '{label}_test{suffix}'),
+            join('{home_dir}', '.{label}', 'config', '{label}{suffix}'),
         ]
 
 
 def main():
+    LoggingInitializer.init()
+
     with SaaCollector() as app:
         try:
             app.run()

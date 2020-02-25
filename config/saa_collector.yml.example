@@ -24,6 +24,19 @@ saa_collector:
 ### sample foo option
 # foo: bar
 
+  cninfo_api:
+    client_id:
+    client_secret:
+
+  tushare_api:
+    token:
+
+  db:
+    host: iguuu.com
+    user:
+    password:
+    database:
+
 
 log.colorlog:
 

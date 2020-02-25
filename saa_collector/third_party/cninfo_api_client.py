@@ -9,6 +9,8 @@ class CninfoApiException(Exception):
 
 
 class CninfoApiClient:
+    BATCH_SIZE = 50
+
     def __init__(self, client_id, client_secret):
         self.client_id = client_id
         self.client_secret = client_secret
@@ -42,13 +44,19 @@ class CninfoApiClient:
     def get_stock_basic_info(self, scode):
         return self.get_stock_info('p_stock2101', scode)
 
-    def get_stock_info(self, sub_resource, scode):
-        return self.apiget('stock/{}'.format(sub_resource), scode)
+    def get_balance_sheet_info(self, scode):
+        return self.get_stock_info('p_stock2300', scode)
 
-    def apiget(self, resource, scode):
+    def get_stock_info(self, sub_resource, scode, **kwargs):
+        return self.apiget('stock/{}'.format(sub_resource), scode, **kwargs)
+
+    def apiget(self, resource, scode, **kwargs):
         url = "http://webapi.cninfo.com.cn/api/%s?scode=%s&access_token=%s"
+        url = url % (resource, self.stringfy_scode(scode), self.token)
+        for key, value in kwargs.items():
+            url += "&%s=%s" % (key, value)
         conn = http.client.HTTPConnection("webapi.cninfo.com.cn")
-        conn.request(method="GET", url=url % (resource, self.stringfy_scode(scode), self.token))
+        conn.request(method="GET", url=url)
         response = conn.getresponse()
         rescontent = response.read()
         responsedict = json.loads(rescontent)

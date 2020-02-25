@@ -33,3 +33,21 @@ def test_collect_stocks():
         data, output = app.last_rendered
         assert data['symbol'] == '000001'
         assert output.find('Symbol => 000001')
+
+
+def test_collect_all_statements():
+    argv = ['collect-all-statements', '-s', '000001']
+    with SaaCollectorTest(argv=argv) as app:
+        app.run()
+        data, output = app.last_rendered
+        assert data['symbol'] == '000001'
+        assert output.find('Symbol => 000001')
+
+
+def test_collect_capital():
+    argv = ['collect-capital', '-s', '000001']
+    with SaaCollectorTest(argv=argv) as app:
+        app.run()
+        data, output = app.last_rendered
+        assert data['symbol'] == '000001'
+        assert output.find('Symbol => 000001')
