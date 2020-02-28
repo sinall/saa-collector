@@ -21,8 +21,10 @@ setup(
     packages=find_packages(exclude=['ez_setup', 'tests*']),
     package_data={'saa_collector': ['templates/*']},
     include_package_data=True,
-    entry_points="""
-        [console_scripts]
-        saa_collector = saa_collector.main:main
-    """,
+    entry_points={
+        'console_scripts': [
+            'saa_collector = saa_collector.main:main',
+            'saa_collector_scheduler = saa_collector.scheduler:main',
+        ],
+    },
 )
