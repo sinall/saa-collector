@@ -51,3 +51,12 @@ def test_collect_capital():
         data, output = app.last_rendered
         assert data['symbol'] == '000001'
         assert output.find('Symbol => 000001')
+
+
+def test_collect_historical_price():
+    argv = ['collect-historical-price', '-d', '2020-02-28']
+    with SaaCollectorTest(argv=argv) as app:
+        app.run()
+        data, output = app.last_rendered
+        assert data['symbol'] == '000001'
+        assert output.find('Symbol => 000001')
