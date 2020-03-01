@@ -2,5 +2,12 @@ cement
 jinja2
 pyyaml
 colorlog
+xlrd >= 1.0.0
+mysql-connector-python
 apscheduler
+
 tushare
+lxml
+pandas
+requests
+bs4

@@ -3,3 +3,5 @@ include setup.cfg
 include README.md CHANGELOG.md LICENSE.md
 include *.txt
 recursive-include saa_collector/templates *
+recursive-include saa_collector/config *
+recursive-include config *
