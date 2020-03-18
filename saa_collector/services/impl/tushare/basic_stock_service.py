@@ -1,0 +1,118 @@
+# -*- coding: utf-8 -*-
+import copy
+import math
+
+import mysql.connector
+import tushare as ts
+
+from saa_collector.services.common.config_service import ConfigService
+from saa_collector.utils.db import DB
+from .basic_service import BasicService
+
+
+class BasicStockService(BasicService):
+    def __init__(self):
+        super().__init__()
+        self.config_service = ConfigService()
+        self.config = self.config_service.get_config()
+        token = self.config.get('saa_collector').get('tushare_api')['token']
+        self.pro = ts.pro_api(token)
+        self.db_config = self.config_service.get_db_config()
+        self.xls_file = self.config_service.get_xls_file()
+
+    def collect_statement(self, symbols, sub_resource, statement, **kwargs):
+        table_config_df = self.xls_file.parse(statement)
+        raw_records = self.query_records(symbols, sub_resource, **kwargs)
+        records = []
+        for raw_record in raw_records:
+            record = self.transform_record(raw_record, table_config_df)
+            if not record['date']:
+                continue
+            record.update({
+                'symbol': self.convert_code(record['symbol']),
+                'date': self.convert_date(record['date']),
+            })
+            records.append(record)
+        cnx = mysql.connector.connect(**self.db_config)
+        DB().to_sql(records, cnx, statement, ['symbol', 'date'])
+
+    def query_records(self, symbols, sub_resource, **kwargs):
+        all_raw_records = []
+        for symbol in symbols:
+            raw_records = self.query_record(symbol, sub_resource, **kwargs)
+            all_raw_records += raw_records
+        return all_raw_records
+
+    def query_record(self, symbol, sub_resource, **kwargs):
+        df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
+        raw_records = df.to_dict('records')
+        return raw_records
+
+    def build_symbols(self, symbols):
+        if isinstance(symbols, str):
+            symbols = [symbols]
+        if not symbols:
+            symbols = self.get_symbols_from_db()
+        return symbols
+
+    def get_symbols_from_db(self):
+        query = "SELECT symbol FROM saa_stocks WHERE type = 'STOCK' AND market = 'A'"
+        cnx = mysql.connector.connect(**self.db_config)
+        cursor = cnx.cursor()
+        cursor.execute(query)
+        symbols = [i[0] for i in cursor.fetchall()]
+        return symbols
+
+    def transform_record(self, raw_record, table_config_df):
+        record = {}
+        for index, row in table_config_df.iterrows():
+            cninfo_field = row['TushareField']
+            if cninfo_field == '' or (isinstance(cninfo_field, (int, float)) and math.isnan(cninfo_field)):
+                continue
+            value = raw_record[cninfo_field]
+            unit = row.get('TushareUnit', 1)
+            unit = 1 if math.isnan(unit) else unit
+            record[row['Field']] = None if value is None else value * unit
+        return record
+
+    def to_code(self, symbol):
+        prefix = symbol[0:1]
+        if prefix == '6':
+            suffix = 'SH'
+        else:
+            suffix = 'SZ'
+        return "{}.{}".format(symbol, suffix)
+
+    def convert_code(self, code):
+        if not code:
+            return code
+        return code[0:-3]
+
+    def convert_date(self, date):
+        if not date:
+            return date
+        return "{}-{}-{}".format(date[:4], date[4:6], date[6:])
+
+    def to_sql(self, rows, cnx, table, primary_keys):
+        if len(rows) == 0:
+            return
+        fields = list(rows[0].keys())
+        normal_fields = copy.deepcopy(fields)
+        normal_fields = [k for k in normal_fields if k not in primary_keys]
+        update_statements = []
+        for field in normal_fields:
+            update_statements.append("{} = VALUES({})".format(field, field))
+        update_statement = ", ".join(update_statements)
+        sql = "INSERT INTO {} ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}".format(
+            table, ", ".join(fields), ", ".join(["%s"] * len(fields)), update_statement
+        )
+        cursor = cnx.cursor(prepared=True)
+        for stock_info in rows:
+            try:
+                values = stock_info.values()
+                values = [None if v is None else str(v) for v in values]
+                cursor.execute(sql, tuple(values))
+            except:
+                print(stock_info)
+                raise
+        cnx.commit()
