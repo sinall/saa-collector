@@ -4,11 +4,12 @@ import logging
 
 import mysql.connector
 
-from saa_collector.services.basic_stock_service import BasicStockService
+from saa_collector.services.abstract.quote_service import QuoteService
 from saa_collector.utils.db import DB
+from .basic_stock_service import BasicStockService
 
 
-class QuotationService(BasicStockService):
+class QuoteServiceImpl(QuoteService, BasicStockService):
     BATCH_SIZE = 50
 
     def __init__(self):
@@ -53,4 +54,4 @@ class QuotationService(BasicStockService):
 
 
 if __name__ == '__main__':
-    QuotationService().collect()
+    QuoteService().collect()

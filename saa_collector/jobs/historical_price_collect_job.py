@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timedelta
 
+from saa_collector.services.abstract.calendar_service import CalendarService
 from .basic_stock_collect_job import BasicStockCollectJob
-from ..services.calendar_service import CalendarService
-from ..services.quotation_service import QuotationService
+from ..services.factory.compound_service_factory import CompoundServiceFactory
 
 
 class HistoricalPriceCollectJob(BasicStockCollectJob):
@@ -13,8 +12,9 @@ class HistoricalPriceCollectJob(BasicStockCollectJob):
             symbols = []
         self.symbols = symbols
         self.calendar_service = CalendarService()
-        self.quotation_service = QuotationService()
+        service_factory = CompoundServiceFactory()
+        self.quote_service = service_factory.create_quote_service()
 
     def __call__(self):
         cal_date = self.calendar_service.get_last_day_of_previous_month()
-        self.quotation_service.collect_historical(None, cal_date)
+        self.quote_service.collect_historical(None, cal_date)

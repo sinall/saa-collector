@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from saa_collector.jobs.basic_job import BasicJob
-from ..services.stock_info_service import StockInfoService
+from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
 
 
 class BasicStockCollectJob(BasicJob):
@@ -10,7 +10,8 @@ class BasicStockCollectJob(BasicJob):
         if symbols is None:
             symbols = []
         self.symbols = symbols
-        self.stock_service = StockInfoService()
+        service_factory = CompoundServiceFactory()
+        self.stock_service = service_factory.create_stock_info_service()
 
     def __call__(self):
         self.stock_service.collect(self.symbols)

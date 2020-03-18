@@ -5,51 +5,20 @@ import itertools
 
 import mysql.connector
 
-from .basic_stock_service import BasicStockService
-from ..utils.db import DB
+from saa_collector.services.common.config_service import ConfigService
+from saa_collector.utils.db import DB
 
 
-class StatementService(BasicStockService):
+class StatementMaintainService:
     def __init__(self):
         super().__init__()
-
-    def produce(self, symbols):
-        self.collect(symbols)
-        self.process(symbols)
+        self.config_service = ConfigService()
+        self.db_config = self.config_service.get_db_config()
+        self.xls_file = self.config_service.get_xls_file()
 
     def process(self, symbols):
         self.refresh_financial_report_cache(symbols)
         self.refresh_ttm_report_cache(symbols)
-
-    def collect(self, symbols):
-        symbols = self.build_symbols(symbols)
-        self.collect_balance_sheet(symbols)
-        self.collect_income(symbols)
-        self.collect_cash_flow(symbols)
-        self.collect_dividend(symbols)
-
-    def collect_balance_sheet(self, symbols):
-        self.collect_statement(symbols, 'p_stock2300', 'saa_raw_balance_sheet', type='071001')
-
-    def collect_income(self, symbols):
-        self.collect_statement(symbols, 'p_stock2301', 'saa_raw_income_statement', type='071001')
-
-    def collect_cash_flow(self, symbols):
-        self.collect_statement(symbols, 'p_stock2302', 'saa_raw_cash_flow_statement', type='071001')
-
-    def collect_dividend(self, symbols):
-        sub_resource = 'p_stock2201'
-        statement = 'saa_dividends'
-        table_config_df = self.xls_file.parse(statement)
-        raw_records = self.query_records(symbols, sub_resource)
-        records = []
-        for raw_record in raw_records:
-            record = self.transform_record(raw_record, table_config_df)
-            if not record['date'] or not record['dividend']:
-                continue
-            records.append(record)
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, statement, ['symbol', 'date'])
 
     def refresh_financial_report_cache(self, symbols):
         if symbols:
@@ -123,7 +92,7 @@ class StatementService(BasicStockService):
         return integrated_report
 
     def get_fields(self, table):
-        df = self.xls_file.parse(table)
+        df = self.config_service.get_table_config(table)
         fields = df['Field'].tolist()
         fields = [f for f in fields if f not in ('symbol', 'date')]
         return fields

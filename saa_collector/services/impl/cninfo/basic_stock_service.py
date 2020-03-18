@@ -1,44 +1,26 @@
 # -*- coding: utf-8 -*-
 import copy
 import math
-import os
 import time
-from os.path import join
-from pathlib import Path
 
 import mysql.connector
-import pandas as pd
-import tushare as ts
-import yaml
 
-from saa_collector.services.basic_service import BasicService
+from saa_collector.services.common.config_service import ConfigService
 from saa_collector.third_party.cninfo_api_client import CninfoApiClient
-from ..third_party.cninfo_api_client import CninfoApiException
-from ..utils.db import DB
+from saa_collector.third_party.cninfo_api_client import CninfoApiException
+from saa_collector.utils.db import DB
+from .basic_service import BasicService
 
 
 class BasicStockService(BasicService):
     def __init__(self):
         super().__init__()
-        self.load_config()
+        self.config_service = ConfigService()
+        self.config = self.config_service.get_config()
         api_config = self.config.get('saa_collector').get('cninfo_api')
         self.client = CninfoApiClient(api_config['client_id'], api_config['client_secret'])
-        token = self.config.get('saa_collector').get('tushare_api')['token']
-        self.pro = ts.pro_api(token)
-        self.db_config = self.config.get('saa_collector').get('db')
-        self.xls_file = pd.ExcelFile(os.path.join(os.path.dirname(__file__), '..', 'config', 'table-config.xls'))
-
-    def load_config(self):
-        file_path = join('{home_dir}', '.{label}', 'config', '{label}{suffix}')
-        file_path = file_path.format(
-            label='saa_collector',
-            suffix='.yml',
-            home_dir=Path.home(),
-        )
-        with open(file_path, 'r') as f:
-            content = f.read()
-            if content is not None and len(content) > 0:
-                self.config = yaml.load(content, Loader=yaml.SafeLoader)
+        self.db_config = self.config_service.get_db_config()
+        self.xls_file = self.config_service.get_xls_file()
 
     def collect_statement(self, symbols, sub_resource, statement, **kwargs):
         table_config_df = self.xls_file.parse(statement)
@@ -96,7 +78,7 @@ class BasicStockService(BasicService):
             if cninfo_field == '' or (isinstance(cninfo_field, (int, float)) and math.isnan(cninfo_field)):
                 continue
             value = raw_record[cninfo_field]
-            unit = row.get('Unit', 1)
+            unit = row.get('CninfoUnit', 1)
             unit = 1 if math.isnan(unit) else unit
             record[row['Field']] = None if value is None else value * unit
         return record

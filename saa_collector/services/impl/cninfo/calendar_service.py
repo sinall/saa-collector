@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime, timedelta
 
-from saa_collector.services.basic_stock_service import BasicStockService
+from saa_collector.services.abstract.calendar_service import CalendarService
+from .basic_stock_service import BasicStockService
 
 
-class CalendarService(BasicStockService):
+class CalendarServiceImpl(CalendarService, BasicStockService):
     BATCH_SIZE = 50
 
     def __init__(self):
@@ -34,4 +35,4 @@ class CalendarService(BasicStockService):
 
 
 if __name__ == '__main__':
-    CalendarService().get_last_trade_day_monthly('SSE')
+    CalendarServiceImpl().get_last_trade_day_monthly('SSE')

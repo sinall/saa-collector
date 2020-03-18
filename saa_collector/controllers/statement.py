@@ -2,8 +2,7 @@ from cement import Controller, ex
 from cement.utils.version import get_version_banner
 
 from ..core.version import get_version
-from ..services.capital_service import CapitalService
-from ..services.statement_service import StatementService
+from ..services.factory.compound_service_factory import CompoundServiceFactory
 
 VERSION_BANNER = """
 Collect financial data, etc. %s
@@ -17,6 +16,11 @@ class Statement(Controller):
         stacked_type = 'embedded'
         stacked_on = 'base'
 
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        service_factory = CompoundServiceFactory()
+        self.statement_service = service_factory.create_statement_service()
+
     @ex(
         help='example sub produce-all-statements',
         arguments=[
@@ -28,8 +32,7 @@ class Statement(Controller):
     )
     def produce_all_statements(self):
         symbols = self.parse_symbols()
-        statement_service = StatementService()
-        statement_service.produce(symbols)
+        self.statement_service.produce(symbols)
 
         data = {
             'symbol': self.app.pargs.symbol,
@@ -48,8 +51,7 @@ class Statement(Controller):
     )
     def collect_all_statements(self):
         symbols = self.parse_symbols()
-        statement_service = StatementService()
-        statement_service.collect(symbols)
+        self.statement_service.collect(symbols)
 
         data = {
             'symbol': self.app.pargs.symbol,
@@ -68,8 +70,7 @@ class Statement(Controller):
     )
     def collect_capital(self):
         symbols = self.parse_symbols()
-        statement_service = CapitalService()
-        statement_service.collect(symbols)
+        self.statement_service.collect(symbols)
 
         data = {
             'symbol': self.app.pargs.symbol,

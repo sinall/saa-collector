@@ -1,8 +1,8 @@
 from cement import Controller, ex
 from cement.utils.version import get_version_banner
 
+from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
 from ..core.version import get_version
-from ..services.stock_info_service import StockInfoService
 
 VERSION_BANNER = """
 Collect stock basic data, etc. %s
@@ -16,6 +16,11 @@ class Stock(Controller):
         stacked_type = 'embedded'
         stacked_on = 'base'
 
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        service_factory = CompoundServiceFactory()
+        self.stock_service = service_factory.create_stock_info_service()
+
     @ex(
         help='example sub collect-stocks',
         arguments=[
@@ -27,8 +32,7 @@ class Stock(Controller):
     )
     def collect_stocks(self):
         symbols = self.parse_symbols()
-        stock_service = StockInfoService()
-        stock_service.collect(symbols)
+        self.stock_service.collect(symbols)
 
         data = {
             'symbol': self.app.pargs.symbol,
