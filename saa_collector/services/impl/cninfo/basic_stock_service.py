@@ -4,6 +4,7 @@ import math
 import time
 
 import mysql.connector
+import tushare as ts
 
 from saa_collector.services.common.config_service import ConfigService
 from saa_collector.third_party.cninfo_api_client import CninfoApiClient
@@ -19,20 +20,10 @@ class BasicStockService(BasicService):
         self.config = self.config_service.get_config()
         api_config = self.config.get('saa_collector').get('cninfo_api')
         self.client = CninfoApiClient(api_config['client_id'], api_config['client_secret'])
+        token = self.config.get('saa_collector').get('tushare_api')['token']
+        self.pro = ts.pro_api(token)
         self.db_config = self.config_service.get_db_config()
         self.xls_file = self.config_service.get_xls_file()
-
-    def collect_statement(self, symbols, sub_resource, statement, **kwargs):
-        table_config_df = self.xls_file.parse(statement)
-        raw_records = self.query_records(symbols, sub_resource, **kwargs)
-        records = []
-        for raw_record in raw_records:
-            record = self.transform_record(raw_record, table_config_df)
-            if not record['date']:
-                continue
-            records.append(record)
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, statement, ['symbol', 'date'])
 
     def query_records(self, symbols, sub_resource, **kwargs):
         self.client.login()
@@ -71,6 +62,19 @@ class BasicStockService(BasicService):
         symbols = [i[0] for i in cursor.fetchall()]
         return symbols
 
+    def build_start_date(self, start_date):
+        return start_date.strftime('%Y%m%d')
+
+    def transform_records(self, raw_records, table):
+        table_config_df = self.xls_file.parse(table)
+        records = []
+        for raw_record in raw_records:
+            record = self.transform_record(raw_record, table_config_df)
+            if not record['date']:
+                continue
+            records.append(record)
+        return records
+
     def transform_record(self, raw_record, table_config_df):
         record = {}
         for index, row in table_config_df.iterrows():
@@ -82,6 +86,16 @@ class BasicStockService(BasicService):
             unit = 1 if math.isnan(unit) else unit
             record[row['Field']] = None if value is None else value * unit
         return record
+
+    def filter_records(self, records, start_date=None):
+        if not start_date:
+            return records
+        records = [x for x in records if x['date'] >= start_date]
+        return records
+
+    def save_records(self, records, table, primary_keys):
+        cnx = mysql.connector.connect(**self.db_config)
+        DB().to_sql(records, cnx, table)
 
     def to_sql(self, rows, cnx, table, primary_keys):
         if len(rows) == 0:

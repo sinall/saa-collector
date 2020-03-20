@@ -1,8 +1,8 @@
-from cement import Controller, ex
+from cement import ex
 from cement.utils.version import get_version_banner
 
+from .basic import Basic
 from ..core.version import get_version
-from ..services.factory.compound_service_factory import CompoundServiceFactory
 
 VERSION_BANNER = """
 Collect financial data, etc. %s
@@ -10,7 +10,7 @@ Collect financial data, etc. %s
 """ % (get_version(), get_version_banner())
 
 
-class Statement(Controller):
+class Statement(Basic):
     class Meta:
         label = 'statement'
         stacked_type = 'embedded'
@@ -18,8 +18,7 @@ class Statement(Controller):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        service_factory = CompoundServiceFactory()
-        self.statement_service = service_factory.create_statement_service()
+        self.statement_service = self.service_factory.create_statement_service()
 
     @ex(
         help='example sub produce-all-statements',
@@ -28,11 +27,16 @@ class Statement(Controller):
              {'help': 'notorious symbol option',
               'action': 'store',
               'dest': 'symbol'}),
+            (['--start-date'],
+             {'help': 'notorious symbol option',
+              'action': 'store',
+              'dest': 'start_date'}),
         ],
     )
     def produce_all_statements(self):
-        symbols = self.parse_symbols()
-        self.statement_service.produce(symbols)
+        symbols = self.build_symbols()
+        start_date = self.build_start_date()
+        self.statement_service.produce(symbols, start_date)
 
         data = {
             'symbol': self.app.pargs.symbol,
@@ -47,40 +51,19 @@ class Statement(Controller):
              {'help': 'notorious symbol option',
               'action': 'store',
               'dest': 'symbol'}),
+            (['--start-date'],
+             {'help': 'notorious start-date option',
+              'action': 'store',
+              'dest': 'start_date'}),
         ],
     )
     def collect_all_statements(self):
-        symbols = self.parse_symbols()
-        self.statement_service.collect(symbols)
+        symbols = self.build_symbols()
+        start_date = self.build_start_date()
+        self.statement_service.collect(symbols, start_date)
 
         data = {
             'symbol': self.app.pargs.symbol,
             'count': len(symbols),
         }
         self.app.render(data, 'collect_stocks.jinja2')
-
-    @ex(
-        help='example sub collect-capital',
-        arguments=[
-            (['-s', '--symbol'],
-             {'help': 'notorious symbol option',
-              'action': 'store',
-              'dest': 'symbol'}),
-        ],
-    )
-    def collect_capital(self):
-        symbols = self.parse_symbols()
-        self.statement_service.collect(symbols)
-
-        data = {
-            'symbol': self.app.pargs.symbol,
-            'count': len(symbols),
-        }
-        self.app.render(data, 'collect_stocks.jinja2')
-
-    def parse_symbols(self):
-        if not self.app.pargs.symbol:
-            symbols = []
-        else:
-            symbols = self.app.pargs.symbol.split(',')
-        return symbols

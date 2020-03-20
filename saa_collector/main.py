@@ -3,6 +3,7 @@ from os.path import join
 from cement import App, TestApp, init_defaults
 from cement.core.exc import CaughtSignal
 
+from saa_collector.controllers.capital import Capital
 from saa_collector.controllers.quote import Quote
 from saa_collector.controllers.statement import Statement
 from saa_collector.utils.log import LoggingInitializer
@@ -52,6 +53,7 @@ class SaaCollector(App):
             Base,
             Stock,
             Statement,
+            Capital,
             Quote,
         ]
 

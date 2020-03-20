@@ -35,6 +35,15 @@ def test_collect_stocks():
         assert output.find('Symbol => 000001')
 
 
+def test_produce_all_statements():
+    argv = ['produce-all-statements', '-s', '000001', '--start-date', '2018-09-22']
+    with SaaCollectorTest(argv=argv) as app:
+        app.run()
+        data, output = app.last_rendered
+        assert data['symbol'] == '000001'
+        assert output.find('Symbol => 000001')
+
+
 def test_collect_all_statements():
     argv = ['collect-all-statements', '-s', '000001']
     with SaaCollectorTest(argv=argv) as app:
@@ -59,4 +68,4 @@ def test_collect_historical_price():
         app.run()
         data, output = app.last_rendered
         assert data['symbol'] == '000001'
-        assert output.find('Symbol => 000001')
+        assert output.find('Symbol => None')

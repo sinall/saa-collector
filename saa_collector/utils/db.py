@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import copy
 import logging
+from datetime import datetime
 
 
 class DB(object):
@@ -33,3 +34,10 @@ class DB(object):
                 self._logger.info("Failed to save %s", stock_info)
                 raise
         con.commit()
+
+    def to_value(self, value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime('%Y%m%d')
+        return value

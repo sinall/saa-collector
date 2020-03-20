@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 from .basic_stock_collect_job import BasicStockCollectJob
-from ..services.factory.compound_service_factory import CompoundServiceFactory
 
 
 class CapitalCollectJob(BasicStockCollectJob):
@@ -10,8 +9,7 @@ class CapitalCollectJob(BasicStockCollectJob):
         if symbols is None:
             symbols = []
         self.symbols = symbols
-        service_factory = CompoundServiceFactory()
-        self.capital_service = service_factory.create_capital_service()
+        self.capital_service = self.service_factory.create_capital_service()
 
     def __call__(self):
         self.capital_service.collect(self.symbols)

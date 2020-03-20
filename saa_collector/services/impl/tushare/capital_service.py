@@ -10,11 +10,12 @@ class CapitalServiceImpl(CapitalService, BasicStockService):
     def __init__(self):
         super().__init__()
 
-    def collect(self, symbols):
+    def collect(self, symbols, start_date=None):
         sub_resource = 'dividend'
-        statement = 'saa_capitals'
+        table = 'saa_capitals'
+        symbols = self.build_symbols(symbols)
         raw_records = self.query_records(
-            symbols, sub_resource, fields='ts_code,stk_bo_rate,stk_co_rate,base_share,ex_date'
+            sub_resource, symbols, fields='ts_code,stk_bo_rate,stk_co_rate,base_share,ex_date'
         )
         records = []
         for raw_record in raw_records:
@@ -29,5 +30,5 @@ class CapitalServiceImpl(CapitalService, BasicStockService):
             if not record['date'] or not record['capital']:
                 continue
             records.append(record)
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, statement, ['symbol', 'date'])
+        records = self.filter_records(records, start_date)
+        self.save_records(records, table, ['symbol', 'date'])

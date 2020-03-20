@@ -2,11 +2,8 @@
 import re
 import time
 
-import mysql.connector
-
 from saa_collector.services.abstract.stock_info_service import StockInfoService
 from saa_collector.third_party.cninfo_api_client import CninfoApiClient
-from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 
 
@@ -22,8 +19,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         self.client.login()
         symbols = self.build_symbols(symbols)
         records = self.get_stock_info_list(symbols)
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, 'saa_stocks', 'symbol')
+        self.save_records(records, 'saa_stocks', 'symbol')
         print("--- %s seconds ---" % int(time.time() - start_time))
 
     def build_symbols(self, symbols):

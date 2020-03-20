@@ -6,8 +6,6 @@ from .basic_stock_service import BasicStockService
 
 
 class CalendarServiceImpl(CalendarService, BasicStockService):
-    BATCH_SIZE = 50
-
     def __init__(self):
         super().__init__()
 

@@ -47,7 +47,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
             '科创板': 'STAR'
         }
         raw_records = self.query_records(
-            scode_list, 'stock_basic', fields='ts_code,symbol,name,area,industry,list_date,market,exchange'
+            'stock_basic', scode_list, fields='ts_code,symbol,name,area,industry,list_date,market,exchange'
         )
         stock_info_dict = {}
         for raw_record in raw_records:
@@ -63,7 +63,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
 
         table_config_df = self.xls_file.parse('saa_stocks')
         company_records = self.query_records(
-            scode_list, 'stock_company', fields='ts_code,exchange,introduction,chairman,secretary,reg_capital,website'
+            'stock_company', scode_list, fields='ts_code,exchange,introduction,chairman,secretary,reg_capital,website'
         )
         company_info_dict = {}
         for raw_record in company_records:

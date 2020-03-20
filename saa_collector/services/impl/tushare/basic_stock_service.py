@@ -20,9 +20,15 @@ class BasicStockService(BasicService):
         self.db_config = self.config_service.get_db_config()
         self.xls_file = self.config_service.get_xls_file()
 
-    def collect_statement(self, symbols, sub_resource, statement, **kwargs):
+    def query_records(self, sub_resource, symbols, **kwargs):
+        all_raw_records = []
+        for symbol in symbols:
+            raw_records = self.query_record(symbol, sub_resource, **kwargs)
+            all_raw_records += raw_records
+        return all_raw_records
+
+    def transform_records(self, raw_records, statement):
         table_config_df = self.xls_file.parse(statement)
-        raw_records = self.query_records(symbols, sub_resource, **kwargs)
         records = []
         for raw_record in raw_records:
             record = self.transform_record(raw_record, table_config_df)
@@ -33,15 +39,17 @@ class BasicStockService(BasicService):
                 'date': self.convert_date(record['date']),
             })
             records.append(record)
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, statement, ['symbol', 'date'])
+        return records
 
-    def query_records(self, symbols, sub_resource, **kwargs):
-        all_raw_records = []
-        for symbol in symbols:
-            raw_records = self.query_record(symbol, sub_resource, **kwargs)
-            all_raw_records += raw_records
-        return all_raw_records
+    def filter_records(self, records, start_date=None):
+        if not start_date:
+            return records
+        records = [x for x in records if x['date'] >= start_date]
+        return records
+
+    def save_records(self, records, table, primary_keys):
+        cnx = mysql.connector.connect(**self.db_config)
+        DB().to_sql(records, cnx, table, primary_keys)
 
     def query_record(self, symbol, sub_resource, **kwargs):
         df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
@@ -62,6 +70,21 @@ class BasicStockService(BasicService):
         cursor.execute(query)
         symbols = [i[0] for i in cursor.fetchall()]
         return symbols
+
+    def build_code_param(self, symbols):
+        if not symbols:
+            return None
+        if isinstance(symbols, list):
+            if len(symbols) == 0:
+                return None
+            codes = [self.to_code(symbol) for symbol in symbols]
+            return codes
+        return symbols
+
+    def build_date_param(self, date):
+        if not date:
+            return date
+        return date.strftime('%Y%m%d')
 
     def transform_record(self, raw_record, table_config_df):
         record = {}

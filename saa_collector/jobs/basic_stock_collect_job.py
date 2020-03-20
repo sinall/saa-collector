@@ -10,8 +10,8 @@ class BasicStockCollectJob(BasicJob):
         if symbols is None:
             symbols = []
         self.symbols = symbols
-        service_factory = CompoundServiceFactory()
-        self.stock_service = service_factory.create_stock_info_service()
+        self.service_factory = CompoundServiceFactory()
+        self.stock_service = self.service_factory.create_stock_info_service()
 
     def __call__(self):
         self.stock_service.collect(self.symbols)

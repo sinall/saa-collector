@@ -2,7 +2,6 @@
 
 from saa_collector.services.abstract.calendar_service import CalendarService
 from .basic_stock_collect_job import BasicStockCollectJob
-from ..services.factory.compound_service_factory import CompoundServiceFactory
 
 
 class HistoricalPriceCollectJob(BasicStockCollectJob):
@@ -12,8 +11,7 @@ class HistoricalPriceCollectJob(BasicStockCollectJob):
             symbols = []
         self.symbols = symbols
         self.calendar_service = CalendarService()
-        service_factory = CompoundServiceFactory()
-        self.quote_service = service_factory.create_quote_service()
+        self.quote_service = self.service_factory.create_quote_service()
 
     def __call__(self):
         cal_date = self.calendar_service.get_last_day_of_previous_month()

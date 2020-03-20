@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 import math
 
-import mysql.connector
-
 from saa_collector.services.abstract.statement_service import StatementService
 from saa_collector.services.common.statement_maintain_service import StatementMaintainService
-from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 
 
@@ -14,34 +11,46 @@ class StatementServiceImpl(StatementService, BasicStockService):
         super().__init__()
         self.maintain_service = StatementMaintainService()
 
-    def produce(self, symbols):
-        self.collect(symbols)
+    def produce(self, symbols, start_date=None):
+        self.collect(symbols, start_date)
         self.process(symbols)
 
     def process(self, symbols, start_date=None):
         self.maintain_service.refresh_financial_report_cache(symbols)
         self.maintain_service.refresh_ttm_report_cache(symbols)
 
-    def collect(self, symbols):
+    def collect(self, symbols, start_date=None):
         symbols = self.build_symbols(symbols)
-        self.collect_balance_sheet(symbols)
-        self.collect_income(symbols)
-        self.collect_cash_flow(symbols)
-        self.collect_dividend(symbols)
+        start_date = self.build_date_param(start_date)
+        self.collect_balance_sheet(symbols, start_date)
+        self.collect_income(symbols, start_date)
+        self.collect_cash_flow(symbols, start_date)
+        self.collect_dividend(symbols, start_date)
 
-    def collect_balance_sheet(self, symbols):
-        self.collect_statement(symbols, 'balancesheet', 'saa_raw_balance_sheet', type='1')
+    def collect_balance_sheet(self, symbols, start_date=None):
+        table = 'saa_raw_balance_sheet'
+        raw_records = self.query_records('balancesheet', symbols, type='1', start_date=start_date)
+        records = self.transform_records(raw_records, table)
+        self.save_statements(records, table)
 
-    def collect_income(self, symbols):
-        self.collect_statement(symbols, 'income', 'saa_raw_income_statement', type='1')
+    def collect_income(self, symbols, start_date=None):
+        table = 'saa_raw_income_statement'
+        raw_records = self.query_records('income', symbols, type='1', start_date=start_date)
+        records = self.transform_records(raw_records, table)
+        self.save_statements(records, table)
 
-    def collect_cash_flow(self, symbols):
-        self.collect_statement(symbols, 'cashflow', 'saa_raw_cash_flow_statement', type='1')
+    def collect_cash_flow(self, symbols, start_date=None):
+        table = 'saa_raw_cash_flow_statement'
+        raw_records = self.query_records('cashflow', symbols, type='1', start_date=start_date)
+        records = self.transform_records(raw_records, table)
+        self.save_statements(records, table)
 
-    def collect_dividend(self, symbols):
+    def collect_dividend(self, symbols, start_date=None):
         sub_resource = 'dividend'
-        statement = 'saa_dividends'
-        raw_records = self.query_records(symbols, sub_resource, fields='ts_code,cash_div_tax,base_share,ex_date')
+        table = 'saa_dividends'
+        raw_records = self.query_records(
+            sub_resource, symbols, fields='ts_code,cash_div_tax,base_share,ex_date', start_date=start_date
+        )
         records = []
         for raw_record in raw_records:
             ts_code = raw_record['ts_code']
@@ -55,5 +64,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
             if not record['date'] or not record['dividend']:
                 continue
             records.append(record)
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, statement, ['symbol', 'date'])
+        self.save_statements(records, table)
+
+    def save_statements(self, records, table):
+        self.save_records(records, table, ['symbol', 'date'])
