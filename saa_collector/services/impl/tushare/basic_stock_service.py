@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 import copy
+import logging
 import math
 
 import mysql.connector
-import tushare as ts
 
 from saa_collector.services.common.config_service import ConfigService
+from saa_collector.third_party.tushare_api_client import TushareApiClient
 from saa_collector.utils.db import DB
 from .basic_service import BasicService
 
@@ -13,15 +14,18 @@ from .basic_service import BasicService
 class BasicStockService(BasicService):
     def __init__(self):
         super().__init__()
+        self._logger = logging.getLogger()
         self.config_service = ConfigService()
         self.config = self.config_service.get_config()
         token = self.config.get('saa_collector').get('tushare_api')['token']
-        self.pro = ts.pro_api(token)
+        self.pro = TushareApiClient(token)
         self.db_config = self.config_service.get_db_config()
         self.xls_file = self.config_service.get_xls_file()
 
     def query_records(self, sub_resource, symbols, **kwargs):
         all_raw_records = []
+        if isinstance(symbols, str):
+            symbols = [symbols]
         for symbol in symbols:
             raw_records = self.query_record(sub_resource, symbol, **kwargs)
             all_raw_records += raw_records
@@ -69,6 +73,7 @@ class BasicStockService(BasicService):
         cursor = cnx.cursor()
         cursor.execute(query)
         symbols = [i[0] for i in cursor.fetchall()]
+        symbols.sort()
         return symbols
 
     def build_code_param(self, symbols):
@@ -82,7 +87,7 @@ class BasicStockService(BasicService):
         return symbols
 
     def build_date_param(self, date):
-        if not date:
+        if date is None:
             return date
         return date.strftime('%Y%m%d')
 

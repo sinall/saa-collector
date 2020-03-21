@@ -32,8 +32,7 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         self.save_records(records, 'saa_latest_prices', 'symbol')
 
     def collect_historical(self, symbols=None, trade_date=None, start_date=None, end_date=None):
-        df = self.pro.query(
-            'monthly',
+        df = self.pro.monthly(
             ts_code=symbols, trade_date=trade_date.strftime('%Y%m%d'),
             start_date=start_date, end_date=end_date
         )

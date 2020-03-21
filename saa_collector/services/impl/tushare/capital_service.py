@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
-import mysql.connector
 
 from saa_collector.services.abstract.capital_service import CapitalService
-from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 
 
