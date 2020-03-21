@@ -23,12 +23,17 @@ class BasicStockService(BasicService):
     def query_records(self, sub_resource, symbols, **kwargs):
         all_raw_records = []
         for symbol in symbols:
-            raw_records = self.query_record(symbol, sub_resource, **kwargs)
+            raw_records = self.query_record(sub_resource, symbol, **kwargs)
             all_raw_records += raw_records
         return all_raw_records
 
-    def transform_records(self, raw_records, statement):
-        table_config_df = self.xls_file.parse(statement)
+    def query_record(self, sub_resource, symbol, **kwargs):
+        df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
+        raw_records = df.to_dict('records')
+        return raw_records
+
+    def transform_records(self, raw_records, table):
+        table_config_df = self.xls_file.parse(table)
         records = []
         for raw_record in raw_records:
             record = self.transform_record(raw_record, table_config_df)
@@ -50,11 +55,6 @@ class BasicStockService(BasicService):
     def save_records(self, records, table, primary_keys):
         cnx = mysql.connector.connect(**self.db_config)
         DB().to_sql(records, cnx, table, primary_keys)
-
-    def query_record(self, symbol, sub_resource, **kwargs):
-        df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
-        raw_records = df.to_dict('records')
-        return raw_records
 
     def build_symbols(self, symbols):
         if isinstance(symbols, str):

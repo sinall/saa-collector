@@ -29,19 +29,25 @@ class StatementServiceImpl(StatementService, BasicStockService):
 
     def collect_balance_sheet(self, symbols, start_date=None):
         table = 'saa_raw_balance_sheet'
-        raw_records = self.query_records('balancesheet', symbols, type='1', start_date=start_date)
+        raw_records = self.query_records(
+            'balancesheet', symbols, fields=self.build_fields(table), start_date=start_date
+        )
         records = self.transform_records(raw_records, table)
         self.save_statements(records, table)
 
     def collect_income(self, symbols, start_date=None):
         table = 'saa_raw_income_statement'
-        raw_records = self.query_records('income', symbols, type='1', start_date=start_date)
+        raw_records = self.query_records(
+            'income', symbols, fields=self.build_fields(table), start_date=start_date
+        )
         records = self.transform_records(raw_records, table)
         self.save_statements(records, table)
 
     def collect_cash_flow(self, symbols, start_date=None):
         table = 'saa_raw_cash_flow_statement'
-        raw_records = self.query_records('cashflow', symbols, type='1', start_date=start_date)
+        raw_records = self.query_records(
+            'cashflow', symbols, fields=self.build_fields(table), start_date=start_date
+        )
         records = self.transform_records(raw_records, table)
         self.save_statements(records, table)
 
@@ -65,6 +71,21 @@ class StatementServiceImpl(StatementService, BasicStockService):
                 continue
             records.append(record)
         self.save_statements(records, table)
+
+    def build_fields(self, table):
+        table_config_df = self.xls_file.parse(table)
+        field_series = table_config_df['TushareField']
+        fields = field_series[field_series.notna()].tolist()
+        fields.append('update_flag')
+        return ','.join(fields)
+
+    def query_record(self, sub_resource, symbol, **kwargs):
+        df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
+        if {'ts_code', 'end_date', 'update_flag'}.issubset(df.columns):
+            df.sort_values(['ts_code', 'end_date', 'update_flag'], inplace=True)
+            df.drop_duplicates(['ts_code', 'end_date'], keep='last', inplace=True)
+        raw_records = df.to_dict('records')
+        return raw_records
 
     def save_statements(self, records, table):
         self.save_records(records, table, ['symbol', 'date'])
