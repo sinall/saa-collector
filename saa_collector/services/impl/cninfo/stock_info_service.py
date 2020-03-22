@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import logging
 import re
 import time
 
@@ -10,6 +11,7 @@ from .basic_stock_service import BasicStockService
 class StockInfoServiceImpl(StockInfoService, BasicStockService):
     def __init__(self):
         super().__init__()
+        self._logger = logging.getLogger()
         api_config = self.config.get('saa_collector').get('cninfo_api')
         self.client = CninfoApiClient(api_config['client_id'], api_config['client_secret'])
         self.db_config = self.config.get('saa_collector').get('db')
@@ -20,7 +22,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         symbols = self.build_symbols(symbols)
         records = self.get_stock_info_list(symbols)
         self.save_records(records, 'saa_stocks', 'symbol')
-        print("--- %s seconds ---" % int(time.time() - start_time))
+        self._logger.info("--- %s seconds ---", int(time.time() - start_time))
 
     def build_symbols(self, symbols):
         if isinstance(symbols, str):
@@ -56,7 +58,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
             }
             stock_info_dict[stock_info['symbol']] = stock_info
 
-        table_config_df = self.xls_file.parse('saa_stocks')
+        table_config_df = self.config_service.get_table_config('saa_stocks')
         company_records = self.query_records(scode_list, 'p_stock2100')
         company_info_dict = {}
         for raw_record in company_records:

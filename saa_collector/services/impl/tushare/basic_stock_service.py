@@ -20,7 +20,6 @@ class BasicStockService(BasicService):
         token = self.config.get('saa_collector').get('tushare_api')['token']
         self.pro = TushareApiClient(token)
         self.db_config = self.config_service.get_db_config()
-        self.xls_file = self.config_service.get_xls_file()
 
     def query_records(self, sub_resource, symbols, **kwargs):
         all_raw_records = []
@@ -37,7 +36,7 @@ class BasicStockService(BasicService):
         return raw_records
 
     def transform_records(self, raw_records, table):
-        table_config_df = self.xls_file.parse(table)
+        table_config_df = self.config_service.get_table_config(table)
         records = []
         for raw_record in raw_records:
             record = self.transform_record(raw_record, table_config_df)
@@ -141,6 +140,6 @@ class BasicStockService(BasicService):
                 values = [None if v is None else str(v) for v in values]
                 cursor.execute(sql, tuple(values))
             except:
-                print(stock_info)
+                self._logger.error('Failed to execute sql for %s', stock_info)
                 raise
         cnx.commit()

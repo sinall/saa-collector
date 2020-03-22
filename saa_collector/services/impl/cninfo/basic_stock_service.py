@@ -23,7 +23,6 @@ class BasicStockService(BasicService):
         token = self.config.get('saa_collector').get('tushare_api')['token']
         self.pro = TushareApiClient(token)
         self.db_config = self.config_service.get_db_config()
-        self.xls_file = self.config_service.get_xls_file()
 
     def query_records(self, symbols, sub_resource, **kwargs):
         self.client.login()
@@ -67,7 +66,7 @@ class BasicStockService(BasicService):
         return start_date.strftime('%Y%m%d')
 
     def transform_records(self, raw_records, table):
-        table_config_df = self.xls_file.parse(table)
+        table_config_df = self.config_service.get_table_config(table)
         records = []
         for raw_record in raw_records:
             record = self.transform_record(raw_record, table_config_df)

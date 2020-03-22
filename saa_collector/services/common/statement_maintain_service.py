@@ -14,7 +14,6 @@ class StatementMaintainService:
         super().__init__()
         self.config_service = ConfigService()
         self.db_config = self.config_service.get_db_config()
-        self.xls_file = self.config_service.get_xls_file()
 
     def process(self, symbols):
         self.refresh_financial_report_cache(symbols)

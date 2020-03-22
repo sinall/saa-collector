@@ -11,7 +11,8 @@ class ConfigService:
     def __init__(self):
         self.load_config()
         self.db_config = self.config.get('saa_collector').get('db')
-        self.xls_file = pd.ExcelFile(os.path.join(ROOT_DIR, 'config', 'table-config.xls'))
+        xls_file = pd.ExcelFile(os.path.join(ROOT_DIR, 'config', 'table-config.xls'))
+        self.table_configs = xls_file.parse(None)
 
     def get_config(self):
         return self.config
@@ -20,10 +21,7 @@ class ConfigService:
         return self.db_config
 
     def get_table_config(self, table):
-        return self.xls_file.parse(table)
-
-    def get_xls_file(self):
-        return self.xls_file
+        return self.table_configs[table]
 
     def load_config(self):
         file_path = os.path.join('{home_dir}', '.{label}', 'config', '{label}{suffix}')

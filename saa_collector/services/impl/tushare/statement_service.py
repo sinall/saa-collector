@@ -80,7 +80,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
         self.save_statements(records, table)
 
     def build_fields(self, table):
-        table_config_df = self.xls_file.parse(table)
+        table_config_df = self.config_service.get_table_config(table)
         field_series = table_config_df['TushareField']
         fields = field_series[field_series.notna()].tolist()
         fields.append('update_flag')

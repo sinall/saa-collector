@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import logging
 import time
 
 import mysql.connector
@@ -12,6 +13,7 @@ from .basic_stock_service import BasicStockService
 class StockInfoServiceImpl(StockInfoService, BasicStockService):
     def __init__(self):
         super().__init__()
+        self._logger = logging.getLogger()
         api_config = self.config.get('saa_collector').get('cninfo_api')
         self.client = CninfoApiClient(api_config['client_id'], api_config['client_secret'])
         self.db_config = self.config.get('saa_collector').get('db')
@@ -23,7 +25,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         records = self.get_stock_info_list(symbols)
         cnx = mysql.connector.connect(**self.db_config)
         DB().to_sql(records, cnx, 'saa_stocks', 'symbol')
-        print("--- %s seconds ---" % int(time.time() - start_time))
+        self._logger.info("--- %s seconds ---", int(time.time() - start_time))
 
     def build_symbols(self, symbols):
         if isinstance(symbols, str):
@@ -61,7 +63,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
             }
             stock_info_dict[stock_info['symbol']] = stock_info
 
-        table_config_df = self.xls_file.parse('saa_stocks')
+        table_config_df = self.config_service.get_table_config('saa_stocks')
         company_records = self.query_records(
             'stock_company', scode_list, fields='ts_code,exchange,introduction,chairman,secretary,reg_capital,website'
         )

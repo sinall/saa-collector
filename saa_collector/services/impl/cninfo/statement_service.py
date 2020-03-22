@@ -50,7 +50,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
     def collect_dividend(self, symbols, start_date=None):
         sub_resource = 'p_stock2201'
         table = 'saa_dividends'
-        table_config_df = self.xls_file.parse(table)
+        table_config_df = self.config_service.get_table_config(table)
         raw_records = self.query_records(symbols, sub_resource)
         records = []
         for raw_record in raw_records:
