@@ -67,3 +67,27 @@ class Statement(Basic):
             'count': len(symbols),
         }
         self.app.render(data, 'collect_stocks.jinja2')
+
+    @ex(
+        help='example sub collect-main-business',
+        arguments=[
+            (['-s', '--symbol'],
+             {'help': 'notorious symbol option',
+              'action': 'store',
+              'dest': 'symbol'}),
+            (['--start-date'],
+             {'help': 'notorious symbol option',
+              'action': 'store',
+              'dest': 'start_date'}),
+        ],
+    )
+    def collect_main_business(self):
+        symbols = self.build_symbols()
+        start_date = self.build_start_date()
+        self.statement_service.collect_main_business(symbols, start_date)
+
+        data = {
+            'symbol': self.app.pargs.symbol,
+            'count': len(symbols),
+        }
+        self.app.render(data, 'collect_stocks.jinja2')

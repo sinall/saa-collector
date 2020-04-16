@@ -61,5 +61,8 @@ class StatementServiceImpl(StatementService, BasicStockService):
         records = self.filter_records(records, start_date)
         self.save_statements(records, table)
 
+    def collect_main_business(self, symbols, start_date=None):
+        raise NotImplementedError
+
     def save_statements(self, records, statement):
         self.save_records(records, statement, ['symbol', 'date'])

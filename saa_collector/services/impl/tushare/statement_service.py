@@ -79,6 +79,32 @@ class StatementServiceImpl(StatementService, BasicStockService):
             records.append(record)
         self.save_statements(records, table)
 
+    def collect_main_business(self, symbols, start_date=None):
+        table = 'saa_raw_main_business'
+        raw_records_by_product = self.query_main_business_by(symbols, 'P')
+        raw_records_by_region = self.query_main_business_by(symbols, 'D')
+        raw_records = raw_records_by_product + raw_records_by_region
+        records = self.transform_records(raw_records, table)
+        for record in records:
+            category = record['category']
+            record['category'] = {'P': 'PRODUCT', 'D': 'REGION'}[category]
+            try:
+                record['gross_profit_margin'] = record['main_business_profit'] / record['main_business_income']
+            except:
+                pass
+        self.save_statements(records, table)
+
+    def query_main_business_by(self, symbols, type, start_date=None):
+        table = 'saa_raw_main_business'
+        fields = self.build_fields(table)
+        fields = fields.replace('type,', '')
+        raw_records = self.query_records(
+            'fina_mainbz', symbols, fields=fields, type=type, start_date=self.build_date_param(start_date)
+        )
+        for raw_record in raw_records:
+            raw_record['type'] = type
+        return raw_records
+
     def build_fields(self, table):
         table_config_df = self.config_service.get_table_config(table)
         field_series = table_config_df['TushareField']

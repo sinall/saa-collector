@@ -93,10 +93,10 @@ class BasicStockService(BasicService):
     def transform_record(self, raw_record, table_config_df):
         record = {}
         for index, row in table_config_df.iterrows():
-            cninfo_field = row['TushareField']
-            if cninfo_field == '' or (isinstance(cninfo_field, (int, float)) and math.isnan(cninfo_field)):
+            ts_field = row['TushareField']
+            if ts_field == '' or (isinstance(ts_field, (int, float)) and math.isnan(ts_field)):
                 continue
-            value = raw_record[cninfo_field]
+            value = raw_record[ts_field]
             unit = row.get('TushareUnit', 1)
             unit = 1 if math.isnan(unit) else unit
             record[row['Field']] = None if value is None else value * unit

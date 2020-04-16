@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from saa_collector.jobs.capital_collect_job import CapitalCollectJob
 from saa_collector.jobs.historical_price_collect_job import HistoricalPriceCollectJob
 from saa_collector.jobs.latest_price_collect_job import LatestPriceCollectJob
+from saa_collector.jobs.main_business_collect_job import MainBusinessCollectJob
 from saa_collector.jobs.statement_produce_job import StatementProduceJob
 from saa_collector.jobs.stock_info_collect_job import StockInfoCollectJob
 from saa_collector.jobs.tick_job import TickJob
@@ -36,6 +37,7 @@ class Scheduler(object):
         scheduler.add_job(StatementProduceJob(symbols), APCronParser.parse('5 0 7 9 *'))
         scheduler.add_job(StatementProduceJob(symbols), APCronParser.parse('5 0 7 11 *'))
         scheduler.add_job(CapitalCollectJob(symbols), APCronParser.parse('5 0 7 * *'))
+        scheduler.add_job(MainBusinessCollectJob(symbols), APCronParser.parse('5 0 9 5 *'))
         scheduler.add_job(LatestPriceCollectJob(symbols), APCronParser.parse('00 16 * * MON-FRI'))
         scheduler.add_job(HistoricalPriceCollectJob(symbols), APCronParser.parse('5 0 1 * *'))
         scheduler.start()

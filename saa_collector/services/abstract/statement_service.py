@@ -30,3 +30,7 @@ class StatementService:
     @abstractmethod
     def collect_dividend(self, symbols, start_date=None):
         pass
+
+    @abstractmethod
+    def collect_main_business(self, symbols, start_date=None):
+        pass
