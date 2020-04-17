@@ -13,6 +13,7 @@ from saa_collector.jobs.main_business_collect_job import MainBusinessCollectJob
 from saa_collector.jobs.statement_produce_job import StatementProduceJob
 from saa_collector.jobs.stock_info_collect_job import StockInfoCollectJob
 from saa_collector.jobs.tick_job import TickJob
+from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
 from saa_collector.utils.ap import APCronParser
 from saa_collector.utils.log import LoggingInitializer
 
@@ -40,6 +41,7 @@ class Scheduler(object):
         scheduler.add_job(MainBusinessCollectJob(symbols), APCronParser.parse('5 0 9 5 *'))
         scheduler.add_job(LatestPriceCollectJob(symbols), APCronParser.parse('00 16 * * MON-FRI'))
         scheduler.add_job(HistoricalPriceCollectJob(symbols), APCronParser.parse('5 0 1 * *'))
+        scheduler.add_job(ValuationCollectJob(), APCronParser.parse('10 19 * * MON-FRI'))
         scheduler.start()
         self._logger.info('Press Ctrl+{0} to exit'.format('Break' if os.name == 'nt' else 'C'))
 

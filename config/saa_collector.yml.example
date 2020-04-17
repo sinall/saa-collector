@@ -37,6 +37,9 @@ saa_collector:
     password:
     database:
 
+  cnindex:
+    host:
+
 
 log.colorlog:
 

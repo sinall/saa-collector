@@ -22,3 +22,7 @@ class ServiceFactory:
     @abstractmethod
     def create_quote_service(self):
         pass
+
+    @abstractmethod
+    def create_valuation_service(self):
+        pass

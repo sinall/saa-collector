@@ -6,6 +6,7 @@ from cement.core.exc import CaughtSignal
 from saa_collector.controllers.capital import Capital
 from saa_collector.controllers.quote import Quote
 from saa_collector.controllers.statement import Statement
+from saa_collector.controllers.valudation import Valuation
 from saa_collector.utils.log import LoggingInitializer
 from .controllers.base import Base
 from .controllers.stock import Stock
@@ -55,6 +56,7 @@ class SaaCollector(App):
             Statement,
             Capital,
             Quote,
+            Valuation,
         ]
 
 

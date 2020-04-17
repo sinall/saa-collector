@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+from saa_collector.services.common.valuation_service import ValuationServiceImpl
 from saa_collector.services.factory.service_factory import ServiceFactory
 from saa_collector.services.impl.cninfo.service_factory import CninfoServiceFactoryImpl
 from saa_collector.services.impl.tushare.service_factory import TushareServiceFactoryImpl
@@ -25,3 +25,6 @@ class CompoundServiceFactory(ServiceFactory):
 
     def create_quote_service(self):
         return self.impl.create_quote_service()
+
+    def create_valuation_service(self):
+        return ValuationServiceImpl()
