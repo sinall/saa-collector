@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from datetime import date, timedelta
 
 from saa_collector.jobs.basic_job import BasicJob
 from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
@@ -15,3 +16,7 @@ class BasicStockCollectJob(BasicJob):
 
     def __call__(self):
         self.stock_service.collect(self.symbols)
+
+    def build_start_date(self):
+        start_date = date.today() - timedelta(180)
+        return start_date

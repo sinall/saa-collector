@@ -12,4 +12,4 @@ class StatementCollectJob(BasicStockCollectJob):
         self.statement_service = self.service_factory.create_statement_service()
 
     def __call__(self):
-        self.statement_service.collect(self.symbols)
+        self.statement_service.collect(self.symbols, self.build_start_date())
