@@ -67,6 +67,7 @@ class ValuationServiceImpl(ValuationService):
         }
         df.reset_index(inplace=True)
         df.rename(columns=name_map, inplace=True)
+        df = df[df['board'] != '-']
         df = df[name_map.values()]
         df['report_date'] = date.strftime('%Y-%m-%d')
         records = df.to_dict('records')

@@ -9,6 +9,7 @@ cd $ROOT_DIR
 pkgName=${PWD##*/}
 rm -rf dist/*
 python setup.py sdist
+mkdir -p dist
 cd dist
 version=`ls -1 | sed -re 's/.*-([^-]*)\.tar\.gz/\1/g'`
 mkdir -p ../build/distributions
