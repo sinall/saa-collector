@@ -16,7 +16,7 @@ LONG_DESCRIPTION = f.read()
 f.close()
 
 install_reqs = parse_requirements('requirements.txt', session='hack')
-reqs = [str(ir.req) for ir in install_reqs]
+reqs = [str(ir.requirement) for ir in install_reqs]
 
 setup(
     name='saa_collector',
