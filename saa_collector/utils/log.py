@@ -16,6 +16,6 @@ class LoggingInitializer:
         logging.config.fileConfig(
             os.path.join(os.path.expanduser('~'), '.saa_collector', 'config', 'logging.conf'),
             defaults={
-                'log_file_name': os.path.join(path, 'saa_collector.log')
+                'log_file_name': os.path.join(path, 'saa_collector.log').replace('\\', '/')
             }
         )

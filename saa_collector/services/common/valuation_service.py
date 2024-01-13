@@ -39,14 +39,14 @@ class ValuationServiceImpl(ValuationService):
         self._logger.info('Saved {} records to {}'.format(len(records), table))
 
     def query_board_records(self, date):
-        date_str = date.strftime('%Y%m%d')
-        url = 'http://{}/syl/bk{}.zip'.format(self.host, date_str)
-        response = requests.get(url)
+        date_str = date.strftime('%Y-%m-10')
+        url = 'http://{}/sylExcelDowload?checkDate={}&category=crsc_ch'.format(self.host, date_str)
+        response = requests.post(url)
         self._logger.info('Downloaded {} successfully'.format(url))
-        zip_file = ZipFile(BytesIO(response.content))
-        entry = zip_file.namelist()[0]
-        file_contents = zip_file.read(entry)
-        book = xlrd.open_workbook(file_contents=file_contents, encoding_override="GB2312")
+        # zip_file = ZipFile(BytesIO(response.content))
+        # entry = zip_file.namelist()[0]
+        # file_contents = zip_file.read(entry)
+        book = xlrd.open_workbook(file_contents=response.content, encoding_override="GB2312")
         xls_file = pd.ExcelFile(book)
         name_sheets = xls_file.parse(None)
         sheets = name_sheets.values()
