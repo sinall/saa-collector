@@ -68,7 +68,7 @@ class StatementMaintainService:
     def gen_ttm_report(self, statements, non_balance_sheet_fields):
         statements = sorted(statements, key=lambda i: i['date'], reverse=True)
         latest_integrate_report = statements[0]
-        if latest_integrate_report['date'].month is 12:
+        if latest_integrate_report['date'].month == 12:
             return latest_integrate_report
         date_to_integrated_report_list = {r['date']: r for r in statements}
         current_quarter_report = latest_integrate_report

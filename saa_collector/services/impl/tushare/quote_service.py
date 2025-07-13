@@ -52,7 +52,7 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         self.save_records(records, 'saa_prices', 'symbol')
 
     def filter_records(self, records, start_date=None):
-        records = [record for record in records if record['date'].month % 3 is 0]
+        records = [record for record in records if record['date'].month % 3 == 0]
         return records
 
 

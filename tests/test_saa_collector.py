@@ -27,48 +27,48 @@ def test_command1():
 
 
 def test_collect_stocks():
-    argv = ['collect-stocks', '-s', '000001']
+    argv = ['collect-stocks', '-s', '000002']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
         data, output = app.last_rendered
-        assert data['symbol'] == '000001'
-        assert output.find('Symbol => 000001')
+        assert data['symbol'] == '000002'
+        assert output.find('Symbol => 000002')
 
 
 def test_produce_all_statements():
-    argv = ['produce-all-statements', '-s', '000001', '--start-date', '2018-09-22']
+    argv = ['produce-all-statements', '-s', '000002', '--start-date', '2018-09-22']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
         data, output = app.last_rendered
-        assert data['symbol'] == '000001'
-        assert output.find('Symbol => 000001')
+        assert data['symbol'] == '000002'
+        assert output.find('Symbol => 000002')
 
 
 def test_collect_all_statements():
-    argv = ['collect-all-statements', '-s', '000001']
+    argv = ['collect-all-statements', '-s', '000002']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
         data, output = app.last_rendered
-        assert data['symbol'] == '000001'
-        assert output.find('Symbol => 000001')
+        assert data['symbol'] == '000002'
+        assert output.find('Symbol => 000002')
 
 
 def test_collect_capital():
-    argv = ['collect-capital', '-s', '000001']
+    argv = ['collect-capital', '-s', '000002']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
         data, output = app.last_rendered
-        assert data['symbol'] == '000001'
-        assert output.find('Symbol => 000001')
+        assert data['symbol'] == '000002'
+        assert output.find('Symbol => 000002')
 
 
 def test_collect_main_business():
-    argv = ['collect-main-business', '-s', '000001']
+    argv = ['collect-main-business', '-s', '000002']
     with SaaCollectorTest(argv=argv) as app:
         app.run()
         data, output = app.last_rendered
-        assert data['symbol'] == '000001'
-        assert output.find('Symbol => 000001')
+        assert data['symbol'] == '000002'
+        assert output.find('Symbol => 000002')
 
 
 def test_collect_historical_price():
@@ -76,5 +76,5 @@ def test_collect_historical_price():
     with SaaCollectorTest(argv=argv) as app:
         app.run()
         data, output = app.last_rendered
-        assert data['symbol'] == '000001'
+        assert data['symbol'] == '000002'
         assert output.find('Symbol => None')

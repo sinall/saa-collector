@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 from saa_collector.services.common.valuation_service import ValuationServiceImpl
 from saa_collector.services.factory.service_factory import ServiceFactory
+from saa_collector.services.impl.akshare.service_factory import AkshareServiceFactoryImpl
 from saa_collector.services.impl.cninfo.service_factory import CninfoServiceFactoryImpl
 from saa_collector.services.impl.tushare.service_factory import TushareServiceFactoryImpl
 
 
 class CompoundServiceFactory(ServiceFactory):
     def __init__(self):
+        self.akshare_impl = AkshareServiceFactoryImpl()
         self.cninfo_impl = CninfoServiceFactoryImpl()
         self.tushare_impl = TushareServiceFactoryImpl()
-        self.impl = self.tushare_impl
+        self.impl = self.akshare_impl
 
     def create_calendar_service(self):
         return self.impl.create_calendar_service()

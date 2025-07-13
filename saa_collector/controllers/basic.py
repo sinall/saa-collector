@@ -19,7 +19,7 @@ class Basic(Controller):
 
     def build_start_date(self):
         if not self.app.pargs.start_date:
-            start_date = date.today() - timedelta(180)
+            start_date = date.today() - timedelta(210)
         else:
             start_date = datetime.strptime(self.app.pargs.start_date, '%Y-%m-%d').date()
         return start_date

@@ -3,6 +3,8 @@ import copy
 import logging
 from datetime import datetime
 
+import pandas as pd
+
 
 class DB(object):
     def __init__(self):
@@ -28,7 +30,7 @@ class DB(object):
         for stock_info in rows:
             try:
                 values = stock_info.values()
-                values = [None if v is None else str(v) for v in values]
+                values = [None if pd.isna(v) else str(v) for v in values]
                 cursor.execute(sql, tuple(values))
             except:
                 self._logger.info("Failed to save %s", stock_info)

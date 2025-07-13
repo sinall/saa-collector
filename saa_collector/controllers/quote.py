@@ -64,7 +64,9 @@ class Quote(Basic):
     def collect_historical_price(self):
         symbols = self.build_symbols()
         start_date = self.build_start_date()
-        cal_date = datetime.strptime(self.app.pargs.date, '%Y-%m-%d')
+        cal_date = None
+        if self.app.pargs.date is not None:
+            cal_date = datetime.strptime(self.app.pargs.date, '%Y-%m-%d').date()
         self.quote_service.collect_historical(symbols, cal_date, start_date)
 
         data = {
