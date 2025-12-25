@@ -24,13 +24,7 @@ class ConfigService:
         return self.table_configs[table]
 
     def load_config(self):
-        file_path = os.path.join('{home_dir}', '.{label}', 'config', '{label}{suffix}')
-        file_path = file_path.format(
-            label='saa_collector',
-            suffix='.yml',
-            home_dir=Path.home(),
-        )
-        with open(file_path, 'r') as f:
+        with open('/etc/saa/collector/saa_collector.yml', 'r') as f:
             content = f.read()
             if content is not None and len(content) > 0:
                 self.config = yaml.load(content, Loader=yaml.SafeLoader)
