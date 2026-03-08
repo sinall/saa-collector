@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_HOST=${DATABASE_HOST:-db}
+      - DATABASE_NAME=${DATABASE_NAME:-saa_collector}
+      - DATABASE_USER=${DATABASE_USER:-root}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
+      - DEBUG=${DEBUG:-False}
+      - SERVICE=gunicorn
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  scheduler:
+    build: ./backend
+    environment:
+      - DATABASE_HOST=${DATABASE_HOST:-db}
+      - DATABASE_NAME=${DATABASE_NAME:-saa_collector}
+      - DATABASE_USER=${DATABASE_USER:-root}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
+      - SERVICE=scheduler
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DATABASE_PASSWORD:-password}
+      - MYSQL_DATABASE=${DATABASE_NAME:-saa_collector}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+volumes:
+  mysql_data:
