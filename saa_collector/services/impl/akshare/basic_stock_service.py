@@ -128,7 +128,12 @@ class BasicStockService(BasicService):
     def build_symbols(self, symbols):
         if isinstance(symbols, str):
             symbols = [symbols]
-        if not symbols:
+        elif isinstance(symbols, pd.DataFrame):
+            if symbols.empty:
+                symbols = self.get_symbols_from_db()
+            else:
+                symbols = symbols['symbol'].tolist()
+        elif not symbols:
             symbols = self.get_symbols_from_db()
         return symbols
 
