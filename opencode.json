@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "opencode",
+  "autoupdate": true,
+  "agent": {
+      "build": {
+        "model": "zhipuai-coding-plan/glm-5"
+      },
+      "plan": {
+        "model": "zhipuai-coding-plan/glm-5"
+      }
+    }
+}

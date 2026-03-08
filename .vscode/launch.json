@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: SAA Collector",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/saa_collector/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["collect-all-statements"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python: SAA Collector (带参数)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/saa_collector/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--help"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}
