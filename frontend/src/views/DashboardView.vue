@@ -1,30 +1,38 @@
 <template>
   <div class="dashboard">
-    <el-row :gutter="20" class="stats-row">
-      <el-col :span="6" v-for="stat in dataStatus" :key="stat.data_type">
-        <el-card class="stat-card" :class="{ 'stat-card-error': stat.error }">
-          <div class="stat-content">
-            <div class="stat-title">{{ stat.data_type_display }}</div>
-            
-            <div v-if="stat.loading" class="stat-skeleton">
-              <el-skeleton :rows="1" animated />
-            </div>
-            
-            <div v-else-if="stat.error" class="stat-error">
-              <el-icon><WarningFilled /></el-icon>
-              <span>加载失败</span>
-            </div>
-            
-            <template v-else>
-              <div class="stat-value">{{ formatNumber(stat.count) }}</div>
-              <div class="stat-date" v-if="stat.latest_date">
-                最新: {{ stat.latest_date }}
+    <el-card class="stats-card">
+      <template #header>
+        <div class="card-header">
+          <span>数据统计</span>
+          <el-button type="primary" size="small" @click="refreshStats">刷新</el-button>
+        </div>
+      </template>
+      <el-row :gutter="20" class="stats-row">
+        <el-col :span="6" v-for="stat in dataStatus" :key="stat.data_type">
+          <el-card class="stat-card" :class="{ 'stat-card-error': stat.error }">
+            <div class="stat-content">
+              <div class="stat-title">{{ stat.data_type_display }}</div>
+              
+              <div v-if="stat.loading" class="stat-skeleton">
+                <el-skeleton :rows="1" animated />
               </div>
-            </template>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+              
+              <div v-else-if="stat.error" class="stat-error">
+                <el-icon><WarningFilled /></el-icon>
+                <span>加载失败</span>
+              </div>
+              
+              <template v-else>
+                <div class="stat-value">{{ formatNumber(stat.count) }}</div>
+                <div class="stat-date" v-if="stat.latest_date">
+                  最新: {{ stat.latest_date }}
+                </div>
+              </template>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </el-card>
 
     <el-card class="recent-jobs">
       <template #header>
@@ -142,6 +150,14 @@ const refreshJobs = () => {
   loadRecentJobs()
 }
 
+const refreshStats = () => {
+  dataStatus.value.forEach(item => {
+    item.loading = true
+    item.error = false
+  })
+  loadDataStatus()
+}
+
 const formatNumber = (num: number): string => {
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + 'M'
@@ -176,8 +192,12 @@ onMounted(() => {
   padding: 20px;
 }
 
-.stats-row {
+.stats-card {
   margin-bottom: 20px;
+}
+
+.stats-row {
+  margin: 0;
 }
 
 .stat-card {
