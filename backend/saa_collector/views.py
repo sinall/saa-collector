@@ -35,16 +35,15 @@ class DataStatusView(APIView):
     
     def get(self, request):
         data_types = [
-            ('stock_info', '股票基本信息', 'stock_info'),
-            ('quote', '最新行情', 'daily_quote'),
-            ('historical_quote', '历史行情', 'daily_quote'),
-            ('balance_sheet', '资产负债表', 'balance_sheet'),
-            ('income', '利润表', 'income_statement'),
-            ('cash_flow', '现金流量表', 'cash_flow_statement'),
-            ('dividend', '分红数据', 'dividend'),
-            ('main_business', '主营业务', 'main_business'),
-            ('capital', '股本变动', 'capital_change'),
-            ('valuation', '估值数据', 'valuation'),
+            ('stock_info', '股票基本信息', 'saa_stocks'),
+            ('quote', '最新行情', 'saa_latest_prices'),
+            ('historical_quote', '历史行情', 'saa_prices'),
+            ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet'),
+            ('income', '利润表', 'saa_raw_income_statement'),
+            ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement'),
+            ('dividend', '分红数据', 'saa_dividends'),
+            ('main_business', '主营业务', 'saa_raw_main_business'),
+            ('capital', '股本变动', 'saa_capitals'),
         ]
         
         results = []
@@ -86,15 +85,15 @@ class DataStatusView(APIView):
     
     def _get_date_column(self, table_name):
         date_columns = {
-            'stock_info': None,
-            'daily_quote': 'trade_date',
-            'balance_sheet': 'report_date',
-            'income_statement': 'report_date',
-            'cash_flow_statement': 'report_date',
-            'dividend': 'report_date',
-            'main_business': 'report_date',
-            'capital_change': 'change_date',
-            'valuation': 'trade_date',
+            'saa_stocks': None,
+            'saa_latest_prices': 'date',
+            'saa_prices': 'date',
+            'saa_raw_balance_sheet': 'date',
+            'saa_raw_income_statement': 'date',
+            'saa_raw_cash_flow_statement': 'date',
+            'saa_dividends': 'date',
+            'saa_raw_main_business': 'date',
+            'saa_capitals': 'date',
         }
         return date_columns.get(table_name)
 
