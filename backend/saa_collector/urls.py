@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path('data-status/', views.DataStatusView.as_view(), name='data-status'),
     path('data-completeness/', views.DataCompletenessView.as_view(), name='data-completeness'),
+    path('data-completeness/check/', views.DataCompletenessCheckView.as_view(), name='data-completeness-check'),
     
     path('collect/stock-info/', views.CollectStockInfoView.as_view(), name='collect-stock-info'),
     path('collect/quotes/', views.CollectQuotesView.as_view(), name='collect-quotes'),

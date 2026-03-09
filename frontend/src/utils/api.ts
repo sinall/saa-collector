@@ -174,4 +174,34 @@ export const fetchStockDetail = async (symbol: string): Promise<ApiResponse<Stoc
   return response.data
 }
 
+export interface MissingDataRecord {
+  symbol: string
+  name: string
+  date: string
+  data_type: string
+  frequency: string
+}
+
+export const checkDataCompleteness = async (params: {
+  data_type: string
+  symbols?: string[]
+  start_date?: string
+  end_date?: string
+  frequency?: string
+  page?: number
+  page_size?: number
+}): Promise<ApiResponse<{
+  total_missing: number
+  missing_records: MissingDataRecord[]
+  pagination: {
+    page: number
+    page_size: number
+    total: number
+    total_pages: number
+  }
+}>> => {
+  const response = await api.post('/data-completeness/check/', params)
+  return response.data
+}
+
 export default api

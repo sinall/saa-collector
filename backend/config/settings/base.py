@@ -102,6 +102,11 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
+    'http://localhost:3000',
+]
+
 DEV_MODE_TOKEN = os.getenv('DEV_MODE_TOKEN', None)
 
 LOGGING = {

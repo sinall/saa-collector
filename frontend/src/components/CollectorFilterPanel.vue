@@ -268,6 +268,8 @@ defineExpose({
         </div>
       </section>
 
+      <slot name="extra-filters"></slot>
+
       <div class="query-section">
         <button 
           @click="handleQuery"
