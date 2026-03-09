@@ -66,6 +66,8 @@ export interface DataStatus {
   count: number
   earliest_date: string | null
   latest_date: string | null
+  loading?: boolean
+  error?: boolean
 }
 
 export interface CollectJob {
