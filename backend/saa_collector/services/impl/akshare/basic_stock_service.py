@@ -180,6 +180,8 @@ class BasicStockService(BasicService):
         return record
 
     def to_code(self, symbol):
+        if symbol and '.' in symbol:
+            return symbol.split('.')[0]
         return symbol
 
     def convert_code(self, code):
