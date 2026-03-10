@@ -48,11 +48,11 @@ const dataTypes = [
 const stockMode = ref<'manual' | 'index'>('manual')
 const dateMode = ref<'single' | 'range'>('range')
 const selectedDataType = ref('stock_info')
-const manualStocks = ref('')
+const manualStocks = ref('000002.XSHE, 600519.XSHG')
 const selectedList = ref('')
 const singleDate = ref('')
-const startDate = ref('')
-const endDate = ref('')
+const startDate = ref('2014-01-01')
+const endDate = ref('2014-01-31')
 const selectedReportTypes = ref<string[]>(['balance_sheet', 'income', 'cash_flow'])
 
 const reportTypeOptions = [
