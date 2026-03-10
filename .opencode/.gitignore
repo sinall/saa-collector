@@ -4,4 +4,5 @@
 !skills/
 !skills/*.md
 !plans/
+!plans/*.md
 !.gitignore
