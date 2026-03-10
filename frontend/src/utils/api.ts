@@ -101,9 +101,15 @@ export const fetchCollectJobs = async (params?: {
   data_type?: string
   page?: number
   page_size?: number
-}): Promise<ApiResponse<{ results: CollectJob[], pagination: any }>> => {
+}): Promise<ApiResponse<{ results: CollectJob[], pagination: { total: number } }>> => {
   const response = await api.get('/collect/jobs/', { params })
-  return response.data
+  return {
+    success: true,
+    data: {
+      results: response.data.results || [],
+      pagination: { total: response.data.count || 0 }
+    }
+  }
 }
 
 export const fetchCollectJobDetail = async (id: number): Promise<ApiResponse<CollectJob>> => {
