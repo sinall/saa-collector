@@ -188,6 +188,12 @@ export interface MissingDataRecord {
   frequency: string
 }
 
+export interface SummaryItem {
+  period: string
+  expected: number
+  missing: number
+}
+
 export const checkDataCompleteness = async (params: {
   data_type: string
   symbols?: string[]
@@ -199,6 +205,7 @@ export const checkDataCompleteness = async (params: {
 }): Promise<ApiResponse<{
   total_missing: number
   missing_records: MissingDataRecord[]
+  summary: SummaryItem[]
   pagination: {
     page: number
     page_size: number
