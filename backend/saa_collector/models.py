@@ -11,6 +11,7 @@ class CollectJob(models.Model):
     ]
     
     DATA_TYPE_CHOICES = [
+        ('trade_days', '交易日'),
         ('stock_info', '股票基本信息'),
         ('quote', '最新行情'),
         ('historical_quote', '历史行情'),

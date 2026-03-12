@@ -75,6 +75,7 @@ import { WarningFilled } from '@element-plus/icons-vue'
 import { fetchDataStatus, fetchCollectJobs, type DataStatus, type CollectJob } from '@/utils/api'
 
 const EXPECTED_DATA_TYPES = [
+  { data_type: 'trade_days', data_type_display: '交易日' },
   { data_type: 'stock_info', data_type_display: '股票基本信息' },
   { data_type: 'quote', data_type_display: '最新行情' },
   { data_type: 'historical_quote', data_type_display: '历史行情' },
