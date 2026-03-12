@@ -33,6 +33,7 @@ const dateExpanded = ref(true)
 const dataTypeExpanded = ref(true)
 
 const dataTypes = [
+  { value: 'trade_days', label: '交易日', needDate: true },
   { value: 'stock_info', label: '股票基本信息', needDate: false },
   { value: 'quote', label: '最新行情', needDate: false },
   { value: 'historical_quote', label: '历史行情', needDate: true },
@@ -47,7 +48,7 @@ const dataTypes = [
 
 const stockMode = ref<'manual' | 'index'>('manual')
 const dateMode = ref<'single' | 'range'>('range')
-const selectedDataType = ref('stock_info')
+const selectedDataType = ref('trade_days')
 const manualStocks = ref('000002.XSHE, 600519.XSHG')
 const selectedList = ref('')
 const singleDate = ref('')

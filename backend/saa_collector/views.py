@@ -37,6 +37,7 @@ class DataStatusView(APIView):
     
     def get(self, request):
         data_types = [
+            ('trade_days', '交易日', 'saa_trade_days'),
             ('stock_info', '股票基本信息', 'saa_stocks'),
             ('quote', '最新行情', 'saa_latest_prices'),
             ('historical_quote', '历史行情', 'saa_prices'),
@@ -88,6 +89,7 @@ class DataStatusView(APIView):
     def _get_date_column(self, table_name):
         date_columns = {
             'saa_stocks': None,
+            'saa_trade_days': 'date',
             'saa_latest_prices': 'date',
             'saa_prices': 'date',
             'saa_raw_balance_sheet': 'date',
@@ -406,7 +408,7 @@ class DataCompletenessCheckView(APIView):
         
         trade_dates = self.get_trade_dates_by_frequency(start_date, end_date, frequency)
         
-        if not trade_dates:
+        if not trade_dates and data_type != 'trade_days':
             return Response({
                 'success': True,
                 'data': {
@@ -418,7 +420,7 @@ class DataCompletenessCheckView(APIView):
         
         stocks = self.get_stocks_with_listing_date(symbols, start_date, end_date)
         
-        if not stocks:
+        if not stocks and data_type != 'trade_days':
             return Response({
                 'success': True,
                 'data': {
@@ -428,7 +430,7 @@ class DataCompletenessCheckView(APIView):
                 }
             })
         
-        missing_records = self.check_data_missing_batch(stocks, trade_dates, data_type, frequency)
+        missing_records = self.check_data_missing_batch(stocks, trade_dates, data_type, frequency, start_date, end_date)
         
         total = len(missing_records)
         start_idx = (page - 1) * page_size
@@ -521,7 +523,7 @@ class DataCompletenessCheckView(APIView):
             
             return stocks
     
-    def check_data_missing_batch(self, stocks, trade_dates, data_type, frequency):
+    def check_data_missing_batch(self, stocks, trade_dates, data_type, frequency, start_date=None, end_date=None):
         table_mapping = {
             'historical_quote': ('saa_prices', 'date'),
             'balance_sheet': ('saa_raw_balance_sheet', 'date'),
@@ -531,10 +533,14 @@ class DataCompletenessCheckView(APIView):
             'main_business': ('saa_raw_main_business', 'date'),
             'capital': ('saa_capitals', 'date'),
             'quote': ('saa_latest_prices', 'date'),
+            'trade_days': ('saa_trade_days', 'date'),
         }
         
         if data_type not in table_mapping:
             return []
+        
+        if data_type == 'trade_days':
+            return self._check_trade_days_missing(start_date, end_date, frequency)
         
         table_name, date_column = table_mapping[data_type]
         missing_records = []
@@ -579,3 +585,60 @@ class DataCompletenessCheckView(APIView):
                         })
         
         return missing_records
+    
+    def _check_trade_days_missing(self, start_date, end_date, frequency):
+        missing_records = []
+        data_type_display = '交易日'
+        frequency_display = {
+            'daily': '日度',
+            'weekly': '周度',
+            'monthly': '月度',
+            'quarterly': '季度'
+        }.get(frequency, frequency)
+        
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE_FORMAT(date, '%%Y-%%m') as month
+                FROM saa_trade_days
+                GROUP BY DATE_FORMAT(date, '%%Y-%%m')
+            """)
+            existing_months = set(row[0] for row in cursor.fetchall())
+        
+        expected_months = self._get_expected_months(start_date, end_date)
+        missing_months = sorted(expected_months - existing_months)
+        
+        for month in missing_months:
+            missing_records.append({
+                'symbol': '-',
+                'name': '-',
+                'date': month,
+                'data_type': data_type_display,
+                'frequency': frequency_display
+            })
+        
+        return missing_records
+    
+    def _get_expected_months(self, start_date, end_date):
+        from datetime import datetime
+        from calendar import monthrange
+        
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
+        months = set()
+        current_year = start_date.year
+        current_month = start_date.month
+        
+        while True:
+            current_date = datetime(current_year, current_month, 1).date()
+            if current_date > end_date:
+                break
+            months.add(current_date.strftime('%Y-%m'))
+            current_month += 1
+            if current_month > 12:
+                current_month = 1
+                current_year += 1
+        
+        return months
