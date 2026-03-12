@@ -34,7 +34,7 @@ class StandardPagination(PageNumberPagination):
 
 class DataStatusView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         data_types = [
             ('trade_days', '交易日', 'saa_trade_days'),
@@ -48,14 +48,14 @@ class DataStatusView(APIView):
             ('main_business', '主营业务', 'saa_raw_main_business'),
             ('capital', '股本变动', 'saa_capitals'),
         ]
-        
+
         results = []
         with connection.cursor() as cursor:
             for data_type, display_name, table_name in data_types:
                 try:
                     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
                     count = cursor.fetchone()[0]
-                    
+
                     date_column = self._get_date_column(table_name)
                     if date_column:
                         cursor.execute(f"SELECT MIN({date_column}), MAX({date_column}) FROM {table_name}")
@@ -65,7 +65,7 @@ class DataStatusView(APIView):
                     else:
                         earliest_date = None
                         latest_date = None
-                    
+
                     results.append({
                         'data_type': data_type,
                         'data_type_display': display_name,
@@ -82,10 +82,10 @@ class DataStatusView(APIView):
                         'earliest_date': None,
                         'latest_date': None,
                     })
-        
+
         serializer = DataStatusSerializer(results, many=True)
         return Response({'success': True, 'data': serializer.data})
-    
+
     def _get_date_column(self, table_name):
         date_columns = {
             'saa_stocks': None,
@@ -104,24 +104,24 @@ class DataStatusView(APIView):
 
 class DataCompletenessView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         data_type = request.query_params.get('data_type')
         symbols = request.query_params.getlist('symbols')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
-        
+
         if not all([data_type, start_date, end_date]):
             return Response({
                 'success': False,
                 'error': 'data_type, start_date, end_date are required'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         summary = {'total': 0, 'existing': 0, 'missing': 0, 'rate': 0}
         by_stock = []
         by_date = []
         missing_details = []
-        
+
         return Response({
             'success': True,
             'data': {
@@ -135,18 +135,18 @@ class DataCompletenessView(APIView):
 
 class CollectJobListView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         jobs = CollectJob.objects.all()
-        
+
         data_type = request.query_params.get('data_type')
         if data_type:
             jobs = jobs.filter(data_type=data_type)
-        
+
         status_filter = request.query_params.get('status')
         if status_filter:
             jobs = jobs.filter(status=status_filter)
-        
+
         paginator = StandardPagination()
         page = paginator.paginate_queryset(jobs, request, view=self)
         serializer = CollectJobSerializer(page, many=True)
@@ -155,7 +155,7 @@ class CollectJobListView(APIView):
 
 class CollectJobDetailView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, pk):
         try:
             job = CollectJob.objects.get(pk=pk)
@@ -164,7 +164,7 @@ class CollectJobDetailView(APIView):
                 'success': False,
                 'error': 'Job not found'
             }, status=status.HTTP_404_NOT_FOUND)
-        
+
         serializer = CollectJobSerializer(job)
         return Response({'success': True, 'data': serializer.data})
 
@@ -172,7 +172,7 @@ class CollectJobDetailView(APIView):
 class BaseCollectView(APIView):
     permission_classes = [IsAuthenticated]
     data_type = None
-    
+
     def post(self, request):
         serializer = CollectJobCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -180,7 +180,7 @@ class BaseCollectView(APIView):
                 'success': False,
                 'error': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         job = CollectJob.objects.create(
             data_type=self.data_type,
             symbols=serializer.validated_data.get('symbols', []),
@@ -190,36 +190,36 @@ class BaseCollectView(APIView):
                 'report_types': serializer.validated_data.get('report_types', []),
             }
         )
-        
+
         thread = threading.Thread(target=self._run_job, args=(job.id,))
         thread.start()
-        
+
         return Response({
             'success': True,
             'data': CollectJobSerializer(job).data
         }, status=status.HTTP_201_CREATED)
-    
+
     def _run_job(self, job_id):
         from django import db
         db.connections.close_all()
-        
+
         job = CollectJob.objects.get(id=job_id)
         job.start()
-        
+
         try:
             self._execute_collect(job)
             job.complete(success=True)
         except Exception as e:
             logger.exception(f"Job {job_id} failed: {e}")
             job.complete(success=False, message=str(e))
-    
+
     def _execute_collect(self, job):
         pass
 
 
 class CollectStockInfoView(BaseCollectView):
     data_type = 'stock_info'
-    
+
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
@@ -231,7 +231,7 @@ class CollectStockInfoView(BaseCollectView):
 
 class CollectQuotesView(BaseCollectView):
     data_type = 'quote'
-    
+
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
@@ -243,7 +243,7 @@ class CollectQuotesView(BaseCollectView):
 
 class CollectHistoricalQuotesView(BaseCollectView):
     data_type = 'historical_quote'
-    
+
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
@@ -257,7 +257,7 @@ class CollectHistoricalQuotesView(BaseCollectView):
 
 class CollectStatementsView(BaseCollectView):
     data_type = 'balance_sheet'
-    
+
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
@@ -267,9 +267,9 @@ class CollectStatementsView(BaseCollectView):
         if start_date:
             from datetime import datetime
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        
+
         report_types = job.params.get('report_types', [])
-        
+
         if 'balance_sheet' in report_types or not report_types:
             service.collect_balance_sheet(symbols, start_date)
         if 'income' in report_types or not report_types:
@@ -278,13 +278,13 @@ class CollectStatementsView(BaseCollectView):
             service.collect_cash_flow(symbols, start_date)
         if 'dividend' in report_types:
             service.collect_dividend(symbols, start_date)
-        
+
         job.complete(success=True, message=f"Collected statements")
 
 
 class CollectCapitalView(BaseCollectView):
     data_type = 'capital'
-    
+
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
@@ -300,7 +300,7 @@ class CollectCapitalView(BaseCollectView):
 
 class CollectValuationView(BaseCollectView):
     data_type = 'valuation'
-    
+
     def _execute_collect(self, job):
         from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
         collect_job = ValuationCollectJob()
@@ -310,7 +310,7 @@ class CollectValuationView(BaseCollectView):
 
 class CollectMainBusinessView(BaseCollectView):
     data_type = 'main_business'
-    
+
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
@@ -326,10 +326,10 @@ class CollectMainBusinessView(BaseCollectView):
 
 class StockListView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         keyword = request.query_params.get('keyword', '')
-        
+
         with connection.cursor() as cursor:
             if keyword:
                 cursor.execute(
@@ -343,7 +343,7 @@ class StockListView(APIView):
                     "SELECT symbol, name, industry, list_date FROM saa_stocks "
                     "ORDER BY symbol LIMIT 100"
                 )
-            
+
             stocks = []
             for row in cursor.fetchall():
                 stocks.append({
@@ -352,7 +352,7 @@ class StockListView(APIView):
                     'industry': row[2],
                     'list_date': str(row[3]) if row[3] else None,
                 })
-        
+
         return Response({
             'success': True,
             'data': stocks
@@ -361,7 +361,7 @@ class StockListView(APIView):
 
 class StockDetailView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, symbol):
         with connection.cursor() as cursor:
             cursor.execute(
@@ -375,7 +375,7 @@ class StockDetailView(APIView):
                     'success': False,
                     'error': 'Stock not found'
                 }, status=status.HTTP_404_NOT_FOUND)
-            
+
             return Response({
                 'success': True,
                 'data': {
@@ -390,7 +390,7 @@ class StockDetailView(APIView):
 class DataCompletenessCheckView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
-    
+
     def post(self, request):
         data_type = request.data.get('data_type')
         symbols = request.data.get('symbols', [])
@@ -399,49 +399,59 @@ class DataCompletenessCheckView(APIView):
         frequency = request.data.get('frequency', 'daily')
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 100))
-        
+
         if not all([data_type, start_date, end_date]):
             return Response({
                 'success': False,
                 'error': 'data_type, start_date, end_date are required'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        trade_dates = self.get_trade_dates_by_frequency(start_date, end_date, frequency)
-        
-        if not trade_dates and data_type != 'trade_days':
-            return Response({
-                'success': True,
-                'data': {
-                    'total_missing': 0,
-                    'missing_records': [],
-                    'pagination': {'page': page, 'page_size': page_size, 'total': 0}
-                }
-            })
-        
-        stocks = self.get_stocks_with_listing_date(symbols, start_date, end_date)
-        
-        if not stocks and data_type != 'trade_days':
-            return Response({
-                'success': True,
-                'data': {
-                    'total_missing': 0,
-                    'missing_records': [],
-                    'pagination': {'page': page, 'page_size': page_size, 'total': 0}
-                }
-            })
-        
-        missing_records = self.check_data_missing_batch(stocks, trade_dates, data_type, frequency, start_date, end_date)
-        
+
+        if data_type == 'trade_days':
+            missing_records, summary = self._check_trade_days_missing(start_date, end_date, frequency)
+        else:
+            trade_dates = self.get_trade_dates_by_frequency(start_date, end_date, frequency)
+
+            if not trade_dates:
+                expected_months = self._get_expected_months(start_date, end_date)
+                summary = [{'period': m, 'expected': 0, 'missing': 0} for m in sorted(expected_months)]
+                return Response({
+                    'success': True,
+                    'data': {
+                        'total_missing': 0,
+                        'missing_records': [],
+                        'summary': summary,
+                        'pagination': {'page': page, 'page_size': page_size, 'total': 0}
+                    }
+                })
+
+            stocks = self.get_stocks_with_listing_date(symbols, start_date, end_date)
+
+            if not stocks:
+                expected_months = self._get_expected_months(start_date, end_date)
+                summary = [{'period': m, 'expected': 0, 'missing': 0} for m in sorted(expected_months)]
+                return Response({
+                    'success': True,
+                    'data': {
+                        'total_missing': 0,
+                        'missing_records': [],
+                        'summary': summary,
+                        'pagination': {'page': page, 'page_size': page_size, 'total': 0}
+                    }
+                })
+
+            missing_records, summary = self.check_data_missing_batch(stocks, trade_dates, data_type, frequency, start_date, end_date)
+
         total = len(missing_records)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
         paginated_records = missing_records[start_idx:end_idx]
-        
+
         return Response({
             'success': True,
             'data': {
                 'total_missing': total,
                 'missing_records': paginated_records,
+                'summary': summary,
                 'pagination': {
                     'page': page,
                     'page_size': page_size,
@@ -450,7 +460,7 @@ class DataCompletenessCheckView(APIView):
                 }
             }
         })
-    
+
     def get_trade_dates_by_frequency(self, start_date, end_date, frequency):
         with connection.cursor() as cursor:
             if frequency == 'daily':
@@ -485,9 +495,9 @@ class DataCompletenessCheckView(APIView):
                 """, [start_date, end_date])
             else:
                 return []
-            
+
             return [row[0] for row in cursor.fetchall()]
-    
+
     def get_stocks_with_listing_date(self, symbols, start_date, end_date):
         with connection.cursor() as cursor:
             if symbols and len(symbols) > 0:
@@ -506,7 +516,7 @@ class DataCompletenessCheckView(APIView):
                     WHERE listing_time IS NOT NULL
                       AND listing_time <= %s
                 """, [end_date])
-            
+
             stocks = []
             for row in cursor.fetchall():
                 listing_time = row[2]
@@ -514,15 +524,15 @@ class DataCompletenessCheckView(APIView):
                     listing_date_str = listing_time.strftime('%Y-%m-%d')
                 else:
                     listing_date_str = str(listing_time)
-                
+
                 stocks.append({
                     'symbol': row[0],
                     'name': row[1],
                     'listing_date': listing_date_str
                 })
-            
+
             return stocks
-    
+
     def check_data_missing_batch(self, stocks, trade_dates, data_type, frequency, start_date=None, end_date=None):
         table_mapping = {
             'historical_quote': ('saa_prices', 'date'),
@@ -535,47 +545,56 @@ class DataCompletenessCheckView(APIView):
             'quote': ('saa_latest_prices', 'date'),
             'trade_days': ('saa_trade_days', 'date'),
         }
-        
+
         if data_type not in table_mapping:
-            return []
-        
+            return [], []
+
         if data_type == 'trade_days':
             return self._check_trade_days_missing(start_date, end_date, frequency)
-        
+
         table_name, date_column = table_mapping[data_type]
         missing_records = []
-        
+
         data_type_display = dict(CollectJob.DATA_TYPE_CHOICES).get(data_type, data_type)
-        
+
         frequency_display = {
             'daily': '日度',
             'weekly': '周度',
             'monthly': '月度',
             'quarterly': '季度'
         }.get(frequency, frequency)
-        
+
+        from collections import defaultdict
+        period_stats = defaultdict(lambda: {'expected': 0, 'missing': 0})
+
         with connection.cursor() as cursor:
             for stock in stocks:
                 valid_dates = [
-                    d for d in trade_dates 
+                    d for d in trade_dates
                     if str(d) >= stock['listing_date']
                 ]
-                
+
                 if not valid_dates:
                     continue
-                
+
+                for date in valid_dates:
+                    period = str(date)[:7]
+                    period_stats[period]['expected'] += 1
+
                 placeholders = ','.join(['%s'] * len(valid_dates))
                 cursor.execute(f"""
-                    SELECT DISTINCT {date_column} 
-                    FROM {table_name} 
-                    WHERE symbol = %s 
+                    SELECT DISTINCT {date_column}
+                    FROM {table_name}
+                    WHERE symbol = %s
                       AND {date_column} IN ({placeholders})
                 """, [stock['symbol']] + valid_dates)
-                
+
                 existing_dates = set(row[0] for row in cursor.fetchall())
-                
+
                 for date in valid_dates:
                     if date not in existing_dates:
+                        period = str(date)[:7]
+                        period_stats[period]['missing'] += 1
                         missing_records.append({
                             'symbol': stock['symbol'],
                             'name': stock['name'],
@@ -583,9 +602,14 @@ class DataCompletenessCheckView(APIView):
                             'data_type': data_type_display,
                             'frequency': frequency_display
                         })
-        
-        return missing_records
-    
+
+        summary = [
+            {'period': period, 'expected': stats['expected'], 'missing': stats['missing']}
+            for period, stats in sorted(period_stats.items())
+        ]
+
+        return missing_records, summary
+
     def _check_trade_days_missing(self, start_date, end_date, frequency):
         missing_records = []
         data_type_display = '交易日'
@@ -595,18 +619,19 @@ class DataCompletenessCheckView(APIView):
             'monthly': '月度',
             'quarterly': '季度'
         }.get(frequency, frequency)
-        
+
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT DATE_FORMAT(date, '%%Y-%%m') as month
+                SELECT DATE_FORMAT(date, %s) as month
                 FROM saa_trade_days
-                GROUP BY DATE_FORMAT(date, '%%Y-%%m')
-            """)
-            existing_months = set(row[0] for row in cursor.fetchall())
-        
+                WHERE date BETWEEN %s AND %s
+                GROUP BY DATE_FORMAT(date, %s)
+            """, ['%Y-%m', start_date, end_date, '%Y-%m'])
+            existing_months = set(str(row[0]) for row in cursor.fetchall())
+
         expected_months = self._get_expected_months(start_date, end_date)
         missing_months = sorted(expected_months - existing_months)
-        
+
         for month in missing_months:
             missing_records.append({
                 'symbol': '-',
@@ -615,22 +640,30 @@ class DataCompletenessCheckView(APIView):
                 'data_type': data_type_display,
                 'frequency': frequency_display
             })
-        
-        return missing_records
-    
+
+        summary = []
+        for month in sorted(expected_months):
+            summary.append({
+                'period': month,
+                'expected': 1,
+                'missing': 0 if month in existing_months else 1
+            })
+
+        return missing_records, summary
+
     def _get_expected_months(self, start_date, end_date):
         from datetime import datetime
         from calendar import monthrange
-        
+
         if isinstance(start_date, str):
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
         if isinstance(end_date, str):
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        
+
         months = set()
         current_year = start_date.year
         current_month = start_date.month
-        
+
         while True:
             current_date = datetime(current_year, current_month, 1).date()
             if current_date > end_date:
@@ -640,5 +673,5 @@ class DataCompletenessCheckView(APIView):
             if current_month > 12:
                 current_month = 1
                 current_year += 1
-        
+
         return months
