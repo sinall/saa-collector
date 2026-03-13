@@ -72,15 +72,16 @@
 
         <el-card v-if="missingRecords.length > 0" class="table-card">
           <template #header>
-            <span>缺失记录详情</span>
+            <span>缺失记录详情 ({{ missingRecords.length }} 条)</span>
           </template>
           <ag-grid-vue
-            class="ag-theme-alpine"
-            :column-defs="columnDefs"
-            :row-data="missingRecords"
+            class="ag-theme-quartz"
+            :theme="gridTheme"
+            :columnDefs="columnDefs"
+            :rowData="missingRecords"
             :pagination="true"
-            :pagination-page-size="100"
-            :default-col-def="defaultColDef"
+            :paginationPageSize="100"
+            :defaultColDef="defaultColDef"
             @grid-ready="onGridReady"
             style="height: 400px; width: 100%"
           />
@@ -95,8 +96,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
-import 'ag-grid-community/styles/ag-grid.css'
-import 'ag-grid-community/styles/ag-theme-alpine.css'
+import { themeQuartz } from 'ag-grid-community'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import CollectorFilterPanel from '@/components/CollectorFilterPanel.vue'
@@ -151,8 +151,13 @@ const defaultColDef = {
   resizable: true,
 }
 
+const gridTheme = themeQuartz
+
 const onGridReady = (params: any) => {
   gridApi.value = params.api
+  if (missingRecords.value.length > 0) {
+    params.api.setGridOption('rowData', missingRecords.value)
+  }
 }
 
 const handleQuery = async (params: any) => {
