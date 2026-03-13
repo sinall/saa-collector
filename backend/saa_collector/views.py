@@ -392,6 +392,7 @@ class DataCompletenessCheckView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        logger.info(f"Request URL: {request.build_absolute_uri()}, Body: {request.data}")
         data_type = request.data.get('data_type')
         symbols = request.data.get('symbols', [])
         start_date = request.data.get('start_date')
@@ -501,14 +502,16 @@ class DataCompletenessCheckView(APIView):
     def get_stocks_with_listing_date(self, symbols, start_date, end_date):
         with connection.cursor() as cursor:
             if symbols and len(symbols) > 0:
-                placeholders = ','.join(['%s'] * len(symbols))
+                symbol_map = {s.split('.')[0]: s for s in symbols}
+                short_symbols = list(symbol_map.keys())
+                placeholders = ','.join(['%s'] * len(short_symbols))
                 cursor.execute(f"""
                     SELECT symbol, name, listing_time 
                     FROM saa_stocks 
                     WHERE symbol IN ({placeholders})
                       AND listing_time IS NOT NULL
                       AND listing_time <= %s
-                """, symbols + [end_date])
+                """, short_symbols + [end_date])
             else:
                 cursor.execute("""
                     SELECT symbol, name, listing_time 
@@ -516,6 +519,7 @@ class DataCompletenessCheckView(APIView):
                     WHERE listing_time IS NOT NULL
                       AND listing_time <= %s
                 """, [end_date])
+                symbol_map = None
 
             stocks = []
             for row in cursor.fetchall():
@@ -525,8 +529,11 @@ class DataCompletenessCheckView(APIView):
                 else:
                     listing_date_str = str(listing_time)
 
+                short_symbol = row[0]
+                full_symbol = symbol_map.get(short_symbol, short_symbol) if symbol_map else short_symbol
+
                 stocks.append({
-                    'symbol': row[0],
+                    'symbol': full_symbol,
                     'name': row[1],
                     'listing_date': listing_date_str
                 })
@@ -551,6 +558,9 @@ class DataCompletenessCheckView(APIView):
 
         if data_type == 'trade_days':
             return self._check_trade_days_missing(start_date, end_date, frequency)
+
+        if data_type == 'quote':
+            return self._check_quote_missing(stocks, trade_dates, frequency)
 
         table_name, date_column = table_mapping[data_type]
         missing_records = []
@@ -648,6 +658,52 @@ class DataCompletenessCheckView(APIView):
                 'expected': 1,
                 'missing': 0 if month in existing_months else 1
             })
+
+        return missing_records, summary
+
+    def _check_quote_missing(self, stocks, trade_dates, frequency):
+        missing_records = []
+        data_type_display = '最新行情'
+        frequency_display = {
+            'daily': '日度',
+            'weekly': '周度',
+            'monthly': '月度',
+            'quarterly': '季度'
+        }.get(frequency, frequency)
+
+        if not trade_dates:
+            return [], []
+
+        max_trade_date = max(trade_dates)
+        period = str(max_trade_date)[:7]
+
+        with connection.cursor() as cursor:
+            short_symbols = [s['symbol'].split('.')[0] for s in stocks]
+            placeholders = ','.join(['%s'] * len(short_symbols))
+            cursor.execute(f"""
+                SELECT symbol, MAX(date) as latest_date
+                FROM saa_latest_prices
+                WHERE symbol IN ({placeholders})
+                GROUP BY symbol
+            """, short_symbols)
+            latest_dates = {row[0]: row[1] for row in cursor.fetchall()}
+
+        for stock in stocks:
+            symbol = stock['symbol']
+            short_symbol = symbol.split('.')[0]
+            latest_date = latest_dates.get(short_symbol)
+            if latest_date is None or latest_date < max_trade_date:
+                missing_records.append({
+                    'symbol': symbol,
+                    'name': stock['name'],
+                    'date': str(latest_date) if latest_date else '-',
+                    'data_type': data_type_display,
+                    'frequency': frequency_display
+                })
+
+        expected = len(stocks)
+        missing = len(missing_records)
+        summary = [{'period': period, 'expected': expected, 'missing': missing}]
 
         return missing_records, summary
 
