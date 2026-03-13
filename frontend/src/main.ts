@@ -3,10 +3,13 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community'
 
 import App from './App.vue'
 import router from './router'
 import './assets/main.css'
+
+ModuleRegistry.registerModules([AllCommunityModule])
 
 const app = createApp(App)
 

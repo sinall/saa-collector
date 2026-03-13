@@ -398,8 +398,8 @@ class DataCompletenessCheckView(APIView):
         start_date = request.data.get('start_date')
         end_date = request.data.get('end_date')
         frequency = request.data.get('frequency', 'daily')
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 100))
+        page = int(request.data.get('page', 1))
+        page_size = int(request.data.get('page_size', 100))
 
         if not all([data_type, start_date, end_date]):
             return Response({
@@ -662,6 +662,8 @@ class DataCompletenessCheckView(APIView):
         return missing_records, summary
 
     def _check_quote_missing(self, stocks, trade_dates, frequency):
+        from collections import defaultdict
+        
         missing_records = []
         data_type_display = '最新行情'
         frequency_display = {
@@ -674,36 +676,49 @@ class DataCompletenessCheckView(APIView):
         if not trade_dates:
             return [], []
 
-        max_trade_date = max(trade_dates)
-        period = str(max_trade_date)[:7]
+        period_stats = defaultdict(lambda: {'expected': 0, 'missing': 0})
 
         with connection.cursor() as cursor:
-            short_symbols = [s['symbol'].split('.')[0] for s in stocks]
-            placeholders = ','.join(['%s'] * len(short_symbols))
-            cursor.execute(f"""
-                SELECT symbol, MAX(date) as latest_date
-                FROM saa_latest_prices
-                WHERE symbol IN ({placeholders})
-                GROUP BY symbol
-            """, short_symbols)
-            latest_dates = {row[0]: row[1] for row in cursor.fetchall()}
+            for stock in stocks:
+                short_symbol = stock['symbol'].split('.')[0]
+                valid_dates = [
+                    d for d in trade_dates
+                    if str(d) >= stock['listing_date']
+                ]
 
-        for stock in stocks:
-            symbol = stock['symbol']
-            short_symbol = symbol.split('.')[0]
-            latest_date = latest_dates.get(short_symbol)
-            if latest_date is None or latest_date < max_trade_date:
-                missing_records.append({
-                    'symbol': symbol,
-                    'name': stock['name'],
-                    'date': str(latest_date) if latest_date else '-',
-                    'data_type': data_type_display,
-                    'frequency': frequency_display
-                })
+                if not valid_dates:
+                    continue
 
-        expected = len(stocks)
-        missing = len(missing_records)
-        summary = [{'period': period, 'expected': expected, 'missing': missing}]
+                for date in valid_dates:
+                    period = str(date)[:7]
+                    period_stats[period]['expected'] += 1
+
+                placeholders = ','.join(['%s'] * len(valid_dates))
+                cursor.execute(f"""
+                    SELECT DISTINCT date
+                    FROM saa_latest_prices
+                    WHERE symbol = %s
+                      AND date IN ({placeholders})
+                """, [short_symbol] + valid_dates)
+
+                existing_dates = set(row[0] for row in cursor.fetchall())
+
+                for date in valid_dates:
+                    if date not in existing_dates:
+                        period = str(date)[:7]
+                        period_stats[period]['missing'] += 1
+                        missing_records.append({
+                            'symbol': stock['symbol'],
+                            'name': stock['name'],
+                            'date': str(date),
+                            'data_type': data_type_display,
+                            'frequency': frequency_display
+                        })
+
+        summary = [
+            {'period': period, 'expected': stats['expected'], 'missing': stats['missing']}
+            for period, stats in sorted(period_stats.items())
+        ]
 
         return missing_records, summary
 
