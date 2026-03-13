@@ -488,12 +488,25 @@ class DataCompletenessCheckView(APIView):
                 """, [start_date, end_date])
             elif frequency == 'quarterly':
                 cursor.execute("""
-                    SELECT MAX(date) as date 
-                    FROM saa_trade_days 
-                    WHERE date BETWEEN %s AND %s
-                    GROUP BY QUARTER(date), YEAR(date)
+                    SELECT MAX(t.date) as date
+                    FROM saa_trade_days t
+                    INNER JOIN (
+                        SELECT DISTINCT 
+                            YEAR(date) as yr,
+                            QUARTER(date) as qtr,
+                            CASE QUARTER(date)
+                                WHEN 1 THEN DATE(CONCAT(YEAR(date), '-03-31'))
+                                WHEN 2 THEN DATE(CONCAT(YEAR(date), '-06-30'))
+                                WHEN 3 THEN DATE(CONCAT(YEAR(date), '-09-30'))
+                                WHEN 4 THEN DATE(CONCAT(YEAR(date), '-12-31'))
+                            END as quarter_end
+                        FROM saa_trade_days
+                        WHERE date BETWEEN %s AND %s
+                    ) q ON t.date <= q.quarter_end
+                    WHERE q.quarter_end BETWEEN %s AND %s
+                    GROUP BY q.yr, q.qtr
                     ORDER BY date
-                """, [start_date, end_date])
+                """, [start_date, end_date, start_date, end_date])
             elif frequency == 'yearly':
                 cursor.execute("""
                     SELECT MAX(date) as date 
