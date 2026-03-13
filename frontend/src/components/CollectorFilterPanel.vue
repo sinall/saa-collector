@@ -25,6 +25,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   query: [params: FilterParams]
+  dataTypeChange: [dataType: string]
 }>()
 
 const panelCollapsed = ref(false)
@@ -95,12 +96,13 @@ const isStatementType = computed(() => {
   return ['balance_sheet', 'income', 'cash_flow', 'dividend'].includes(selectedDataType.value)
 })
 
-watch(selectedDataType, () => {
+watch(selectedDataType, (newDataType) => {
   if (!needDateRange.value) {
     singleDate.value = ''
     startDate.value = ''
     endDate.value = ''
   }
+  emit('dataTypeChange', newDataType)
 })
 
 watch(dateMode, () => {
@@ -346,13 +348,15 @@ defineExpose({
   gap: 1rem;
 }
 
-.filter-section {
+.filter-section,
+:deep(.filter-section) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.section-header {
+.section-header,
+:deep(.section-header) {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -362,11 +366,13 @@ defineExpose({
   user-select: none;
 }
 
-.section-header:hover {
+.section-header:hover,
+:deep(.section-header:hover) {
   background: #f9f9f9;
 }
 
-.section-header h4 {
+.section-header h4,
+:deep(.section-header h4) {
   margin: 0;
   font-size: 0.9rem;
   color: #333;
@@ -377,7 +383,8 @@ defineExpose({
   color: #888;
 }
 
-.section-content {
+.section-content,
+:deep(.section-content) {
   padding-top: 0.5rem;
   display: flex;
   flex-direction: column;
@@ -405,7 +412,11 @@ defineExpose({
 input[type="text"],
 input[type="date"],
 select,
-textarea {
+textarea,
+:deep(input[type="text"]),
+:deep(input[type="date"]),
+:deep(select),
+:deep(textarea) {
   padding: 0.5rem;
   border: 1px solid #ddd;
   border-radius: 4px;

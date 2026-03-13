@@ -5,6 +5,7 @@
       :loading="loading"
       :show-report-types="false"
       @query="handleQuery"
+      @data-type-change="handleDataTypeChange"
     >
       <template #extra-filters>
         <section class="filter-section">
@@ -12,12 +13,13 @@
             <h4>频度</h4>
           </div>
           <div class="section-content">
-            <select v-model="selectedFrequency">
-              <option label="日度" value="daily" />
-              <option label="周度" value="weekly" />
-              <option label="月度" value="monthly" />
-              <option label="季度" value="quarterly" />
-            </select>
+             <select v-model="selectedFrequency">
+               <option label="日度" value="daily" />
+               <option label="周度" value="weekly" />
+               <option label="月度" value="monthly" />
+               <option label="季度" value="quarterly" />
+               <option label="年度" value="yearly" />
+             </select>
           </div>
         </section>
       </template>
@@ -157,6 +159,13 @@ const onGridReady = (params: any) => {
   gridApi.value = params.api
   if (missingRecords.value.length > 0) {
     params.api.setGridOption('rowData', missingRecords.value)
+  }
+}
+
+const handleDataTypeChange = (dataType: string) => {
+  const statementTypes = ['balance_sheet', 'income', 'cash_flow', 'dividend']
+  if (statementTypes.includes(dataType)) {
+    selectedFrequency.value = 'quarterly'
   }
 }
 
