@@ -483,7 +483,7 @@ class DataCompletenessCheckView(APIView):
                     SELECT MAX(date) as date 
                     FROM saa_trade_days 
                     WHERE date BETWEEN %s AND %s
-                    GROUP BY DATE_FORMAT(date, '%%Y-%%m')
+                    GROUP BY YEAR(date), MONTH(date)
                     ORDER BY date
                 """, [start_date, end_date])
             elif frequency == 'quarterly':
@@ -497,7 +497,8 @@ class DataCompletenessCheckView(APIView):
             else:
                 return []
 
-            return [row[0] for row in cursor.fetchall()]
+            rows = cursor.fetchall()
+            return [row[0] for row in rows]
 
     def get_stocks_with_listing_date(self, symbols, start_date, end_date):
         with connection.cursor() as cursor:
@@ -577,41 +578,51 @@ class DataCompletenessCheckView(APIView):
         from collections import defaultdict
         period_stats = defaultdict(lambda: {'expected': 0, 'missing': 0})
 
-        with connection.cursor() as cursor:
-            for stock in stocks:
-                valid_dates = [
-                    d for d in trade_dates
-                    if str(d) >= stock['listing_date']
-                ]
-
-                if not valid_dates:
-                    continue
-
+        stock_expected = {}
+        for stock in stocks:
+            valid_dates = [
+                d for d in trade_dates
+                if str(d) >= stock['listing_date']
+            ]
+            if valid_dates:
+                stock_expected[stock['symbol']] = {
+                    'name': stock['name'],
+                    'dates': valid_dates
+                }
                 for date in valid_dates:
                     period = str(date)[:7]
                     period_stats[period]['expected'] += 1
 
-                placeholders = ','.join(['%s'] * len(valid_dates))
-                cursor.execute(f"""
-                    SELECT DISTINCT {date_column}
-                    FROM {table_name}
-                    WHERE symbol = %s
-                      AND {date_column} IN ({placeholders})
-                """, [stock['symbol']] + valid_dates)
+        if not stock_expected:
+            return [], []
 
-                existing_dates = set(row[0] for row in cursor.fetchall())
+        all_symbols = list(stock_expected.keys())
+        all_dates = list(set(d for info in stock_expected.values() for d in info['dates']))
+        
+        with connection.cursor() as cursor:
+            symbol_placeholders = ','.join(['%s'] * len(all_symbols))
+            date_placeholders = ','.join(['%s'] * len(all_dates))
+            cursor.execute(f"""
+                SELECT symbol, {date_column}
+                FROM {table_name}
+                WHERE symbol IN ({symbol_placeholders})
+                  AND {date_column} IN ({date_placeholders})
+            """, all_symbols + all_dates)
 
-                for date in valid_dates:
-                    if date not in existing_dates:
-                        period = str(date)[:7]
-                        period_stats[period]['missing'] += 1
-                        missing_records.append({
-                            'symbol': stock['symbol'],
-                            'name': stock['name'],
-                            'date': str(date),
-                            'data_type': data_type_display,
-                            'frequency': frequency_display
-                        })
+            existing_data = set((row[0], row[1]) for row in cursor.fetchall())
+
+        for symbol, info in stock_expected.items():
+            for date in info['dates']:
+                if (symbol, date) not in existing_data:
+                    period = str(date)[:7]
+                    period_stats[period]['missing'] += 1
+                    missing_records.append({
+                        'symbol': symbol,
+                        'name': info['name'],
+                        'date': str(date),
+                        'data_type': data_type_display,
+                        'frequency': frequency_display
+                    })
 
         summary = [
             {'period': period, 'expected': stats['expected'], 'missing': stats['missing']}
