@@ -494,6 +494,14 @@ class DataCompletenessCheckView(APIView):
                     GROUP BY QUARTER(date), YEAR(date)
                     ORDER BY date
                 """, [start_date, end_date])
+            elif frequency == 'yearly':
+                cursor.execute("""
+                    SELECT MAX(date) as date 
+                    FROM saa_trade_days 
+                    WHERE date BETWEEN %s AND %s
+                    GROUP BY YEAR(date)
+                    ORDER BY date
+                """, [start_date, end_date])
             else:
                 return []
 
