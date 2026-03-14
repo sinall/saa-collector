@@ -1,5 +1,7 @@
 <template>
   <div class="dashboard">
+    <CompletenessHeatmap />
+
     <el-card class="stats-card">
       <template #header>
         <div class="card-header">
@@ -33,46 +35,14 @@
         </el-col>
       </el-row>
     </el-card>
-
-    <el-card class="recent-jobs">
-      <template #header>
-        <div class="card-header">
-          <span>最近采集任务</span>
-          <el-button type="primary" size="small" @click="refreshJobs">刷新</el-button>
-        </div>
-      </template>
-      <el-table :data="recentJobs" stripe>
-        <el-table-column prop="data_type_display" label="数据类型" width="120" />
-        <el-table-column prop="status_display" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">{{ row.status_display }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180">
-          <template #default="{ row }">
-            {{ formatDateTime(row.created_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="start_time" label="开始时间" width="180">
-          <template #default="{ row }">
-            {{ row.start_time ? formatDateTime(row.start_time) : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="end_time" label="结束时间" width="180">
-          <template #default="{ row }">
-            {{ row.end_time ? formatDateTime(row.end_time) : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="message" label="消息" show-overflow-tooltip />
-      </el-table>
-    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { WarningFilled } from '@element-plus/icons-vue'
-import { fetchDataStatus, fetchCollectJobs, type DataStatus, type CollectJob } from '@/utils/api'
+import { fetchDataStatus, type DataStatus } from '@/utils/api'
+import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
 
 const EXPECTED_DATA_TYPES = [
   { data_type: 'trade_days', data_type_display: '交易日' },
@@ -97,7 +67,6 @@ const dataStatus = ref<DataStatus[]>(
     error: false,
   }))
 )
-const recentJobs = ref<CollectJob[]>([])
 
 const loadDataStatus = async () => {
   try {
@@ -136,21 +105,6 @@ const loadDataStatus = async () => {
   }
 }
 
-const loadRecentJobs = async () => {
-  try {
-    const response = await fetchCollectJobs({ page_size: 10 })
-    if (response.success && response.data) {
-      recentJobs.value = response.data.results || []
-    }
-  } catch (error) {
-    console.error('Failed to load recent jobs:', error)
-  }
-}
-
-const refreshJobs = () => {
-  loadRecentJobs()
-}
-
 const refreshStats = () => {
   dataStatus.value.forEach(item => {
     item.loading = true
@@ -168,33 +122,18 @@ const formatNumber = (num: number): string => {
   return num.toString()
 }
 
-const formatDateTime = (dateStr: string): string => {
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
-
-const getStatusType = (status: string): string => {
-  const types: Record<string, string> = {
-    'PENDING': 'info',
-    'RUNNING': 'warning',
-    'SUCCESS': 'success',
-    'FAILED': 'danger',
-  }
-  return types[status] || 'info'
-}
-
 onMounted(() => {
   loadDataStatus()
-  loadRecentJobs()
 })
 </script>
 
 <style scoped>
 .dashboard {
-  padding: 20px;
+  padding: 0;
 }
 
 .stats-card {
-  margin-bottom: 20px;
+  margin-top: 20px;
 }
 
 .stats-row {
@@ -247,10 +186,6 @@ onMounted(() => {
   color: #f56c6c;
   font-size: 14px;
   padding: 10px 0;
-}
-
-.recent-jobs {
-  margin-top: 20px;
 }
 
 .card-header {

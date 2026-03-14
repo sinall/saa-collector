@@ -14,18 +14,29 @@
             <el-icon><DataLine /></el-icon>
             <span>仪表盘</span>
           </el-menu-item>
-          <el-menu-item index="/data-check">
+          
+          <el-sub-menu index="data-browse">
+            <template #title>
+              <el-icon><FolderOpened /></el-icon>
+              <span>数据浏览</span>
+            </template>
+            <el-menu-item index="/data-browse/stock">按股票</el-menu-item>
+            <el-menu-item index="/data-browse/type">按类型</el-menu-item>
+          </el-sub-menu>
+          
+          <el-menu-item index="/integrity-reports">
             <el-icon><DocumentChecked /></el-icon>
             <span>数据检查</span>
           </el-menu-item>
-          <el-menu-item index="/collect">
-            <el-icon><Download /></el-icon>
-            <span>数据采集</span>
-          </el-menu-item>
-          <el-menu-item index="/stocks">
-            <el-icon><List /></el-icon>
-            <span>股票列表</span>
-          </el-menu-item>
+          
+          <el-sub-menu index="collect-manage">
+            <template #title>
+              <el-icon><Download /></el-icon>
+              <span>采集管理</span>
+            </template>
+            <el-menu-item index="/collect-schedules">采集日程</el-menu-item>
+            <el-menu-item index="/collect-plans">采集计划</el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </el-aside>
       <el-main class="main-content">
@@ -91,6 +102,26 @@ html, body, #app {
 
 .sidebar-menu .el-menu-item:hover,
 .sidebar-menu .el-menu-item.is-active {
+  background-color: #263445;
+  color: #409eff;
+}
+
+.sidebar-menu .el-sub-menu__title {
+  color: #bfcbd9 !important;
+}
+
+.sidebar-menu .el-sub-menu__title:hover {
+  background-color: #263445 !important;
+  color: #409eff !important;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item {
+  background-color: #1f2d3d;
+  color: #bfcbd9;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item:hover,
+.sidebar-menu .el-sub-menu .el-menu-item.is-active {
   background-color: #263445;
   color: #409eff;
 }

@@ -8,5 +8,11 @@
       "plan": {
         "model": "zhipuai-coding-plan/glm-5"
       }
-    }
+    },
+  "scripts": {
+    "test:ui": "cd frontend && npm run test:e2e:ui",
+    "test:debug": "cd frontend && npm run test:e2e:debug",
+    "test:report": "cd frontend && npm run test:e2e:report",
+    "test:quick": "cd frontend && npm run test:e2e:chromium"
+  }
 }
