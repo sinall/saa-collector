@@ -32,6 +32,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'saa_collector.middlewares.request_logging.RequestLoggingMiddleware',
     'saa_collector.middlewares.dev_token.DevTokenMiddleware',
 ]
 

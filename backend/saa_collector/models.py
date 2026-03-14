@@ -33,6 +33,7 @@ class CollectJob(models.Model):
     end_time = models.DateTimeField('结束时间', null=True, blank=True)
     message = models.TextField('消息', null=True, blank=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    plan = models.ForeignKey('CollectPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
     
     class Meta:
         db_table = 'collector_collect_job'
@@ -54,3 +55,94 @@ class CollectJob(models.Model):
         if message:
             self.message = message
         self.save()
+
+
+class DataIntegrityReport(models.Model):
+    STATUS_CHOICES = [
+        ('GENERATING', '生成中'),
+        ('COMPLETED', '已完成'),
+        ('FAILED', '失败'),
+    ]
+    
+    STOCK_SCOPE_CHOICES = [
+        ('ALL', '全部股票'),
+        ('SELECTED', '选定股票'),
+    ]
+    
+    FREQUENCY_CHOICES = [
+        ('daily', '日度'),
+        ('weekly', '周度'),
+        ('monthly', '月度'),
+        ('quarterly', '季度'),
+        ('yearly', '年度'),
+    ]
+    
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField('报告名称', max_length=200)
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='GENERATING')
+    stock_scope = models.CharField('股票范围', max_length=20, choices=STOCK_SCOPE_CHOICES, default='ALL')
+    stock_codes = models.JSONField('股票列表', default=list)
+    data_types = models.JSONField('数据类型列表', default=list)
+    frequency = models.CharField('频度', max_length=20, choices=FREQUENCY_CHOICES, default='monthly')
+    date_start = models.DateField('开始日期', null=True, blank=True)
+    date_end = models.DateField('结束日期', null=True, blank=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    completed_at = models.DateTimeField('完成时间', null=True, blank=True)
+    
+    class Meta:
+        db_table = 'collector_data_integrity_report'
+        ordering = ['-created_at']
+        verbose_name = '数据完整性报告'
+        verbose_name_plural = '数据完整性报告'
+    
+    def __str__(self):
+        return f"{self.name} - {self.get_status_display()}"
+
+
+class DataIntegrityItem(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    report = models.ForeignKey(DataIntegrityReport, on_delete=models.CASCADE, related_name='items')
+    data_type = models.CharField('数据类型', max_length=50)
+    stock_code = models.CharField('股票代码', max_length=20)
+    missing_periods = models.JSONField('缺失周期', default=list)
+    selected = models.BooleanField('已选择', default=False)
+    
+    class Meta:
+        db_table = 'collector_data_integrity_item'
+        verbose_name = '数据完整性项'
+        verbose_name_plural = '数据完整性项'
+    
+    def __str__(self):
+        return f"{self.stock_code} - {self.data_type}"
+
+
+class CollectPlan(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', '待执行'),
+        ('RUNNING', '执行中'),
+        ('COMPLETED', '已完成'),
+        ('FAILED', '失败'),
+    ]
+    
+    EXECUTION_MODE_CHOICES = [
+        ('PARALLEL', '并行执行'),
+        ('SEQUENTIAL', '顺序执行'),
+    ]
+    
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField('计划名称', max_length=200)
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    source_report = models.ForeignKey(DataIntegrityReport, on_delete=models.SET_NULL, null=True, blank=True, related_name='plans')
+    execution_mode = models.CharField('执行模式', max_length=20, choices=EXECUTION_MODE_CHOICES, default='PARALLEL')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    started_at = models.DateTimeField('开始时间', null=True, blank=True)
+    completed_at = models.DateTimeField('完成时间', null=True, blank=True)
+    
+    class Meta:
+        db_table = 'collector_collect_plan'
+        ordering = ['-created_at']
+        verbose_name = '采集计划'
+        verbose_name_plural = '采集计划'
+    
+    def __str__(self):
+        return f"{self.name} - {self.get_status_display()}"

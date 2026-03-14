@@ -18,9 +18,17 @@
             <el-icon><DocumentChecked /></el-icon>
             <span>数据检查</span>
           </el-menu-item>
+          <el-menu-item index="/integrity-reports">
+            <el-icon><Document /></el-icon>
+            <span>完整性报告</span>
+          </el-menu-item>
           <el-menu-item index="/collect">
             <el-icon><Download /></el-icon>
             <span>数据采集</span>
+          </el-menu-item>
+          <el-menu-item index="/collect-plans">
+            <el-icon><Tickets /></el-icon>
+            <span>采集计划</span>
           </el-menu-item>
           <el-menu-item index="/stocks">
             <el-icon><List /></el-icon>
