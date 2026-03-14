@@ -1,0 +1,366 @@
+<template>
+  <div class="collect-plans">
+    <el-card>
+      <template #header>
+        <div class="card-header">
+          <div class="header-left">
+            <span>采集计划</span>
+            <el-radio-group v-model="sourceFilter" size="small" style="margin-left: 20px">
+              <el-radio-button value="">全部</el-radio-button>
+              <el-radio-button value="MANUAL">即时采集</el-radio-button>
+              <el-radio-button value="INTEGRITY">修复计划</el-radio-button>
+              <el-radio-button value="SCHEDULE">定时触发</el-radio-button>
+            </el-radio-group>
+          </div>
+          <el-button type="primary" @click="showInstantCollectDialog">即时采集</el-button>
+        </div>
+      </template>
+      
+      <el-table :data="filteredPlans" v-loading="loading">
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="name" label="计划名称" min-width="180" />
+        <el-table-column label="来源" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getSourceType(row.source)">
+              {{ getSourceLabel(row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源详情" width="150">
+          <template #default="{ row }">
+            <template v-if="row.source === 'INTEGRITY'">
+              <el-link type="primary" @click="$router.push(`/integrity-reports/${row.source_report_id}`)">
+                查看报告
+              </el-link>
+            </template>
+            <template v-else-if="row.source === 'SCHEDULE'">
+              <span>{{ row.source_schedule_name }}</span>
+            </template>
+            <template v-else>
+              <span>-</span>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status_display" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getStatusType(row.status)">{{ row.status_display }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="execution_mode_display" label="执行模式" width="100" />
+        <el-table-column label="任务数" width="80">
+          <template #default="{ row }">
+            {{ row.success_jobs }}/{{ row.total_jobs }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="180" />
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="viewPlan(row.id)">查看</el-button>
+            <el-dropdown trigger="click" style="vertical-align: middle; margin-left: 8px;" v-if="row.status === 'PENDING'">
+              <el-button link type="info">
+                <el-icon><More /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="$router.push(`/collect-plans/${row.id}/edit`)">编辑</el-dropdown-item>
+                  <el-dropdown-item @click="executePlan(row)">执行</el-dropdown-item>
+                  <el-dropdown-item divided @click="deletePlan(row.id)">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-dialog
+      v-model="instantCollectVisible"
+      title="即时采集"
+      width="500px"
+    >
+      <el-form :model="instantForm" label-width="100px">
+        <el-form-item label="计划名称">
+          <el-input v-model="instantForm.name" placeholder="可选，自动生成" />
+        </el-form-item>
+        <el-form-item label="数据类型" required>
+          <el-select v-model="instantForm.data_type" placeholder="请选择数据类型" style="width: 100%">
+            <el-option
+              v-for="item in dataTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="股票代码">
+          <el-select
+            v-model="instantForm.symbols"
+            multiple
+            filterable
+            allow-create
+            placeholder="留空表示全部股票"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="日期范围">
+          <el-date-picker
+            v-model="instantForm.dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="instantCollectVisible = false">取消</el-button>
+        <el-button type="primary" @click="createInstantPlan" :loading="creating">创建并执行</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { More } from '@element-plus/icons-vue'
+
+const router = useRouter()
+const plans = ref<any[]>([])
+const loading = ref(false)
+const sourceFilter = ref('')
+
+const instantCollectVisible = ref(false)
+const creating = ref(false)
+const instantForm = ref({
+  name: '',
+  data_type: '',
+  symbols: [] as string[],
+  dateRange: [] as Date[]
+})
+
+const dataTypeOptions = [
+  { value: 'trade_days', label: '交易日' },
+  { value: 'stock_info', label: '股票基本信息' },
+  { value: 'quote', label: '最新行情' },
+  { value: 'historical_quote', label: '历史行情' },
+  { value: 'balance_sheet', label: '资产负债表' },
+  { value: 'income', label: '利润表' },
+  { value: 'cash_flow', label: '现金流量表' },
+  { value: 'dividend', label: '分红数据' },
+  { value: 'main_business', label: '主营业务' },
+  { value: 'capital', label: '股本变动' },
+  { value: 'valuation', label: '估值数据' }
+]
+
+const mockPlans = [
+  {
+    id: 1,
+    name: '2026-03-17 历史行情月度完整性检查修复计划',
+    status: 'COMPLETED',
+    status_display: '已完成',
+    source: 'INTEGRITY',
+    source_report_id: 1,
+    source_schedule_id: null,
+    source_schedule_name: null,
+    execution_mode: 'PARALLEL',
+    execution_mode_display: '并行执行',
+    total_jobs: 3,
+    success_jobs: 3,
+    created_at: '2026-03-17 10:30:00'
+  },
+  {
+    id: 2,
+    name: '即时采集-000001,000002行情',
+    status: 'RUNNING',
+    status_display: '执行中',
+    source: 'MANUAL',
+    source_report_id: null,
+    source_schedule_id: null,
+    source_schedule_name: null,
+    execution_mode: 'PARALLEL',
+    execution_mode_display: '并行执行',
+    total_jobs: 1,
+    success_jobs: 0,
+    created_at: '2026-03-17 11:00:00'
+  },
+  {
+    id: 3,
+    name: '定时触发-每日行情采集',
+    status: 'PENDING',
+    status_display: '待执行',
+    source: 'SCHEDULE',
+    source_report_id: null,
+    source_schedule_id: 1,
+    source_schedule_name: '每日行情采集',
+    execution_mode: 'PARALLEL',
+    execution_mode_display: '并行执行',
+    total_jobs: 1,
+    success_jobs: 0,
+    created_at: '2026-03-17 09:00:00'
+  },
+  {
+    id: 4,
+    name: '2026-03-16 财务数据季度完整性检查修复计划',
+    status: 'FAILED',
+    status_display: '失败',
+    source: 'INTEGRITY',
+    source_report_id: 2,
+    source_schedule_id: null,
+    source_schedule_name: null,
+    execution_mode: 'SEQUENTIAL',
+    execution_mode_display: '顺序执行',
+    total_jobs: 5,
+    success_jobs: 2,
+    created_at: '2026-03-16 14:00:00'
+  },
+  {
+    id: 5,
+    name: '即时采集-全量股票信息',
+    status: 'PENDING',
+    status_display: '待执行',
+    source: 'MANUAL',
+    source_report_id: null,
+    source_schedule_id: null,
+    source_schedule_name: null,
+    execution_mode: 'PARALLEL',
+    execution_mode_display: '并行执行',
+    total_jobs: 1,
+    success_jobs: 0,
+    created_at: '2026-03-17 12:00:00'
+  }
+]
+
+const filteredPlans = computed(() => {
+  if (!sourceFilter.value) return plans.value
+  return plans.value.filter(p => p.source === sourceFilter.value)
+})
+
+const fetchPlans = async () => {
+  loading.value = true
+  try {
+    await new Promise(resolve => setTimeout(resolve, 500))
+    plans.value = mockPlans
+  } finally {
+    loading.value = false
+  }
+}
+
+const getSourceType = (source: string) => {
+  const types: Record<string, string> = {
+    'MANUAL': 'primary',
+    'INTEGRITY': 'warning',
+    'SCHEDULE': 'success'
+  }
+  return types[source] || 'info'
+}
+
+const getSourceLabel = (source: string) => {
+  const labels: Record<string, string> = {
+    'MANUAL': '即时采集',
+    'INTEGRITY': '修复计划',
+    'SCHEDULE': '定时触发'
+  }
+  return labels[source] || source
+}
+
+const getStatusType = (status: string) => {
+  const types: Record<string, string> = {
+    'PENDING': 'info',
+    'RUNNING': 'warning',
+    'COMPLETED': 'success',
+    'FAILED': 'danger'
+  }
+  return types[status] || 'info'
+}
+
+const viewPlan = (id: number) => {
+  router.push(`/collect-plans/${id}`)
+}
+
+const executePlan = async (row: any) => {
+  try {
+    await ElMessageBox.confirm('确定要执行该计划吗？', '提示', { type: 'info' })
+    row.status = 'RUNNING'
+    row.status_display = '执行中'
+    ElMessage.success('计划已开始执行')
+  } catch {
+    // cancelled
+  }
+}
+
+const deletePlan = async (id: number) => {
+  try {
+    await ElMessageBox.confirm('确定要删除该计划吗？', '提示', { type: 'warning' })
+    plans.value = plans.value.filter(p => p.id !== id)
+    ElMessage.success('删除成功')
+  } catch {
+    // cancelled
+  }
+}
+
+const showInstantCollectDialog = () => {
+  instantForm.value = {
+    name: '',
+    data_type: '',
+    symbols: [],
+    dateRange: []
+  }
+  instantCollectVisible.value = true
+}
+
+const createInstantPlan = async () => {
+  if (!instantForm.value.data_type) {
+    ElMessage.warning('请选择数据类型')
+    return
+  }
+
+  creating.value = true
+  try {
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    const dataTypeName = dataTypeOptions.find(d => d.value === instantForm.value.data_type)?.label || instantForm.value.data_type
+    const name = instantForm.value.name || `即时采集-${dataTypeName}-${new Date().toISOString().split('T')[0]}`
+    
+    console.log('Create instant plan:', {
+      name,
+      source: 'MANUAL',
+      jobs: [{
+        data_type: instantForm.value.data_type,
+        symbols: instantForm.value.symbols,
+        params: {
+          date_start: instantForm.value.dateRange[0]?.toISOString().split('T')[0],
+          date_end: instantForm.value.dateRange[1]?.toISOString().split('T')[0]
+        }
+      }]
+    })
+    
+    ElMessage.success('计划创建成功')
+    instantCollectVisible.value = false
+    fetchPlans()
+  } finally {
+    creating.value = false
+  }
+}
+
+onMounted(() => {
+  fetchPlans()
+})
+</script>
+
+<style scoped>
+.collect-plans {
+  padding: 20px;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+}
+</style>
