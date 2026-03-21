@@ -26,8 +26,20 @@
               
               <template v-else>
                 <div class="stat-value">{{ formatNumber(stat.count) }}</div>
-                <div class="stat-date" v-if="stat.latest_date">
-                  最新: {{ stat.latest_date }}
+                <div class="stat-date">
+                  <template v-if="stat.latest_date">最新: {{ stat.latest_date }}</template>
+                </div>
+                <div class="stat-completeness" v-if="stat.show_completeness !== false && stat.completeness !== null">
+                  <div class="completeness-bar-bg">
+                    <div 
+                      class="completeness-bar" 
+                      :style="{ 
+                        width: (stat.completeness * 100) + '%',
+                        backgroundColor: getCompletenessColor(stat.completeness)
+                      }"
+                    ></div>
+                  </div>
+                  <span class="completeness-text">{{ Math.round(stat.completeness * 100) }}%</span>
                 </div>
               </template>
             </div>
@@ -46,7 +58,7 @@ import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
 
 const EXPECTED_DATA_TYPES = [
   { data_type: 'trade_days', data_type_display: '交易日' },
-  { data_type: 'stock_info', data_type_display: '股票基本信息' },
+  { data_type: 'stock_info', data_type_display: '股票基本信息', show_completeness: false },
   { data_type: 'quote', data_type_display: '最新行情' },
   { data_type: 'historical_quote', data_type_display: '历史行情' },
   { data_type: 'balance_sheet', data_type_display: '资产负债表' },
@@ -55,6 +67,8 @@ const EXPECTED_DATA_TYPES = [
   { data_type: 'dividend', data_type_display: '分红数据' },
   { data_type: 'main_business', data_type_display: '主营业务' },
   { data_type: 'capital', data_type_display: '股本变动' },
+  { data_type: 'valuation_board', data_type_display: '板块估值' },
+  { data_type: 'valuation_industry', data_type_display: '行业估值' },
 ]
 
 const dataStatus = ref<DataStatus[]>(
@@ -63,6 +77,8 @@ const dataStatus = ref<DataStatus[]>(
     count: 0,
     earliest_date: null,
     latest_date: null,
+    frequency: null,
+    completeness: null,
     loading: true,
     error: false,
   }))
@@ -77,8 +93,10 @@ const loadDataStatus = async () => {
           item => item.data_type === newData.data_type
         )
         if (index !== -1) {
+          const existingItem = dataStatus.value[index]
           dataStatus.value[index] = { 
-            ...newData, 
+            ...newData,
+            show_completeness: existingItem?.show_completeness,
             loading: false, 
             error: false 
           }
@@ -122,6 +140,13 @@ const formatNumber = (num: number): string => {
   return num.toString()
 }
 
+const getCompletenessColor = (completeness: number): string => {
+  if (completeness < 0.5) return '#f56c6c'
+  if (completeness < 0.75) return '#e6a23c'
+  if (completeness < 0.9) return '#409eff'
+  return '#67c23a'
+}
+
 onMounted(() => {
   loadDataStatus()
 })
@@ -141,7 +166,7 @@ onMounted(() => {
 }
 
 .stat-card {
-  height: 120px;
+  height: 160px;
   transition: all 0.3s ease;
 }
 
@@ -153,7 +178,6 @@ onMounted(() => {
 .stat-content {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   height: 100%;
 }
 
@@ -161,18 +185,53 @@ onMounted(() => {
   font-size: 14px;
   color: #909399;
   margin-bottom: 8px;
+  height: 22px;
 }
 
 .stat-value {
   font-size: 28px;
   font-weight: bold;
   color: #303133;
+  height: 36px;
+  line-height: 36px;
 }
 
 .stat-date {
   font-size: 12px;
   color: #909399;
-  margin-top: 8px;
+  height: 20px;
+  line-height: 20px;
+  margin-top: 4px;
+}
+
+.stat-completeness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  height: 24px;
+}
+
+.completeness-bar-bg {
+  flex: 1;
+  height: 6px;
+  background-color: #ebeef5;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.completeness-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.completeness-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #606266;
+  min-width: 36px;
+  text-align: right;
 }
 
 .stat-skeleton {

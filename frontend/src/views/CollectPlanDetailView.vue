@@ -42,9 +42,14 @@
             <span>{{ row.symbols?.slice(0, 5).join(', ') }}{{ row.symbols?.length > 5 ? '...' : '' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="日期范围" width="200">
+        <el-table-column label="开始日期" width="120">
           <template #default="{ row }">
-            <span>{{ row.params?.start_date || '-' }} ~ {{ row.params?.end_date || '-' }}</span>
+            {{ row.params?.start_date || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="结束日期" width="120">
+          <template #default="{ row }">
+            {{ row.params?.end_date || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="status_display" label="状态" width="100">
@@ -52,10 +57,14 @@
             <el-tag :type="getJobStatusType(row.status)">{{ row.status_display }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="执行时间" width="180">
+        <el-table-column label="开始时间" width="150">
           <template #default="{ row }">
-            <span v-if="row.start_time">{{ row.start_time }}</span>
-            <span v-if="row.end_time"> ~ {{ row.end_time }}</span>
+            {{ formatDateTime(row.start_time) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="结束时间" width="150">
+          <template #default="{ row }">
+            {{ formatDateTime(row.end_time) }}
           </template>
         </el-table-column>
         <el-table-column prop="message" label="消息" />
@@ -135,6 +144,18 @@ const getJobStatusType = (status: string) => {
     'FAILED': 'danger'
   }
   return types[status] || 'info'
+}
+
+const formatDateTime = (isoString: string | undefined) => {
+  if (!isoString) return '-'
+  const date = new Date(isoString)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).replace(/\//g, '-')
 }
 
 onMounted(() => {

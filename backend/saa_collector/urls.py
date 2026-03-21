@@ -5,6 +5,7 @@ urlpatterns = [
     path('data-status/', views.DataStatusView.as_view(), name='data-status'),
     path('data-completeness/', views.DataCompletenessView.as_view(), name='data-completeness'),
     path('data-completeness/check/', views.DataCompletenessCheckView.as_view(), name='data-completeness-check'),
+    path('data-completeness/heatmap/', views.DataCompletenessHeatmapView.as_view(), name='data-completeness-heatmap'),
 
     path('integrity-reports/', views.DataIntegrityReportListView.as_view(), name='integrity-report-list'),
     path('integrity-reports/<int:pk>/', views.DataIntegrityReportDetailView.as_view(), name='integrity-report-detail'),

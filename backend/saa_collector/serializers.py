@@ -32,6 +32,8 @@ class DataStatusSerializer(serializers.Serializer):
     count = serializers.IntegerField()
     latest_date = serializers.DateField(allow_null=True)
     earliest_date = serializers.DateField(allow_null=True)
+    frequency = serializers.CharField(allow_null=True)
+    completeness = serializers.FloatField(allow_null=True)
 class DataCompletenessSerializer(serializers.Serializer):
     summary = serializers.DictField()
     by_stock = serializers.ListField()

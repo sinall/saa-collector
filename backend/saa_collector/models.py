@@ -18,10 +18,11 @@ class CollectJob(models.Model):
         ('balance_sheet', '资产负债表'),
         ('income', '利润表'),
         ('cash_flow', '现金流量表'),
-        ('dividend', '分红数据'),
         ('main_business', '主营业务'),
         ('capital', '股本变动'),
-        ('valuation', '估值数据'),
+        ('dividend', '分红数据'),
+        ('valuation_board', '板块估值'),
+        ('valuation_industry', '行业估值'),
     ]
     
     id = models.BigAutoField(primary_key=True)

@@ -29,6 +29,42 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+DATA_TYPE_FREQUENCY = {
+    'trade_days': 'daily',
+    'stock_info': None,
+    'quote': 'daily',
+    'historical_quote': 'daily',
+    'balance_sheet': 'quarterly',
+    'income': 'quarterly',
+    'cash_flow': 'quarterly',
+    'main_business': 'quarterly',
+    'capital': 'yearly',
+    'dividend': 'yearly',
+    'valuation_board': 'daily',
+    'valuation_industry': 'daily',
+}
+
+A_STOCK_EARLIEST_DATE = '1990-12-19'
+EARLIEST_YEAR = 1990
+EXPECTED_A_SHARE_STOCKS = 5500
+
+
+def calculate_expected_periods(earliest_date, latest_date, frequency):
+    if not earliest_date or not latest_date or not frequency:
+        return 0
+    
+    if frequency == 'daily':
+        trading_days_per_year = 250
+        days = (latest_date - earliest_date).days
+        return max(1, int(days / 365 * trading_days_per_year))
+    elif frequency == 'quarterly':
+        quarters = (latest_date.year - earliest_date.year) * 4 + (latest_date.month - earliest_date.month) // 3 + 1
+        return max(1, quarters)
+    elif frequency == 'yearly':
+        years = latest_date.year - earliest_date.year + 1
+        return max(1, years)
+    return 0
+
 
 def health_check(request):
     return HttpResponse('OK', content_type='text/plain')
@@ -52,9 +88,11 @@ class DataStatusView(APIView):
             ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet'),
             ('income', '利润表', 'saa_raw_income_statement'),
             ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement'),
-            ('dividend', '分红数据', 'saa_dividends'),
             ('main_business', '主营业务', 'saa_raw_main_business'),
             ('capital', '股本变动', 'saa_capitals'),
+            ('dividend', '分红数据', 'saa_dividends'),
+            ('valuation_board', '板块估值', 'saa_board_valuation_levels'),
+            ('valuation_industry', '行业估值', 'saa_industry_valuation_levels'),
         ]
 
         results = []
@@ -65,11 +103,34 @@ class DataStatusView(APIView):
                     count = cursor.fetchone()[0]
 
                     date_column = self._get_date_column(table_name)
+                    frequency = DATA_TYPE_FREQUENCY.get(data_type)
+                    completeness = None
+                    
                     if date_column:
-                        cursor.execute(f"SELECT MIN({date_column}), MAX({date_column}) FROM {table_name}")
+                        cursor.execute(
+                            f"SELECT MIN({date_column}), MAX({date_column}) FROM {table_name} WHERE {date_column} >= %s",
+                            [A_STOCK_EARLIEST_DATE]
+                        )
                         row = cursor.fetchone()
                         earliest_date = row[0]
                         latest_date = row[1]
+                        
+                        if count == 0:
+                            completeness = 0.0
+                        elif frequency and earliest_date and latest_date:
+                            cursor.execute(
+                                f"SELECT COUNT(DISTINCT {date_column}) FROM {table_name} WHERE {date_column} >= %s",
+                                [A_STOCK_EARLIEST_DATE]
+                            )
+                            actual_periods = cursor.fetchone()[0]
+                            expected_periods = calculate_expected_periods(earliest_date, latest_date, frequency)
+                            if expected_periods > 0:
+                                completeness = min(1.0, actual_periods / expected_periods)
+                    elif data_type == 'stock_info':
+                        earliest_date = None
+                        latest_date = None
+                        if EXPECTED_A_SHARE_STOCKS > 0:
+                            completeness = min(1.0, count / EXPECTED_A_SHARE_STOCKS)
                     else:
                         earliest_date = None
                         latest_date = None
@@ -80,6 +141,8 @@ class DataStatusView(APIView):
                         'count': count,
                         'earliest_date': earliest_date,
                         'latest_date': latest_date,
+                        'frequency': frequency,
+                        'completeness': completeness,
                     })
                 except Exception as e:
                     logger.warning(f"Failed to get status for {table_name}: {e}")
@@ -89,6 +152,8 @@ class DataStatusView(APIView):
                         'count': 0,
                         'earliest_date': None,
                         'latest_date': None,
+                        'frequency': DATA_TYPE_FREQUENCY.get(data_type),
+                        'completeness': 0.0,
                     })
 
         serializer = DataStatusSerializer(results, many=True)
@@ -106,6 +171,8 @@ class DataStatusView(APIView):
             'saa_dividends': 'date',
             'saa_raw_main_business': 'date',
             'saa_capitals': 'date',
+            'saa_board_valuation_levels': 'report_date',
+            'saa_industry_valuation_levels': 'report_date',
         }
         return date_columns.get(table_name)
 
@@ -1518,3 +1585,278 @@ class CollectPlanExecuteView(APIView):
                 fixed_at=timezone.now(),
                 fixed_by_plan=plan
             )
+
+
+class DataCompletenessHeatmapView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    DATA_TYPE_CONFIG = [
+        ('trade_days', '交易日', 'saa_trade_days', 'date', 'daily'),
+        ('stock_info', '股票基本信息', 'saa_stocks', None, None),
+        ('quote', '最新行情', 'saa_latest_prices', 'date', None),
+        ('historical_quote', '历史行情', 'saa_prices', 'date', 'daily'),
+        ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet', 'date', 'quarterly'),
+        ('income', '利润表', 'saa_raw_income_statement', 'date', 'quarterly'),
+        ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement', 'date', 'quarterly'),
+        ('main_business', '主营业务', 'saa_raw_main_business', 'date', 'quarterly'),
+        ('capital', '股本变动', 'saa_capitals', 'date', 'yearly'),
+        ('dividend', '分红数据', 'saa_dividends', 'date', 'yearly'),
+        ('valuation_board', '板块估值', 'saa_board_valuation_level', 'report_date', 'daily'),
+        ('valuation_industry', '行业估值', 'saa_industry_valuation_levels', 'report_date', 'daily'),
+    ]
+
+    def get(self, request):
+        frequency = request.query_params.get('frequency', 'monthly')
+        
+        periods = self._generate_periods(frequency)
+        if not periods:
+            return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
+
+        data_types = [{'key': key, 'label': label, 'frequency': data_freq} for key, label, _, _, data_freq in self.DATA_TYPE_CONFIG]
+        matrix = {}
+
+        with connection.cursor() as cursor:
+            for key, label, table_name, date_column, data_frequency in self.DATA_TYPE_CONFIG:
+                if date_column is None:
+                    matrix[key] = [1.0] * len(periods)
+                    continue
+                
+                if data_frequency is None:
+                    matrix[key] = self._calculate_point_completeness(cursor, table_name, date_column, len(periods))
+                    continue
+                
+                try:
+                    matrix[key] = self._calculate_completeness(
+                        cursor, table_name, date_column, periods, frequency, data_frequency
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to calculate completeness for {key}: {e}")
+                    matrix[key] = [0.0] * len(periods)
+
+        start_date = periods[0] if periods else ''
+        end_date = periods[-1] if periods else ''
+
+        return Response({
+            'success': True,
+            'data': {
+                'date_range': {'start': start_date, 'end': end_date},
+                'frequency': frequency,
+                'periods': periods,
+                'data_types': data_types,
+                'matrix': matrix,
+            }
+        })
+
+    def _generate_periods(self, frequency):
+        periods = []
+        today = date.today()
+        
+        if frequency == 'daily':
+            start = today - timedelta(days=365)
+            current = start
+            while current <= today:
+                periods.append(current.strftime('%Y-%m-%d'))
+                current += timedelta(days=1)
+        elif frequency == 'monthly':
+            year, month = EARLIEST_YEAR, 1
+            while date(year, month, 1) <= today:
+                periods.append(f"{year}-{month:02d}")
+                month += 1
+                if month > 12:
+                    month = 1
+                    year += 1
+        elif frequency == 'quarterly':
+            year, quarter = EARLIEST_YEAR, 1
+            while date(year, quarter * 3, 1) <= today:
+                periods.append(f"{year}-Q{quarter}")
+                quarter += 1
+                if quarter > 4:
+                    quarter = 1
+                    year += 1
+        elif frequency == 'yearly':
+            year = EARLIEST_YEAR
+            while year <= today.year:
+                periods.append(str(year))
+                year += 1
+        else:
+            return None
+        
+        return periods
+
+    def _calculate_point_completeness(self, cursor, table_name, date_column, num_periods):
+        cursor.execute(f"SELECT COUNT(DISTINCT symbol) FROM {table_name}")
+        quote_count = cursor.fetchone()[0] or 0
+        
+        cursor.execute("SELECT COUNT(*) FROM saa_stocks")
+        total_stocks = cursor.fetchone()[0] or 1
+        
+        ratio = round(quote_count / total_stocks, 2) if total_stocks > 0 else 0.0
+        return [ratio] * num_periods
+
+    def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency):
+        if not periods:
+            return []
+        
+        need_aggregation = (
+            (data_frequency == 'yearly' and frequency in ('quarterly', 'monthly')) or
+            (data_frequency == 'quarterly' and frequency == 'monthly')
+        )
+        
+        if need_aggregation:
+            return self._calculate_completeness_aggregated(cursor, table_name, date_column, periods, frequency, data_frequency)
+        
+        result = []
+        for period in periods:
+            if not self._is_period_applicable(period, frequency, data_frequency):
+                result.append(-1)
+            else:
+                result.append(None)
+        
+        applicable_indices = [i for i, v in enumerate(result) if v is None]
+        if not applicable_indices:
+            return result
+        
+        applicable_periods = [periods[i] for i in applicable_indices]
+        start_date, end_date = self._get_period_range(applicable_periods[0], frequency)
+        _, end_date = self._get_period_range(applicable_periods[-1], frequency)
+        
+        date_format = self._get_date_format(frequency)
+        
+        cursor.execute(f"""
+            SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(*) as cnt
+            FROM {table_name}
+            WHERE {date_column} >= %s AND {date_column} <= %s
+            GROUP BY DATE_FORMAT({date_column}, %s)
+        """, [date_format, start_date, end_date, date_format])
+        
+        period_counts = {self._get_period_key(row[0], frequency): row[1] for row in cursor.fetchall()}
+        
+        max_count = max(period_counts.values()) if period_counts else 1
+        
+        for i in applicable_indices:
+            period = periods[i]
+            period_key = self._get_period_key(period, frequency)
+            count = period_counts.get(period_key, 0)
+            result[i] = round(count / max_count, 2)
+        
+        return result
+
+    def _calculate_completeness_aggregated(self, cursor, table_name, date_column, periods, frequency, data_frequency):
+        aggregate_keys = {}
+        for i, period in enumerate(periods):
+            agg_key = self._get_aggregate_key(period, data_frequency)
+            if agg_key not in aggregate_keys:
+                aggregate_keys[agg_key] = []
+            aggregate_keys[agg_key].append(i)
+        
+        start_date, end_date = self._get_period_range(periods[0], frequency)
+        _, end_date = self._get_period_range(periods[-1], frequency)
+        
+        if data_frequency == 'yearly':
+            cursor.execute(f"""
+                SELECT YEAR({date_column}) as year, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s
+                GROUP BY YEAR({date_column})
+            """, [start_date, end_date])
+            raw_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
+        else:
+            cursor.execute(f"""
+                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s
+                GROUP BY DATE_FORMAT({date_column}, '%Y-%m')
+            """, [start_date, end_date])
+            raw_counts = {}
+            for row in cursor.fetchall():
+                month_str = row[0]
+                year = month_str[:4]
+                month = int(month_str[5:7])
+                quarter = (month - 1) // 3 + 1
+                quarter_key = f"{year}-Q{quarter}"
+                if quarter_key not in raw_counts:
+                    raw_counts[quarter_key] = 0
+                raw_counts[quarter_key] += row[1]
+        
+        max_count = max(raw_counts.values()) if raw_counts else 1
+        
+        result = [0.0] * len(periods)
+        for agg_key, indices in aggregate_keys.items():
+            count = raw_counts.get(agg_key, 0)
+            value = round(count / max_count, 2)
+            for i in indices:
+                result[i] = value
+        
+        return result
+
+    def _get_aggregate_key(self, period, data_frequency):
+        if data_frequency == 'yearly':
+            return period[:4]
+        elif data_frequency == 'quarterly':
+            year = period[:4]
+            month = int(period[5:7])
+            quarter = (month - 1) // 3 + 1
+            return f"{year}-Q{quarter}"
+        return period
+
+    def _get_period_key(self, period, frequency):
+        if frequency == 'quarterly':
+            if '-Q' in period:
+                year = period[:4]
+                quarter = int(period[6])
+                end_month = quarter * 3
+                return f"{year}-{end_month:02d}"
+            return period
+        return period
+
+    def _is_period_applicable(self, period, frequency, data_frequency):
+        if data_frequency is None or data_frequency == 'daily':
+            return True
+        
+        if data_frequency == 'quarterly':
+            if frequency == 'daily':
+                return False
+            if frequency == 'monthly':
+                month = int(period[5:7])
+                return month in (3, 6, 9, 12)
+            return True
+        
+        if data_frequency == 'yearly':
+            if frequency in ('daily', 'monthly'):
+                return False
+            if frequency == 'quarterly':
+                quarter = int(period[6])
+                return quarter == 4
+            return True
+        
+        return True
+
+    def _get_date_format(self, frequency):
+        formats = {
+            'daily': '%Y-%m-%d',
+            'monthly': '%Y-%m',
+            'quarterly': '%Y-%m',
+            'yearly': '%Y',
+        }
+        return formats.get(frequency, '%Y-%m')
+
+    def _get_period_range(self, period, frequency):
+        if frequency == 'daily':
+            return period, period
+        elif frequency == 'monthly':
+            year, month = int(period[:4]), int(period[5:7])
+            if month == 12:
+                end = date(year, 12, 31)
+            else:
+                end = date(year, month + 1, 1) - timedelta(days=1)
+            return f"{year}-{month:02d}-01", end.strftime('%Y-%m-%d')
+        elif frequency == 'quarterly':
+            year, quarter = int(period[:4]), int(period[6])
+            start_month = (quarter - 1) * 3 + 1
+            end_month = quarter * 3
+            end_day = 31 if end_month in [3, 12] else 30 if end_month in [4, 6, 9, 11] else 28
+            return f"{year}-{start_month:02d}-01", f"{year}-{end_month:02d}-{end_day}"
+        elif frequency == 'yearly':
+            year = int(period)
+            return f"{year}-01-01", f"{year}-12-31"
+        return period, period

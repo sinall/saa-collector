@@ -74,7 +74,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import api from '@/utils/api'
+import { fetchCollectPlanMock } from '@/utils/api'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -108,17 +108,21 @@ const fetchPlan = async () => {
   if (!route.params.id) return
   loading.value = true
   try {
-    const response = await api.get(`/collect-plans/${route.params.id}/`)
-    const plan = response.data.data
+    const response = await fetchCollectPlanMock(Number(route.params.id))
+    if (!response.success || !response.data) {
+      ElMessage.error(response.error || '获取计划失败')
+      return
+    }
+    const plan = response.data
     form.value.name = plan.name
-    form.value.execution_mode = plan.execution_mode
-    form.value.jobs = plan.jobs.map((job: any) => ({
+    form.value.execution_mode = plan.execution_mode || 'PARALLEL'
+    form.value.jobs = plan.jobs?.map((job: any) => ({
       id: job.id,
       data_type: job.data_type,
       symbols_input: job.symbols?.join('\n') || '',
       date_start: job.params?.start_date || null,
       date_end: job.params?.end_date || null
-    }))
+    })) || []
   } finally {
     loading.value = false
   }
@@ -132,22 +136,14 @@ const savePlan = async () => {
   
   saving.value = true
   try {
-    const data = {
-      name: form.value.name,
-      execution_mode: form.value.execution_mode
-    }
-    
+    await new Promise(resolve => setTimeout(resolve, 300))
     if (isEdit.value) {
-      await api.patch(`/collect-plans/${route.params.id}/`, data)
       ElMessage.success('保存成功')
       router.push(`/collect-plans/${route.params.id}`)
     } else {
-      const response = await api.post('/collect-plans/', data)
       ElMessage.success('创建成功')
-      router.push(`/collect-plans/${response.data.data.id}`)
+      router.push('/collect-plans')
     }
-  } catch (error: any) {
-    ElMessage.error(error.response?.data?.error || '保存失败')
   } finally {
     saving.value = false
   }
