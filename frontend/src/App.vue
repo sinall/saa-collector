@@ -5,6 +5,20 @@
         <div class="logo">
           <h2>SAA Collector</h2>
         </div>
+        <div class="stock-search">
+          <el-autocomplete
+            v-model="stockSearchKeyword"
+            :fetch-suggestions="searchStocks"
+            placeholder="搜索股票代码/名称"
+            @select="onStockSelect"
+            clearable
+            value-key="label"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-autocomplete>
+        </div>
         <el-menu
           :default-active="activeMenu"
           router
@@ -15,14 +29,10 @@
             <span>仪表盘</span>
           </el-menu-item>
           
-          <el-sub-menu index="data-browse">
-            <template #title>
-              <el-icon><FolderOpened /></el-icon>
-              <span>数据浏览</span>
-            </template>
-            <el-menu-item index="/data-browse/stock">按股票</el-menu-item>
-            <el-menu-item index="/data-browse/type">按类型</el-menu-item>
-          </el-sub-menu>
+          <el-menu-item index="/data-browse">
+            <el-icon><FolderOpened /></el-icon>
+            <span>数据浏览</span>
+          </el-menu-item>
           
           <el-menu-item index="/integrity-reports">
             <el-icon><DocumentChecked /></el-icon>
@@ -51,12 +61,41 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Search, DataLine, FolderOpened, DocumentChecked, Download } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import { fetchStocks, type Stock } from '@/utils/api'
 
 const route = useRoute()
+const router = useRouter()
 const activeMenu = computed(() => route.path)
+
+const stockSearchKeyword = ref('')
+
+const searchStocks = async (query: string, cb: (results: { value: string; label: string; stock: Stock }[]) => void) => {
+  if (!query) {
+    cb([])
+    return
+  }
+  
+  const response = await fetchStocks({ keyword: query, page: 1, page_size: 10 })
+  if (response.success && response.data) {
+    const stocks = Array.isArray(response.data) ? response.data : response.data.results || []
+    cb(stocks.map(s => ({
+      value: s.symbol,
+      label: `${s.symbol} - ${s.name}`,
+      stock: s
+    })))
+  } else {
+    cb([])
+  }
+}
+
+const onStockSelect = (item: { value: string; label: string; stock: Stock }) => {
+  stockSearchKeyword.value = ''
+  router.push(`/stock/${item.stock.symbol}`)
+}
 </script>
 
 <style>
@@ -89,6 +128,59 @@ html, body, #app {
 .logo h2 {
   margin: 0;
   font-size: 16px;
+}
+
+.stock-search {
+  padding: 16px 12px;
+  border-bottom: 1px solid #3a4a5b;
+}
+
+.stock-search :deep(.el-autocomplete) {
+  width: 100%;
+}
+
+.stock-search :deep(.el-input__wrapper) {
+  background-color: #263445;
+  border-radius: 18px;
+  box-shadow: none;
+  border: 1px solid transparent;
+  padding: 1px 12px;
+  transition: all 0.3s;
+}
+
+.stock-search :deep(.el-input__wrapper:hover) {
+  background-color: #2d3d50;
+}
+
+.stock-search :deep(.el-input__wrapper.is-focus) {
+  background-color: #2d3d50;
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+}
+
+.stock-search :deep(.el-input__inner) {
+  color: #bfcbd9;
+  font-size: 13px;
+}
+
+.stock-search :deep(.el-input__inner::placeholder) {
+  color: #6b7a8a;
+}
+
+.stock-search :deep(.el-input__prefix) {
+  color: #6b7a8a;
+}
+
+.stock-search :deep(.el-input__suffix) {
+  color: #6b7a8a;
+}
+
+.stock-search :deep(.el-input__clear) {
+  color: #6b7a8a;
+}
+
+.stock-search :deep(.el-input__clear:hover) {
+  color: #bfcbd9;
 }
 
 .sidebar-menu {

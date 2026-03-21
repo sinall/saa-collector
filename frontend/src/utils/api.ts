@@ -428,31 +428,135 @@ export interface TypeBrowseRow {
 function generateMockTypeBrowseData(dataType: string): TypeBrowseRow[] {
   const rows: TypeBrowseRow[] = []
   const count = 100
-  const symbols = ['000001', '000002', '000003', '600000', '600001']
+  const stocks = [
+    { code: '000001', name: '平安银行' },
+    { code: '000002', name: '万科A' },
+    { code: '000003', name: '国农科技' },
+    { code: '600000', name: '浦发银行' },
+    { code: '600001', name: '邯郸钢铁' },
+  ]
 
-  if (dataType === 'historical_quote') {
+  if (dataType === 'info') {
     for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        symbol: stock.code,
+        name: stock.name,
+        exchange: stock.code.startsWith('6') ? 'SH' : 'SZ',
+        industry_classification_id: ['银行', '房地产', '科技', '医药', '消费'][Math.floor(Math.random() * 5)] ?? '',
+        listing_time: new Date(Date.now() - Math.random() * 10 * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        company_name: `${stock.name}股份有限公司`,
+        legal_representative: '张三',
+        registered_capital: 1000000000,
+        website: 'https://example.com',
+      })
+    }
+  } else if (dataType === 'quote') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      const price = 10 + Math.random() * 90
+      rows.push({
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: new Date(Date.now() - Math.random() * 7 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        price: Math.round(price * 100) / 100,
+      })
+    }
+  } else if (dataType === 'historical_quote') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
       const basePrice = 10 + Math.random() * 90
       rows.push({
-        stock_code: symbols[Math.floor(Math.random() * symbols.length)] ?? '',
-        trade_date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
-        open: Math.round(basePrice * 100) / 100,
-        high: Math.round(basePrice * 1.02 * 100) / 100,
-        low: Math.round(basePrice * 0.98 * 100) / 100,
-        close: Math.round(basePrice * 100) / 100,
-        volume: Math.floor(Math.random() * 10000000),
-        amount: Math.floor(Math.random() * 100000000),
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        price: Math.round(basePrice * 100) / 100,
       })
     }
   } else if (dataType === 'balance_sheet') {
     for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
       rows.push({
-        stock_code: symbols[Math.floor(Math.random() * symbols.length)] ?? '',
-        report_period: `${2020 + Math.floor(Math.random() * 6)}-Q${1 + Math.floor(Math.random() * 4)}`,
-        report_date: '2024-12-31',
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: '2024-12-31',
         total_assets: Math.floor(1000000000 + Math.random() * 10000000000),
+        total_current_assets: Math.floor(500000000 + Math.random() * 5000000000),
         total_liabilities: Math.floor(500000000 + Math.random() * 5000000000),
-        total_equity: Math.floor(500000000 + Math.random() * 5000000000),
+        total_current_liabilities: Math.floor(300000000 + Math.random() * 3000000000),
+        total_shareholders_equity: Math.floor(500000000 + Math.random() * 5000000000),
+        monetary_funds: Math.floor(100000000 + Math.random() * 1000000000),
+        accounts_receivable: Math.floor(50000000 + Math.random() * 500000000),
+        inventories: Math.floor(30000000 + Math.random() * 300000000),
+        fixed_assets: Math.floor(200000000 + Math.random() * 2000000000),
+        short_term_borrowings: Math.floor(100000000 + Math.random() * 1000000000),
+        long_term_borrowings: Math.floor(50000000 + Math.random() * 500000000),
+      })
+    }
+  } else if (dataType === 'income') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: '2024-12-31',
+        operating_revenue: Math.floor(1000000000 + Math.random() * 10000000000),
+        operating_cost: Math.floor(500000000 + Math.random() * 5000000000),
+        business_profit: Math.floor(100000000 + Math.random() * 1000000000),
+        net_profit: Math.floor(100000000 + Math.random() * 2000000000),
+        controlling_net_profit: Math.floor(80000000 + Math.random() * 1800000000),
+        basic_earnings_per_share: Math.round((Math.random() * 2 + 0.1) * 100) / 100,
+        selling_expenses: Math.floor(10000000 + Math.random() * 100000000),
+        administrative_expenses: Math.floor(5000000 + Math.random() * 50000000),
+        financial_expenses: Math.floor(3000000 + Math.random() * 30000000),
+      })
+    }
+  } else if (dataType === 'cash_flow') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: '2024-12-31',
+        net_cash_flows_from_operating_activities: Math.floor(500000000 + Math.random() * 5000000000),
+        net_cash_flows_from_investing_activities: Math.floor(-Math.random() * 3000000000),
+        net_cash_flows_from_financing_activities: Math.floor(-Math.random() * 2000000000),
+      })
+    }
+  } else if (dataType === 'main_business') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: '2024-12-31',
+        category: ['PRODUCT', 'REGION'][Math.floor(Math.random() * 2)] ?? '',
+        item_name: ['银行业务', '房地产开发', '技术服务', '医药制造', '消费品'][Math.floor(Math.random() * 5)] ?? '',
+        main_business_income: Math.floor(100000000 + Math.random() * 5000000000),
+        main_business_cost: Math.floor(50000000 + Math.random() * 3000000000),
+        main_business_profit: Math.floor(30000000 + Math.random() * 2000000000),
+        gross_profit_margin: Math.round((Math.random() * 0.3 + 0.1) * 100) / 100,
+      })
+    }
+  } else if (dataType === 'capital') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        capital: Math.floor(1000000000 + Math.random() * 10000000000),
+      })
+    }
+  } else if (dataType === 'dividend') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        symbol: stock.code,
+        stock_name: stock.name,
+        date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        dps: Math.round((Math.random() * 2) * 100) / 100,
+        dividend: Math.floor(100000000 + Math.random() * 1000000000),
       })
     }
   } else if (dataType === 'trade_days') {
@@ -482,6 +586,20 @@ export const fetchTypeBrowseDataMock = async (
       total: allData.length,
     },
   }
+}
+
+export const fetchTypeBrowseData = async (
+  tableName: string,
+  page: number = 1,
+  pageSize: number = 50,
+  startDate?: string,
+  endDate?: string
+): Promise<ApiResponse<{ results: Record<string, unknown>[], total: number }>> => {
+  const params: Record<string, unknown> = { page, page_size: pageSize }
+  if (startDate) params.start_date = startDate
+  if (endDate) params.end_date = endDate
+  const response = await api.get(`/type-browse-data/${tableName}/`, { params })
+  return response.data
 }
 
 function generateMockStocks(keyword?: string): { results: Stock[], pagination: { total: number } } {
@@ -1059,6 +1177,368 @@ export const fetchIntegrityReportHeatmapMock = async (reportId: number): Promise
       periods,
       matrix,
     },
+  }
+}
+
+export interface DisplayFieldConfig {
+  name: string
+  label: string
+  visible: boolean
+  fixed?: boolean
+  order: number
+  width: number
+  format?: 'price' | 'volume' | 'money' | 'percent' | 'date'
+}
+
+export interface DisplayTableConfig {
+  table_name: string
+  table_label: string
+  config: {
+    fields: DisplayFieldConfig[]
+  }
+}
+
+export interface DataTypeGroup {
+  key: string
+  label: string
+  items: {
+    key: string
+    label: string
+    table: string
+  }[]
+}
+
+export interface DisplayConfigResponse {
+  groups: DataTypeGroup[]
+  configs: Record<string, {
+    table_label: string
+    config: { fields: DisplayFieldConfig[] }
+  }>
+}
+
+const DEFAULT_DISPLAY_CONFIGS: Record<string, {
+  table_label: string
+  config: { fields: DisplayFieldConfig[] }
+}> = {
+  'saa_stocks': {
+    table_label: '基本信息',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'name', label: '股票名称', visible: true, order: 2, width: 120 },
+        { name: 'exchange', label: '交易所', visible: true, order: 3, width: 80 },
+        { name: 'industry_classification_id', label: '所属行业', visible: true, order: 4, width: 100 },
+        { name: 'listing_time', label: '上市日期', visible: true, order: 5, width: 110, format: 'date' },
+        { name: 'company_name', label: '公司名称', visible: false, order: 10, width: 200 },
+        { name: 'legal_representative', label: '法人代表', visible: false, order: 11, width: 100 },
+        { name: 'registered_capital', label: '注册资金', visible: false, order: 12, width: 120, format: 'money' },
+        { name: 'website', label: '机构网址', visible: false, order: 13, width: 200 },
+      ]
+    }
+  },
+  'saa_latest_prices': {
+    table_label: '最新行情',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'price', label: '最新价', visible: true, order: 3, width: 100, format: 'price' },
+      ]
+    }
+  },
+  'saa_prices': {
+    table_label: '历史行情',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'price', label: '收盘价', visible: true, order: 3, width: 100, format: 'price' },
+      ]
+    }
+  },
+  'saa_raw_balance_sheet': {
+    table_label: '资产负债表',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '报告日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'total_assets', label: '资产总计', visible: true, order: 3, width: 140, format: 'money' },
+        { name: 'total_current_assets', label: '流动资产合计', visible: true, order: 4, width: 140, format: 'money' },
+        { name: 'total_liabilities', label: '负债合计', visible: true, order: 5, width: 140, format: 'money' },
+        { name: 'total_current_liabilities', label: '流动负债合计', visible: true, order: 6, width: 140, format: 'money' },
+        { name: 'total_shareholders_equity', label: '所有者权益合计', visible: true, order: 7, width: 150, format: 'money' },
+        { name: 'monetary_funds', label: '货币资金', visible: false, order: 10, width: 130, format: 'money' },
+        { name: 'accounts_receivable', label: '应收账款', visible: false, order: 11, width: 130, format: 'money' },
+        { name: 'inventories', label: '存货', visible: false, order: 12, width: 130, format: 'money' },
+        { name: 'fixed_assets', label: '固定资产', visible: false, order: 13, width: 130, format: 'money' },
+        { name: 'short_term_borrowings', label: '短期借款', visible: false, order: 14, width: 130, format: 'money' },
+        { name: 'long_term_borrowings', label: '长期借款', visible: false, order: 15, width: 130, format: 'money' },
+      ]
+    }
+  },
+  'saa_raw_income_statement': {
+    table_label: '利润表',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '报告日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'operating_revenue', label: '营业收入', visible: true, order: 3, width: 140, format: 'money' },
+        { name: 'operating_cost', label: '营业成本', visible: true, order: 4, width: 140, format: 'money' },
+        { name: 'business_profit', label: '营业利润', visible: true, order: 5, width: 140, format: 'money' },
+        { name: 'net_profit', label: '净利润', visible: true, order: 6, width: 140, format: 'money' },
+        { name: 'controlling_net_profit', label: '归母净利润', visible: true, order: 7, width: 140, format: 'money' },
+        { name: 'basic_earnings_per_share', label: '基本每股收益', visible: true, order: 8, width: 120, format: 'price' },
+        { name: 'selling_expenses', label: '销售费用', visible: false, order: 10, width: 130, format: 'money' },
+        { name: 'administrative_expenses', label: '管理费用', visible: false, order: 11, width: 130, format: 'money' },
+        { name: 'financial_expenses', label: '财务费用', visible: false, order: 12, width: 130, format: 'money' },
+      ]
+    }
+  },
+  'saa_raw_cash_flow_statement': {
+    table_label: '现金流量表',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '报告日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'net_cash_flows_from_operating_activities', label: '经营活动现金流量净额', visible: true, order: 3, width: 180, format: 'money' },
+        { name: 'net_cash_flows_from_investing_activities', label: '投资活动现金流量净额', visible: true, order: 4, width: 180, format: 'money' },
+        { name: 'net_cash_flows_from_financing_activities', label: '筹资活动现金流量净额', visible: true, order: 5, width: 180, format: 'money' },
+      ]
+    }
+  },
+  'saa_raw_main_business': {
+    table_label: '主营业务',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '报告日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'category', label: '分类类型', visible: true, order: 3, width: 100 },
+        { name: 'item_name', label: '主营构成', visible: true, order: 4, width: 150 },
+        { name: 'main_business_income', label: '主营收入', visible: true, order: 5, width: 140, format: 'money' },
+        { name: 'main_business_cost', label: '主营成本', visible: true, order: 6, width: 140, format: 'money' },
+        { name: 'main_business_profit', label: '主营利润', visible: true, order: 7, width: 140, format: 'money' },
+        { name: 'gross_profit_margin', label: '毛利率', visible: true, order: 8, width: 100, format: 'percent' },
+      ]
+    }
+  },
+  'saa_capitals': {
+    table_label: '股本变动',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '变更日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'capital', label: '总股本', visible: true, order: 3, width: 140, format: 'volume' },
+      ]
+    }
+  },
+  'saa_dividends': {
+    table_label: '分红数据',
+    config: {
+      fields: [
+        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '除权除息日', visible: true, fixed: true, order: 2, width: 120, format: 'date' },
+        { name: 'dps', label: '每股分红', visible: true, order: 3, width: 100, format: 'price' },
+        { name: 'dividend', label: '分红总额', visible: true, order: 4, width: 140, format: 'money' },
+      ]
+    }
+  },
+}
+
+const DATA_TYPE_GROUPS: DataTypeGroup[] = [
+  {
+    key: 'basic',
+    label: '基本信息',
+    items: [
+      { key: 'info', label: '基本信息', table: 'saa_stocks' },
+    ]
+  },
+  {
+    key: 'quote',
+    label: '行情数据',
+    items: [
+      { key: 'quote', label: '最新行情', table: 'saa_latest_prices' },
+      { key: 'historical_quote', label: '历史行情', table: 'saa_prices' },
+    ]
+  },
+  {
+    key: 'statement',
+    label: '财务报表',
+    items: [
+      { key: 'balance_sheet', label: '资产负债表', table: 'saa_raw_balance_sheet' },
+      { key: 'income', label: '利润表', table: 'saa_raw_income_statement' },
+      { key: 'cash_flow', label: '现金流量表', table: 'saa_raw_cash_flow_statement' },
+    ]
+  },
+  {
+    key: 'other',
+    label: '其他数据',
+    items: [
+      { key: 'main_business', label: '主营业务', table: 'saa_raw_main_business' },
+      { key: 'capital', label: '股本变动', table: 'saa_capitals' },
+      { key: 'dividend', label: '分红数据', table: 'saa_dividends' },
+    ]
+  },
+]
+
+export const fetchDisplayConfig = async (table?: string): Promise<ApiResponse<DisplayConfigResponse | DisplayTableConfig>> => {
+  const params = table ? { table } : {}
+  const response = await api.get('/display-field-config/', { params })
+  return response.data
+}
+
+export const saveDisplayConfig = async (tableName: string, config: { fields: DisplayFieldConfig[] }): Promise<ApiResponse<null>> => {
+  const response = await api.put('/display-field-config/', { table_name: tableName, config })
+  return response.data
+}
+
+export const fetchStockData = async (
+  symbol: string,
+  tableName: string,
+  page: number = 1,
+  pageSize: number = 50
+): Promise<ApiResponse<{ results: Record<string, unknown>[], total: number }>> => {
+  const response = await api.get(`/stock-data/${symbol}/${tableName}/`, {
+    params: { page, page_size: pageSize }
+  })
+  return response.data
+}
+
+export const fetchDisplayConfigMock = async (table?: string): Promise<ApiResponse<DisplayConfigResponse | DisplayTableConfig>> => {
+  await new Promise(resolve => setTimeout(resolve, 200))
+
+  if (table) {
+    const config = DEFAULT_DISPLAY_CONFIGS[table]
+    if (!config) {
+      return { success: false, error: 'Table not found' }
+    }
+    return {
+      success: true,
+      data: {
+        table_name: table,
+        table_label: config.table_label,
+        config: config.config
+      }
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      groups: DATA_TYPE_GROUPS,
+      configs: DEFAULT_DISPLAY_CONFIGS
+    }
+  }
+}
+
+export const saveDisplayConfigMock = async (tableName: string, config: { fields: DisplayFieldConfig[] }): Promise<ApiResponse<null>> => {
+  await new Promise(resolve => setTimeout(resolve, 300))
+  const existing = DEFAULT_DISPLAY_CONFIGS[tableName]
+  DEFAULT_DISPLAY_CONFIGS[tableName] = {
+    table_label: existing?.table_label ?? tableName,
+    config
+  }
+  return { success: true, data: null }
+}
+
+function generateMockStockData(tableName: string, symbol: string): Record<string, unknown>[] {
+  const results: Record<string, unknown>[] = []
+  const count = 50
+
+  if (tableName === 'saa_stocks') {
+    return [{
+      symbol,
+      name: `${symbol}公司`,
+      exchange: symbol.startsWith('6') ? 'SH' : 'SZ',
+      industry_classification_id: '银行',
+      listing_time: '2020-01-01',
+      company_name: `${symbol}股份有限公司`,
+      legal_representative: '张三',
+      registered_capital: 1000000000,
+      website: 'https://example.com',
+    }]
+  }
+
+  if (tableName === 'saa_latest_prices') {
+    return [{
+      symbol,
+      date: new Date().toISOString().split('T')[0],
+      price: 10 + Math.random() * 90,
+    }]
+  }
+
+  for (let i = 0; i < count; i++) {
+    const date = new Date()
+    date.setDate(date.getDate() - i * 30)
+
+    const row: Record<string, unknown> = {
+      symbol,
+      date: date.toISOString().split('T')[0],
+    }
+
+    if (tableName === 'saa_prices') {
+      row.price = 10 + Math.random() * 90
+    } else if (tableName === 'saa_raw_balance_sheet') {
+      row.total_assets = 1000000000 + Math.random() * 10000000000
+      row.total_current_assets = 500000000 + Math.random() * 5000000000
+      row.total_liabilities = 300000000 + Math.random() * 3000000000
+      row.total_current_liabilities = 200000000 + Math.random() * 2000000000
+      row.total_shareholders_equity = 400000000 + Math.random() * 4000000000
+      row.monetary_funds = 100000000 + Math.random() * 1000000000
+      row.accounts_receivable = 50000000 + Math.random() * 500000000
+      row.inventories = 30000000 + Math.random() * 300000000
+      row.fixed_assets = 200000000 + Math.random() * 2000000000
+      row.short_term_borrowings = 100000000 + Math.random() * 1000000000
+      row.long_term_borrowings = 50000000 + Math.random() * 500000000
+    } else if (tableName === 'saa_raw_income_statement') {
+      row.operating_revenue = 500000000 + Math.random() * 5000000000
+      row.operating_cost = 300000000 + Math.random() * 3000000000
+      row.business_profit = 50000000 + Math.random() * 500000000
+      row.net_profit = 30000000 + Math.random() * 300000000
+      row.controlling_net_profit = 28000000 + Math.random() * 280000000
+      row.basic_earnings_per_share = 0.1 + Math.random() * 2
+      row.selling_expenses = 10000000 + Math.random() * 100000000
+      row.administrative_expenses = 5000000 + Math.random() * 50000000
+      row.financial_expenses = 3000000 + Math.random() * 30000000
+    } else if (tableName === 'saa_raw_cash_flow_statement') {
+      row.net_cash_flows_from_operating_activities = 50000000 + Math.random() * 500000000
+      row.net_cash_flows_from_investing_activities = -100000000 - Math.random() * 1000000000
+      row.net_cash_flows_from_financing_activities = -50000000 + Math.random() * 200000000
+    } else if (tableName === 'saa_raw_main_business') {
+      row.category = i % 2 === 0 ? 'PRODUCT' : 'REGION'
+      row.item_name = i % 2 === 0 ? `产品${i % 5 + 1}` : `地区${i % 5 + 1}`
+      row.main_business_income = 50000000 + Math.random() * 500000000
+      row.main_business_cost = 30000000 + Math.random() * 300000000
+      row.main_business_profit = 10000000 + Math.random() * 100000000
+      row.gross_profit_margin = 0.1 + Math.random() * 0.4
+    } else if (tableName === 'saa_capitals') {
+      row.capital = 1000000000 + Math.random() * 10000000000
+    } else if (tableName === 'saa_dividends') {
+      row.dps = 0.1 + Math.random() * 1
+      row.dividend = 100000000 + Math.random() * 1000000000
+    }
+
+    results.push(row)
+  }
+
+  return results
+}
+
+export const fetchStockDataMock = async (
+  symbol: string,
+  tableName: string,
+  _page: number = 1,
+  _pageSize: number = 50
+): Promise<ApiResponse<{ results: Record<string, unknown>[], total: number }>> => {
+  await new Promise(resolve => setTimeout(resolve, 300))
+
+  const results = generateMockStockData(tableName, symbol)
+
+  return {
+    success: true,
+    data: {
+      results,
+      total: results.length,
+    }
   }
 }
 

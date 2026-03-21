@@ -20,13 +20,14 @@ const router = createRouter({
       component: DashboardView
     },
     {
-      path: '/data-browse/stock',
-      name: 'data-browse-stock',
-      component: DataBrowseStockView
+      path: '/stock/:symbol/:dataType?',
+      name: 'stock-detail',
+      component: DataBrowseStockView,
+      props: true
     },
     {
-      path: '/data-browse/type',
-      name: 'data-browse-type',
+      path: '/data-browse/:type?',
+      name: 'data-browse',
       component: DataBrowseTypeView
     },
     {
