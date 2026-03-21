@@ -1,258 +1,381 @@
 <template>
   <div class="data-browse-stock">
     <div class="page-header">
-      <h3>数据浏览 - 按股票</h3>
-      <router-link to="/data-browse/type">
-        <el-button type="primary" link>切换到按类型浏览</el-button>
-      </router-link>
+      <h3>{{ pageTitle }}</h3>
     </div>
-    
     <el-row :gutter="20" class="content-row">
-      <el-col :span="6">
-        <el-card class="stock-list-card">
-          <template #header>
-            <div class="card-header">
-              <span>股票列表</span>
-            </div>
-          </template>
-          <el-input
-            v-model="searchKeyword"
-            placeholder="搜索股票代码/名称"
-            clearable
-            @keyup.enter="searchStocks"
-            class="search-input"
+      <el-col :span="4">
+        <el-card class="menu-card">
+          <el-menu
+            :default-active="activeDataType"
+            @select="onDataTypeSelect"
+            class="data-type-menu"
           >
-            <template #append>
-              <el-button @click="searchStocks">搜索</el-button>
+            <template v-for="group in dataTypeGroups" :key="group.key">
+              <el-sub-menu :index="group.key">
+                <template #title>{{ group.label }}</template>
+                <el-menu-item
+                  v-for="item in group.items"
+                  :key="item.key"
+                  :index="item.key"
+                >
+                  {{ item.label }}
+                </el-menu-item>
+              </el-sub-menu>
             </template>
-          </el-input>
-          
-          <div class="stock-list" v-loading="stockLoading">
-            <div
-              v-for="stock in stocks"
-              :key="stock.symbol"
-              class="stock-item"
-              :class="{ active: selectedStock?.symbol === stock.symbol }"
-              @click="selectStock(stock)"
-            >
-              <span class="stock-code">{{ stock.symbol }}</span>
-              <span class="stock-name">{{ stock.name }}</span>
-            </div>
-          </div>
-          
-          <el-pagination
-            v-model:current-page="stockPage"
-            :page-size="stockPageSize"
-            :total="stockTotal"
-            layout="prev, pager, next"
-            small
-            @current-change="loadStocks"
-            class="stock-pagination"
-          />
+          </el-menu>
         </el-card>
       </el-col>
       
-      <el-col :span="18">
-        <el-card class="stock-detail-card" v-if="selectedStock">
-          <template #header>
-            <div class="card-header">
-              <span>{{ selectedStock.symbol }} - {{ selectedStock.name }}</span>
-            </div>
-          </template>
+      <el-col :span="20">
+        <el-card class="data-card">
+          <div class="table-header">
+            <span class="table-title">{{ currentTableLabel }}</span>
+            <el-button @click="showColumnSettings = true" link>
+              <el-icon><Setting /></el-icon>
+              列设置
+            </el-button>
+          </div>
           
-          <el-tabs v-model="activeTab" @tab-change="onTabChange">
-            <el-tab-pane label="基本信息" name="info">
-              <el-descriptions :column="2" border v-loading="infoLoading">
-                <el-descriptions-item label="股票代码">{{ stockDetail?.symbol }}</el-descriptions-item>
-                <el-descriptions-item label="股票名称">{{ stockDetail?.name }}</el-descriptions-item>
-                <el-descriptions-item label="所属行业">{{ stockDetail?.industry || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="上市日期">{{ stockDetail?.list_date || '-' }}</el-descriptions-item>
-              </el-descriptions>
-            </el-tab-pane>
-            
-            <el-tab-pane label="历史行情" name="historical_quote">
-              <el-table :data="historicalQuotes" stripe v-loading="quoteLoading" max-height="400">
-                <el-table-column prop="trade_date" label="交易日期" width="120" />
-                <el-table-column prop="open" label="开盘价" width="100" />
-                <el-table-column prop="high" label="最高价" width="100" />
-                <el-table-column prop="low" label="最低价" width="100" />
-                <el-table-column prop="close" label="收盘价" width="100" />
-                <el-table-column prop="volume" label="成交量" width="120">
-                  <template #default="{ row }">
-                    {{ formatNumber(row.volume) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="amount" label="成交额" width="120">
-                  <template #default="{ row }">
-                    {{ formatNumber(row.amount) }}
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
-            
-            <el-tab-pane label="资产负债表" name="balance_sheet">
-              <el-table :data="balanceSheets" stripe v-loading="balanceLoading" max-height="400">
-                <el-table-column prop="report_period" label="报告期" width="120" />
-                <el-table-column prop="report_date" label="报告日期" width="120" />
-                <el-table-column prop="total_assets" label="资产总计" width="150">
-                  <template #default="{ row }">
-                    {{ formatMoney(row.total_assets) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="total_liabilities" label="负债合计" width="150">
-                  <template #default="{ row }">
-                    {{ formatMoney(row.total_liabilities) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="total_equity" label="所有者权益" width="150">
-                  <template #default="{ row }">
-                    {{ formatMoney(row.total_equity) }}
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
-          </el-tabs>
-        </el-card>
-        
-        <el-card v-else class="stock-detail-card empty-card">
-          <el-empty description="请从左侧选择一只股票" />
+          <el-descriptions
+            v-if="selectedStock && isBasicInfo"
+            :column="2"
+            border
+            v-loading="dataLoading"
+          >
+            <el-descriptions-item
+              v-for="col in visibleColumns"
+              :key="col.name"
+              :label="col.label"
+              :span="col.width && col.width > 150 ? 2 : 1"
+            >
+              {{ formatValue(tableData[0]?.[col.name], col.format) }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-table
+            v-else-if="selectedStock && !isBasicInfo"
+            :data="tableData"
+            stripe
+            v-loading="dataLoading"
+            max-height="500"
+            border
+          >
+            <el-table-column
+              v-for="col in visibleColumns"
+              :key="col.name"
+              :prop="col.name"
+              :label="col.label"
+              :width="col.width"
+              :fixed="col.fixed ? 'left' : undefined"
+              :align="isNumericFormat(col.format) ? 'right' : 'left'"
+            >
+              <template #default="{ row }">
+                {{ formatValue(row[col.name], col.format) }}
+              </template>
+            </el-table-column>
+          </el-table>
+          
+          <div v-if="selectedStock && !isBasicInfo && totalRecords > 0" class="pagination-container">
+            <el-pagination
+              v-model:current-page="currentPage"
+              v-model:page-size="pageSize"
+              :page-sizes="[20, 50, 100, 200]"
+              :total="totalRecords"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="onPageSizeChange"
+              @current-change="onPageChange"
+            />
+          </div>
+
+          <el-empty v-else description="请搜索并选择一只股票" />
         </el-card>
       </el-col>
     </el-row>
+    
+    <el-dialog v-model="showColumnSettings" title="列设置" width="500px">
+      <div class="column-settings">
+        <div class="settings-header">
+          <el-checkbox
+            v-model="selectAllColumns"
+            :indeterminate="isIndeterminate"
+            @change="onSelectAllChange"
+          >
+            全选
+          </el-checkbox>
+          <el-button type="primary" link @click="resetColumnSettings">恢复默认</el-button>
+        </div>
+        
+        <el-divider />
+        
+        <div class="column-list">
+          <div
+            v-for="col in allColumns"
+            :key="col.name"
+            class="column-item"
+          >
+            <el-checkbox
+              v-model="col.visible"
+              :disabled="col.fixed"
+              @change="onColumnVisibilityChange"
+            >
+              {{ col.label }}
+            </el-checkbox>
+            <span v-if="col.fixed" class="fixed-tag">(固定)</span>
+          </div>
+        </div>
+      </div>
+      
+      <template #footer>
+        <el-button @click="showColumnSettings = false">取消</el-button>
+        <el-button type="primary" @click="saveColumnSettings">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Setting } from '@element-plus/icons-vue'
 import {
-  fetchStocksMock,
-  fetchStockDetailMock,
-  fetchStockHistoricalQuotesMock,
-  fetchStockBalanceSheetsMock,
+  fetchDisplayConfig,
+  saveDisplayConfig,
+  fetchStockData,
+  fetchStocks,
+  type DataTypeGroup,
+  type DisplayFieldConfig,
   type Stock,
-  type StockDetail,
-  type StockHistoricalQuote,
-  type StockBalanceSheet,
 } from '@/utils/api'
 
-const searchKeyword = ref('')
-const stocks = ref<Stock[]>([])
-const stockLoading = ref(false)
-const stockPage = ref(1)
-const stockPageSize = ref(20)
-const stockTotal = ref(0)
+const router = useRouter()
+
+const props = defineProps<{
+  symbol?: string
+  dataType?: string
+}>()
+
+const dataTypeGroups = ref<DataTypeGroup[]>([])
+const displayConfigs = ref<Record<string, { table_label: string; config: { fields: DisplayFieldConfig[] } }>>({})
+
+const activeDataType = ref('info')
 const selectedStock = ref<Stock | null>(null)
+const tableData = ref<Record<string, unknown>[]>([])
+const dataLoading = ref(false)
+const dataCache = ref<Map<string, { results: Record<string, unknown>[], total: number }>>(new Map())
+const currentPage = ref(1)
+const pageSize = ref(50)
+const totalRecords = ref(0)
 
-const activeTab = ref('info')
-const stockDetail = ref<StockDetail | null>(null)
-const historicalQuotes = ref<StockHistoricalQuote[]>([])
-const balanceSheets = ref<StockBalanceSheet[]>([])
-const infoLoading = ref(false)
-const quoteLoading = ref(false)
-const balanceLoading = ref(false)
+const showColumnSettings = ref(false)
+const allColumns = ref<(DisplayFieldConfig & { visible: boolean })[]>([])
 
-const loadStocks = async () => {
-  stockLoading.value = true
-  try {
-    const response = await fetchStocksMock({
-      keyword: searchKeyword.value || undefined,
-      page: stockPage.value,
-      page_size: stockPageSize.value,
-    })
-    if (response.success && response.data) {
-      stocks.value = response.data.results || []
-      stockTotal.value = response.data.pagination?.total || 0
-    }
-  } catch (error) {
-    console.error('Failed to load stocks:', error)
-  } finally {
-    stockLoading.value = false
+const pageTitle = computed(() => {
+  if (selectedStock.value) {
+    return `${selectedStock.value.name} (${selectedStock.value.symbol})`
+  }
+  return '个股信息'
+})
+
+const currentTable = computed(() => {
+  for (const group of dataTypeGroups.value) {
+    const item = group.items.find(i => i.key === activeDataType.value)
+    if (item) return item.table
+  }
+  return 'saa_stocks'
+})
+
+const currentTableLabel = computed(() => {
+  const config = displayConfigs.value[currentTable.value]
+  return config?.table_label || '数据'
+})
+
+const currentConfig = computed(() => {
+  return displayConfigs.value[currentTable.value]?.config
+})
+
+const visibleColumns = computed(() => {
+  if (!currentConfig.value) return []
+  return currentConfig.value.fields
+    .filter(f => f.visible && f.name !== 'symbol' && f.name !== 'name' && f.name !== 'stock_code' && f.name !== 'stock_name')
+    .sort((a, b) => a.order - b.order)
+})
+
+const isBasicInfo = computed(() => currentTable.value === 'saa_stocks')
+
+const selectAllColumns = computed({
+  get: () => allColumns.value.every(c => c.visible),
+  set: () => {}
+})
+
+const isIndeterminate = computed(() => {
+  const visibleCount = allColumns.value.filter(c => c.visible).length
+  return visibleCount > 0 && visibleCount < allColumns.value.length
+})
+
+const loadDisplayConfig = async () => {
+  const response = await fetchDisplayConfig()
+  if (response.success && response.data) {
+    const data = response.data as { groups: DataTypeGroup[]; configs: Record<string, { table_label: string; config: { fields: DisplayFieldConfig[] } }> }
+    dataTypeGroups.value = data.groups
+    displayConfigs.value = data.configs
   }
 }
 
-const searchStocks = () => {
-  stockPage.value = 1
-  loadStocks()
+const onDataTypeSelect = (key: string) => {
+  activeDataType.value = key
+  currentPage.value = 1
+  if (selectedStock.value) {
+    router.push(`/stock/${selectedStock.value.symbol}/${key}`)
+  }
 }
 
-const selectStock = (stock: Stock) => {
-  selectedStock.value = stock
-  activeTab.value = 'info'
-  loadStockDetail()
-}
-
-const loadStockDetail = async () => {
+const loadStockData = async () => {
   if (!selectedStock.value) return
   
-  infoLoading.value = true
+  const cacheKey = `${selectedStock.value.symbol}:${currentTable.value}:${currentPage.value}:${pageSize.value}`
+  if (dataCache.value.has(cacheKey)) {
+    const cached = dataCache.value.get(cacheKey)!
+    tableData.value = cached.results
+    totalRecords.value = cached.total
+    return
+  }
+  
+  dataLoading.value = true
   try {
-    const response = await fetchStockDetailMock(selectedStock.value.symbol)
+    const response = await fetchStockData(selectedStock.value.symbol, currentTable.value, currentPage.value, pageSize.value)
     if (response.success && response.data) {
-      stockDetail.value = response.data
+      tableData.value = response.data.results
+      totalRecords.value = response.data.total
+      dataCache.value.set(cacheKey, { results: response.data.results, total: response.data.total })
     }
   } catch (error) {
-    console.error('Failed to load stock detail:', error)
+    console.error('Failed to load stock data:', error)
   } finally {
-    infoLoading.value = false
+    dataLoading.value = false
   }
 }
 
-const onTabChange = (tab: string) => {
-  if (!selectedStock.value) return
+const onPageSizeChange = (val: number) => {
+  pageSize.value = val
+  currentPage.value = 1
+  loadStockData()
+}
+
+const onPageChange = (val: number) => {
+  currentPage.value = val
+  loadStockData()
+}
+
+const formatValue = (value: unknown, format?: string): string => {
+  if (value === null || value === undefined) return '-'
   
-  if (tab === 'historical_quote') {
-    loadHistoricalQuotes()
-  } else if (tab === 'balance_sheet') {
-    loadBalanceSheets()
+  switch (format) {
+    case 'price':
+      return typeof value === 'number' ? value.toFixed(2) : String(value)
+    case 'volume':
+      if (typeof value !== 'number') return String(value)
+      if (value >= 100000000) return (value / 100000000).toFixed(2) + '亿'
+      if (value >= 10000) return (value / 10000).toFixed(2) + '万'
+      return value.toLocaleString()
+    case 'money':
+      if (typeof value !== 'number') return String(value)
+      if (value >= 100000000) return (value / 100000000).toFixed(2) + '亿'
+      return (value / 10000).toFixed(2) + '万'
+    case 'percent':
+      return typeof value === 'number' ? (value * 100).toFixed(2) + '%' : String(value)
+    case 'date':
+      return String(value)
+    default:
+      return String(value)
   }
 }
 
-const loadHistoricalQuotes = async () => {
-  if (!selectedStock.value) return
-  
-  quoteLoading.value = true
-  try {
-    const response = await fetchStockHistoricalQuotesMock(selectedStock.value.symbol)
-    if (response.success && response.data) {
-      historicalQuotes.value = response.data
+const isNumericFormat = (format?: string): boolean => {
+  const numericFormats = ['price', 'volume', 'money', 'percent']
+  return format ? numericFormats.includes(format) : false
+}
+
+const initColumnSettings = () => {
+  if (!currentConfig.value) return
+  allColumns.value = currentConfig.value.fields.map(f => ({ ...f, visible: f.visible }))
+}
+
+const onSelectAllChange = (val: boolean) => {
+  allColumns.value.forEach(col => {
+    if (!col.fixed) {
+      col.visible = val
     }
-  } catch (error) {
-    console.error('Failed to load historical quotes:', error)
-  } finally {
-    quoteLoading.value = false
-  }
+  })
 }
 
-const loadBalanceSheets = async () => {
-  if (!selectedStock.value) return
+const onColumnVisibilityChange = () => {
+  // Just update local state, will save on button click
+}
+
+const resetColumnSettings = () => {
+  initColumnSettings()
+}
+
+const saveColumnSettings = async () => {
+  if (!currentConfig.value) return
   
-  balanceLoading.value = true
-  try {
-    const response = await fetchStockBalanceSheetsMock(selectedStock.value.symbol)
-    if (response.success && response.data) {
-      balanceSheets.value = response.data
+  const newFields = allColumns.value.map(({ visible, ...rest }) => ({
+    ...rest,
+    visible
+  }))
+  
+  const response = await saveDisplayConfig(currentTable.value, { fields: newFields })
+  
+  if (response.success) {
+    const existing = displayConfigs.value[currentTable.value]
+    displayConfigs.value[currentTable.value] = {
+      table_label: existing?.table_label ?? currentTable.value,
+      config: { fields: newFields }
     }
-  } catch (error) {
-    console.error('Failed to load balance sheets:', error)
-  } finally {
-    balanceLoading.value = false
+  }
+  
+  showColumnSettings.value = false
+}
+
+watch(showColumnSettings, (val) => {
+  if (val) {
+    initColumnSettings()
+  }
+})
+
+const getActiveDataType = (dataType?: string): string => {
+  if (!dataType) return 'info'
+  const validTypes = ['info', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend']
+  return validTypes.includes(dataType) ? dataType : 'info'
+}
+
+const loadStockBySymbol = async (symbol: string) => {
+  const response = await fetchStocks({ keyword: symbol, page: 1, page_size: 1 })
+  if (response.success && response.data) {
+    const stocks = Array.isArray(response.data) ? response.data : response.data.results || []
+    if (stocks.length > 0) {
+      selectedStock.value = stocks[0]
+      loadStockData()
+    }
   }
 }
 
-const formatNumber = (num: number | null): string => {
-  if (num === null) return '-'
-  if (num >= 100000000) return (num / 100000000).toFixed(2) + '亿'
-  if (num >= 10000) return (num / 10000).toFixed(2) + '万'
-  return num.toLocaleString()
-}
-
-const formatMoney = (num: number | null): string => {
-  if (num === null) return '-'
-  return (num / 100000000).toFixed(2) + '亿'
-}
+watch([() => props.symbol, () => props.dataType], ([newSymbol, newDataType], [oldSymbol]) => {
+  if (newSymbol) {
+    if (newSymbol !== oldSymbol) {
+      dataCache.value.clear()
+      loadStockBySymbol(newSymbol)
+    }
+    activeDataType.value = getActiveDataType(newDataType)
+    if (newSymbol === oldSymbol && selectedStock.value) {
+      loadStockData()
+    }
+  }
+}, { immediate: true })
 
 onMounted(() => {
-  loadStocks()
+  loadDisplayConfig()
 })
 </script>
 
@@ -262,9 +385,6 @@ onMounted(() => {
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
 }
 
@@ -274,81 +394,87 @@ onMounted(() => {
 }
 
 .content-row {
-  height: calc(100vh - 160px);
+  height: calc(100vh - 116px);
 }
 
-.stock-list-card {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.stock-list-card :deep(.el-card__body) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.search-input {
-  margin-bottom: 12px;
-}
-
-.stock-list {
-  flex: 1;
-  overflow-y: auto;
-  margin-bottom: 12px;
-}
-
-.stock-item {
-  padding: 10px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  transition: background-color 0.2s;
-}
-
-.stock-item:hover {
-  background-color: #f5f7fa;
-}
-
-.stock-item.active {
-  background-color: #ecf5ff;
-  color: #409eff;
-}
-
-.stock-code {
-  font-weight: 500;
-}
-
-.stock-name {
-  color: #909399;
-  font-size: 13px;
-}
-
-.stock-pagination {
-  justify-content: center;
-}
-
-.stock-detail-card {
+.menu-card {
   height: 100%;
 }
 
-.stock-detail-card :deep(.el-card__body) {
-  height: calc(100% - 56px);
+.menu-card :deep(.el-card__body) {
+  padding: 0;
+  height: 100%;
   overflow: auto;
 }
 
-.empty-card {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.data-type-menu {
+  border-right: none;
+  height: 100%;
 }
 
-.card-header {
+.data-card {
+  height: 100%;
+}
+
+.data-card :deep(.el-card__body) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 12px;
+}
+
+.table-title {
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.column-settings {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 16px;
+}
+
+.column-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.column-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fixed-tag {
+  color: #909399;
+  font-size: 12px;
+}
+
+.data-card :deep(.el-descriptions) {
+  width: 100%;
+}
+
+.data-card :deep(.el-descriptions__label) {
+  width: 140px;
+  font-weight: 500;
+}
+
+.pagination-container {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

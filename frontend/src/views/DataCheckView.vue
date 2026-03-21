@@ -98,7 +98,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
-import { themeQuartz } from 'ag-grid-community'
+import { themeQuartz, type ColDef } from 'ag-grid-community'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import CollectorFilterPanel from '@/components/CollectorFilterPanel.vue'
@@ -114,7 +114,7 @@ const summary = ref<SummaryItem[]>([])
 const missingRecords = ref<MissingDataRecord[]>([])
 const gridApi = ref<any>(null)
 
-const columnDefs = [
+const columnDefs: ColDef[] = [
   {
     field: 'symbol',
     headerName: '股票代码',

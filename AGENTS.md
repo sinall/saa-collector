@@ -113,6 +113,44 @@ npm run test:e2e:report
 - Check for null/undefined values before accessing properties
 - Use optional chaining (`?.`) when appropriate
 - Provide default values for reactive refs
+- No trailing whitespace in any lines
+- No blank lines with spaces
+
+## Code Review Checklist
+
+After making any code changes, ALWAYS perform these checks:
+
+### 1. Trailing Whitespace Check
+```bash
+cd frontend && git diff --check
+```
+- No trailing whitespace in any lines
+- No blank lines with spaces
+
+### 2. Type Check
+```bash
+cd frontend && npm run type-check
+```
+- No TypeScript errors
+
+### 3. Lint Check (if configured)
+```bash
+cd frontend && npm run lint
+```
+- No linting errors
+
+### 4. Test Validation
+```bash
+cd frontend && npm run test:e2e:chromium
+```
+- All tests pass
+
+### Quick Fix for Whitespace Issues
+If `git diff --check` reports trailing whitespace:
+1. Open the reported file(s)
+2. Go to the reported line number(s)
+3. Remove all spaces/tabs on blank lines
+4. Re-run `git diff --check` to verify
 
 ## Common Issues
 

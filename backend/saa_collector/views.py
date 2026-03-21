@@ -1,6 +1,8 @@
+import json
 import logging
 import threading
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
@@ -408,14 +410,14 @@ class StockListView(APIView):
         with connection.cursor() as cursor:
             if keyword:
                 cursor.execute(
-                    "SELECT symbol, name, industry, list_date FROM saa_stocks "
+                    "SELECT symbol, name, industry_classification_id, listing_time FROM saa_stocks "
                     "WHERE symbol LIKE %s OR name LIKE %s "
                     "ORDER BY symbol LIMIT 100",
-                    [f'%{keyword}%', f'%{keyword}%']
+                    [f'{keyword}%', f'%{keyword}%']
                 )
             else:
                 cursor.execute(
-                    "SELECT symbol, name, industry, list_date FROM saa_stocks "
+                    "SELECT symbol, name, industry_classification_id, listing_time FROM saa_stocks "
                     "ORDER BY symbol LIMIT 100"
                 )
 
@@ -440,7 +442,7 @@ class StockDetailView(APIView):
     def get(self, request, symbol):
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT symbol, name, industry, list_date FROM saa_stocks "
+                "SELECT symbol, name, industry_classification_id, listing_time FROM saa_stocks "
                 "WHERE symbol = %s",
                 [symbol]
             )
@@ -458,8 +460,116 @@ class StockDetailView(APIView):
                     'name': row[1],
                     'industry': row[2],
                     'list_date': str(row[3]) if row[3] else None,
-                }
-            })
+            }
+        })
+
+
+class TypeBrowseDataView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    TABLE_CONFIG = {
+        'saa_stocks': {'date_column': None, 'order': 'symbol ASC'},
+        'saa_latest_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_raw_balance_sheet': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_raw_income_statement': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_raw_cash_flow_statement': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_raw_main_business': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_capitals': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_dividends': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+    }
+
+    NEEDS_STOCK_NAME = {
+        'saa_latest_prices',
+        'saa_prices',
+        'saa_raw_balance_sheet',
+        'saa_raw_income_statement',
+        'saa_raw_cash_flow_statement',
+        'saa_raw_main_business',
+        'saa_capitals',
+        'saa_dividends',
+    }
+
+    def get(self, request, table_name):
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 50))
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        offset = (page - 1) * page_size
+
+        config = self.TABLE_CONFIG.get(table_name)
+        if not config:
+            return Response({'success': False, 'error': 'Invalid table name'}, status=400)
+
+        date_column = config['date_column']
+        order_clause = f"ORDER BY {config['order']}"
+
+        with connection.cursor() as cursor:
+            where_clauses = []
+            params = []
+
+            if date_column and start_date:
+                where_clauses.append(f"t.{date_column} >= %s")
+                params.append(start_date)
+            if date_column and end_date:
+                where_clauses.append(f"t.{date_column} <= %s")
+                params.append(end_date)
+
+            where_clause = " AND ".join(where_clauses)
+            if where_clause:
+                where_clause = "WHERE " + where_clause
+
+            if table_name in self.NEEDS_STOCK_NAME:
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table_name} t {where_clause}",
+                    params
+                )
+                total = cursor.fetchone()[0]
+
+                cursor.execute(
+                    f"""
+                    SELECT t.*, s.name as stock_name
+                    FROM {table_name} t
+                    LEFT JOIN saa_stocks s ON t.symbol = s.symbol
+                    {where_clause}
+                    {order_clause}
+                    LIMIT %s OFFSET %s
+                    """,
+                    params + [page_size, offset]
+                )
+            else:
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table_name} t {where_clause}",
+                    params
+                )
+                total = cursor.fetchone()[0]
+
+                cursor.execute(
+                    f"SELECT t.* FROM {table_name} t {where_clause} {order_clause} LIMIT %s OFFSET %s",
+                    params + [page_size, offset]
+                )
+
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            results = [dict(zip(columns, row)) for row in rows]
+
+            for row in results:
+                for key, value in row.items():
+                    if isinstance(value, date):
+                        row[key] = value.strftime('%Y-%m-%d')
+                    elif isinstance(value, Decimal):
+                        row[key] = float(value)
+
+        return Response({
+            'success': True,
+            'data': {
+                'results': results,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        })
+
 
 @method_decorator(csrf_exempt, name='dispatch')
 class DataCompletenessCheckView(APIView):
@@ -1860,3 +1970,197 @@ class DataCompletenessHeatmapView(APIView):
             year = int(period)
             return f"{year}-01-01", f"{year}-12-31"
         return period, period
+
+
+class DisplayFieldConfigView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    TABLE_LABEL_MAP = {
+        'saa_stocks': '基本信息',
+        'saa_latest_prices': '最新行情',
+        'saa_prices': '历史行情',
+        'saa_raw_balance_sheet': '资产负债表',
+        'saa_raw_income_statement': '利润表',
+        'saa_raw_cash_flow_statement': '现金流量表',
+        'saa_raw_main_business': '主营业务',
+        'saa_capitals': '股本变动',
+        'saa_dividends': '分红数据',
+    }
+
+    DATA_TYPE_GROUPS = [
+        {
+            'key': 'basic',
+            'label': '基本信息',
+            'items': [
+                {'key': 'info', 'label': '基本信息', 'table': 'saa_stocks'},
+            ]
+        },
+        {
+            'key': 'quote',
+            'label': '行情数据',
+            'items': [
+                {'key': 'quote', 'label': '最新行情', 'table': 'saa_latest_prices'},
+                {'key': 'historical_quote', 'label': '历史行情', 'table': 'saa_prices'},
+            ]
+        },
+        {
+            'key': 'statement',
+            'label': '财务报表',
+            'items': [
+                {'key': 'balance_sheet', 'label': '资产负债表', 'table': 'saa_raw_balance_sheet'},
+                {'key': 'income', 'label': '利润表', 'table': 'saa_raw_income_statement'},
+                {'key': 'cash_flow', 'label': '现金流量表', 'table': 'saa_raw_cash_flow_statement'},
+            ]
+        },
+        {
+            'key': 'other',
+            'label': '其他数据',
+            'items': [
+                {'key': 'main_business', 'label': '主营业务', 'table': 'saa_raw_main_business'},
+                {'key': 'capital', 'label': '股本变动', 'table': 'saa_capitals'},
+                {'key': 'dividend', 'label': '分红数据', 'table': 'saa_dividends'},
+            ]
+        },
+    ]
+
+    def get(self, request):
+        table_name = request.query_params.get('table')
+        
+        with connection.cursor() as cursor:
+            if table_name:
+                cursor.execute(
+                    "SELECT table_name, table_label, config FROM display_field_config WHERE table_name = %s",
+                    [table_name]
+                )
+                row = cursor.fetchone()
+                if row:
+                    return Response({
+                        'success': True,
+                        'data': {
+                            'table_name': row[0],
+                            'table_label': row[1],
+                            'config': json.loads(row[2]) if isinstance(row[2], str) else row[2]
+                        }
+                    })
+                return Response({'success': False, 'error': 'Table not found'}, status=404)
+            else:
+                cursor.execute("SELECT table_name, table_label, config FROM display_field_config")
+                configs = {}
+                for row in cursor.fetchall():
+                    configs[row[0]] = {
+                        'table_label': row[1],
+                        'config': json.loads(row[2]) if isinstance(row[2], str) else row[2]
+                    }
+                return Response({
+                    'success': True,
+                    'data': {
+                        'groups': self.DATA_TYPE_GROUPS,
+                        'configs': configs
+                    }
+                })
+
+    def put(self, request):
+        table_name = request.data.get('table_name')
+        config = request.data.get('config')
+        
+        if not table_name or not config:
+            return Response({'success': False, 'error': 'Missing table_name or config'}, status=400)
+        
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE display_field_config SET config = %s WHERE table_name = %s",
+                [json.dumps(config), table_name]
+            )
+            if cursor.rowcount == 0:
+                return Response({'success': False, 'error': 'Table not found'}, status=404)
+        
+        return Response({'success': True})
+
+
+class StockDataView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    DATE_COLUMN_MAP = {
+        'saa_stocks': None,
+        'saa_latest_prices': 'date',
+        'saa_prices': 'date',
+        'saa_raw_balance_sheet': 'date',
+        'saa_raw_income_statement': 'date',
+        'saa_raw_cash_flow_statement': 'date',
+        'saa_raw_main_business': 'date',
+        'saa_capitals': 'date',
+        'saa_dividends': 'date',
+    }
+
+    NEEDS_STOCK_NAME = {
+        'saa_latest_prices',
+        'saa_prices',
+        'saa_raw_balance_sheet',
+        'saa_raw_income_statement',
+        'saa_raw_cash_flow_statement',
+        'saa_raw_main_business',
+        'saa_capitals',
+        'saa_dividends',
+    }
+
+    def get(self, request, symbol, table_name):
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 50))
+        offset = (page - 1) * page_size
+
+        date_column = self.DATE_COLUMN_MAP.get(table_name, 'date')
+        order_clause = f"ORDER BY t.{date_column} DESC" if date_column else ""
+
+        with connection.cursor() as cursor:
+            if table_name in self.NEEDS_STOCK_NAME:
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE symbol = %s",
+                    [symbol]
+                )
+                total = cursor.fetchone()[0]
+
+                cursor.execute(
+                    f"""
+                    SELECT t.*, s.name as stock_name
+                    FROM {table_name} t
+                    LEFT JOIN saa_stocks s ON t.symbol = s.symbol
+                    WHERE t.symbol = %s
+                    {order_clause}
+                    LIMIT %s OFFSET %s
+                    """,
+                    [symbol, page_size, offset]
+                )
+            else:
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE symbol = %s",
+                    [symbol]
+                )
+                total = cursor.fetchone()[0]
+
+                order_clause_simple = f"ORDER BY {date_column} DESC" if date_column else ""
+                cursor.execute(
+                    f"SELECT * FROM {table_name} WHERE symbol = %s {order_clause_simple} LIMIT %s OFFSET %s",
+                    [symbol, page_size, offset]
+                )
+
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            results = [dict(zip(columns, row)) for row in rows]
+
+            for row in results:
+                for key, value in row.items():
+                    if isinstance(value, date):
+                        row[key] = value.strftime('%Y-%m-%d')
+                    elif isinstance(value, Decimal):
+                        row[key] = float(value)
+
+        return Response({
+            'success': True,
+            'data': {
+                'results': results,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        })
+

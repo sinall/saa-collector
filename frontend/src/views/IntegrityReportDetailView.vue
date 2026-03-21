@@ -256,7 +256,7 @@ const columnDefs = [
     width: 120,
     cellRenderer: (params: any) => {
       const code = params.value ?? ''
-      return `<a href="/data-browse/stock?symbol=${code}" style="color: #409eff; text-decoration: none;">${code}</a>`
+      return `<a href="/stock/${code}" style="color: #409eff; text-decoration: none;">${code}</a>`
     },
   },
   {

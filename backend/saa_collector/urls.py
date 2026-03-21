@@ -31,4 +31,8 @@ urlpatterns = [
 
     path('stocks/', views.StockListView.as_view(), name='stock-list'),
     path('stocks/<str:symbol>/', views.StockDetailView.as_view(), name='stock-detail'),
+    
+    path('display-field-config/', views.DisplayFieldConfigView.as_view(), name='display-field-config'),
+    path('stock-data/<str:symbol>/<str:table_name>/', views.StockDataView.as_view(), name='stock-data'),
+    path('type-browse-data/<str:table_name>/', views.TypeBrowseDataView.as_view(), name='type-browse-data'),
 ]
