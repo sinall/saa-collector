@@ -15,18 +15,18 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Token ${token}`
     }
-    
+
     if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
       const csrfToken = getCsrfToken()
       if (csrfToken) {
         config.headers['X-CSRFToken'] = csrfToken
       }
     }
-    
+
     if (import.meta.env.DEV && import.meta.env.VITE_DEV_TOKEN) {
       config.headers['X-Dev-Token'] = import.meta.env.VITE_DEV_TOKEN
     }
-    
+
     return config
   },
   (error) => Promise.reject(error)
@@ -66,6 +66,9 @@ export interface DataStatus {
   count: number
   earliest_date: string | null
   latest_date: string | null
+  frequency: string | null
+  completeness: number | null
+  show_completeness?: boolean
   loading?: boolean
   error?: boolean
 }
@@ -220,6 +223,7 @@ export const checkDataCompleteness = async (params: {
 export interface HeatmapDataType {
   key: string
   label: string
+  frequency?: 'daily' | 'quarterly' | 'yearly' | null
 }
 
 export interface HeatmapResponse {
@@ -235,16 +239,18 @@ export interface HeatmapResponse {
 
 function generateMockHeatmapData(frequency: string): HeatmapResponse {
   const dataTypes: HeatmapDataType[] = [
-    { key: 'trade_days', label: '交易日' },
-    { key: 'stock_info', label: '股票基本信息' },
-    { key: 'quote', label: '最新行情' },
-    { key: 'historical_quote', label: '历史行情' },
-    { key: 'balance_sheet', label: '资产负债表' },
-    { key: 'income', label: '利润表' },
-    { key: 'cash_flow', label: '现金流量表' },
-    { key: 'dividend', label: '分红数据' },
-    { key: 'main_business', label: '主营业务' },
-    { key: 'capital', label: '股本变动' },
+    { key: 'trade_days', label: '交易日', frequency: 'daily' },
+    { key: 'stock_info', label: '股票基本信息', frequency: null },
+    { key: 'quote', label: '最新行情', frequency: null },
+    { key: 'historical_quote', label: '历史行情', frequency: 'daily' },
+    { key: 'balance_sheet', label: '资产负债表', frequency: 'quarterly' },
+    { key: 'income', label: '利润表', frequency: 'quarterly' },
+    { key: 'cash_flow', label: '现金流量表', frequency: 'quarterly' },
+    { key: 'main_business', label: '主营业务', frequency: 'quarterly' },
+    { key: 'capital', label: '股本变动', frequency: 'yearly' },
+    { key: 'dividend', label: '分红数据', frequency: 'yearly' },
+    { key: 'valuation_board', label: '板块估值', frequency: 'daily' },
+    { key: 'valuation_industry', label: '行业估值', frequency: 'daily' },
   ]
 
   let periods: string[] = []
@@ -255,12 +261,6 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
     for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().split('T')[0]
       if (dateStr) periods.push(dateStr)
-    }
-  } else if (frequency === 'weekly') {
-    for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 7)) {
-      const year = d.getFullYear()
-      const week = Math.ceil(((d.getTime() - new Date(year, 0, 1).getTime()) / 86400000 + 1) / 7)
-      periods.push(`${year}-W${String(week).padStart(2, '0')}`)
     }
   } else if (frequency === 'monthly') {
     for (let y = 2009; y <= now.getFullYear(); y++) {
@@ -284,10 +284,41 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
 
   const matrix: Record<string, number[]> = {}
   dataTypes.forEach(dt => {
-    matrix[dt.key] = periods.map(() => {
-      const base = 0.6 + Math.random() * 0.4
-      return Math.round(base * 100) / 100
-    })
+    const dtFreq = dt.frequency
+    if (dtFreq === null) {
+      const value = dt.key === 'stock_info' ? 1.0 : Math.round((0.6 + Math.random() * 0.4) * 100) / 100
+      matrix[dt.key] = Array(periods.length).fill(value)
+    } else if (frequency === 'monthly' && dtFreq === 'quarterly') {
+      const values: number[] = []
+      for (let i = 0; i < periods.length; i += 3) {
+        const value = Math.round((0.6 + Math.random() * 0.4) * 100) / 100
+        values.push(value, value, value)
+      }
+      matrix[dt.key] = values.slice(0, periods.length)
+    } else if (frequency === 'monthly' && dtFreq === 'yearly') {
+      const values: number[] = []
+      for (let i = 0; i < periods.length; i += 12) {
+        const value = Math.round((0.6 + Math.random() * 0.4) * 100) / 100
+        for (let j = 0; j < 12 && values.length < periods.length; j++) {
+          values.push(value)
+        }
+      }
+      matrix[dt.key] = values
+    } else if (frequency === 'quarterly' && dtFreq === 'yearly') {
+      const values: number[] = []
+      for (let i = 0; i < periods.length; i += 4) {
+        const value = Math.round((0.6 + Math.random() * 0.4) * 100) / 100
+        for (let j = 0; j < 4 && values.length < periods.length; j++) {
+          values.push(value)
+        }
+      }
+      matrix[dt.key] = values
+    } else {
+      matrix[dt.key] = periods.map(() => {
+        const base = 0.6 + Math.random() * 0.4
+        return Math.round(base * 100) / 100
+      })
+    }
   })
 
   const endDateStr = now.toISOString().split('T')[0] ?? ''
@@ -301,10 +332,8 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
 }
 
 export const fetchCompletenessHeatmap = async (frequency: string = 'monthly'): Promise<ApiResponse<HeatmapResponse>> => {
-  return {
-    success: true,
-    data: generateMockHeatmapData(frequency),
-  }
+  const response = await api.get('/data-completeness/heatmap/', { params: { frequency } })
+  return response.data
 }
 
 export interface StockDetail {
@@ -459,7 +488,7 @@ function generateMockStocks(keyword?: string): { results: Stock[], pagination: {
   const allStocks: Stock[] = []
   const prefixes = ['000', '001', '002', '600', '601', '603']
   const names = ['平安银行', '万科A', '国农科技', '浦发银行', '邯郸钢铁', 'ST嘉陵']
-  
+
   for (let i = 0; i < 500; i++) {
     const prefix = prefixes[i % prefixes.length] ?? '000'
     const suffix = String(i).padStart(3, '0')
@@ -496,7 +525,7 @@ export const fetchStocksMock = async (params?: {
   const pageSize = params?.page_size ?? 20
   const start = (page - 1) * pageSize
   const pagedResults = results.slice(start, start + pageSize)
-  
+
   return {
     success: true,
     data: {
@@ -545,64 +574,68 @@ export interface CollectSchedule {
   enabled: boolean
   created_at: string
   updated_at: string
-  executions: {
+  plans: {
     id: number
-    status: 'SUCCESS' | 'FAILED' | 'RUNNING'
+    name: string
+    status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
     status_display: string
-    executed_at: string
-    message: string
+    total_jobs: number
+    success_jobs: number
+    created_at: string
   }[]
 }
 
 function generateMockCollectSchedules(): CollectSchedule[] {
   const schedules: CollectSchedule[] = []
   const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
+  const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
   const frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
-  const frequencyDisplays = ['日度', '周度', '月度', '季度', '年度']
   const stockCodes = ['000001', '000002', '600000', '600001', '600036']
-  
+  const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
+  const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
+
   for (let i = 1; i <= 8; i++) {
     const date = new Date()
     date.setDate(date.getDate() - (i - 1) * 3)
-    
+
     const frequencyIndex = Math.floor(Math.random() * frequencies.length)
     const dataTypeIndex = Math.floor(Math.random() * dataTypes.length)
     const frequency = frequencies[frequencyIndex] ?? 'daily'
-    const frequencyDisplay = frequencyDisplays[frequencyIndex] ?? '日度'
-    
+
+    const plans = []
+    for (let j = 0; j < 3; j++) {
+      const planDate = new Date(date)
+      planDate.setDate(planDate.getDate() - j * 7)
+      const statusIdx = Math.floor(Math.random() * 4)
+      plans.push({
+        id: i * 100 + j,
+        name: `定时触发-${dataTypes[dataTypeIndex] ?? 'quote'}-${planDate.toISOString().split('T')[0] ?? ''}`,
+        status: statuses[statusIdx] ?? 'PENDING',
+        status_display: statusDisplays[statusIdx] ?? '待执行',
+        total_jobs: Math.floor(Math.random() * 5) + 1,
+        success_jobs: statusIdx === 2 ? Math.floor(Math.random() * 5) + 1 : Math.floor(Math.random() * 3),
+        created_at: planDate.toISOString(),
+      })
+    }
+
     schedules.push({
       id: i,
-      name: `${dataTypes[dataTypeIndex]} 采集日程 - ${frequency}度`,
+      name: `${dataTypeDisplays[dataTypeIndex] ?? '行情数据'} 采集日程 - ${frequency}度`,
       data_type: dataTypes[dataTypeIndex] ?? 'quote',
-      data_type_display: dataTypes[dataTypeIndex] ?? 'quote',
+      data_type_display: dataTypeDisplays[dataTypeIndex] ?? '行情数据',
       symbols: i % 2 === 0 ? [] : stockCodes.slice(0, 3 + Math.floor(Math.random() * 3)),
-      cron_expression: frequency === 'daily' ? '0 0 * * *' : frequency === 'weekly' ? '0 0 * * * 1' : frequency === 'monthly' ? '0 0 1 * *' : frequency === 'quarterly' ? '0 0 1 1 */' : '0 0 1 1 1',
+      cron_expression: frequency === 'daily' ? '0 0 * * *' : frequency === 'weekly' ? '0 0 * * 1' : frequency === 'monthly' ? '0 0 1 * *' : frequency === 'quarterly' ? '0 0 1 1 */3' : '0 0 1 1 *',
       params: {
         date_start: '2009-01-01',
-        date_end: date.toISOString().split('T')[0],
+        date_end: date.toISOString().split('T')[0] ?? '',
       },
       enabled: Math.random() > 0.5,
       created_at: date.toISOString(),
       updated_at: new Date().toISOString(),
-      executions: [
-        {
-          id: i * 10 + 1,
-          status: 'SUCCESS',
-          status_display: '执行成功',
-          message: '成功采集了 100 条数据',
-          executed_at: date.toISOString(),
-        },
-        {
-          id: i * 10 + 2,
-          status: Math.random() > 0.3 ? 'FAILED' : 'RUNNING',
-          status_display: Math.random() > 0.3 ? '执行失败' : '执行中',
-          message: Math.random() > 0.3 ? '网络错误' : '正在采集...',
-          executed_at: new Date(date.getTime() - 3600000).toISOString(),
-        },
-      ],
+      plans,
     })
   }
-  
+
   return schedules
 }
 
@@ -613,18 +646,18 @@ function generateMockCollectPlans(): CollectPlan[] {
   const stockCodes = ['000001', '000002', '600000', '600001', '600036']
   const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
   const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
-  
+
   for (let i = 1; i <= 8; i++) {
     const date = new Date()
     date.setDate(date.getDate() - (i - 1) * 5)
     const statusIndex = Math.min(i - 1, 3)
-    const status = statuses[statusIndex]
-    
+    const status = statuses[statusIndex] ?? 'PENDING'
+
     plans.push({
       id: i,
       name: `采集计划 ${i}`,
       status,
-      status_display: statusDisplays[statusIndex],
+      status_display: statusDisplays[statusIndex] ?? '待执行',
       execution_mode_display: '手动执行',
       source_report_name: i > 2 ? `完整性检查报告 #${i - 2}` : undefined,
       created_at: date.toISOString(),
@@ -632,11 +665,11 @@ function generateMockCollectPlans(): CollectPlan[] {
       completed_at: status === 'COMPLETED' || status === 'FAILED' ? new Date(date.getTime() + 3600000).toISOString() : undefined,
       jobs: [
         {
-          data_type_display: dataTypeDisplays[i % dataTypeDisplays.length],
+          data_type_display: dataTypeDisplays[i % dataTypeDisplays.length] ?? '行情数据',
           symbols: stockCodes.slice(0, 3 + Math.floor(Math.random() * 3)),
           params: {
             start_date: '2009-01-01',
-            end_date: date.toISOString().split('T')[0],
+            end_date: date.toISOString().split('T')[0] ?? '',
           },
           status: status === 'PENDING' ? 'PENDING' : status === 'RUNNING' ? 'RUNNING' : 'SUCCESS',
           status_display: status === 'PENDING' ? '待执行' : status === 'RUNNING' ? '执行中' : '执行成功',
@@ -647,13 +680,13 @@ function generateMockCollectPlans(): CollectPlan[] {
       ],
     })
   }
-  
+
   return plans
 }
 
 export const fetchCollectScheduleMock = async (id: number): Promise<ApiResponse<CollectSchedule>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
-  
+
   const schedule = generateMockCollectSchedules().find(s => s.id === id)
   if (!schedule) {
     return {
@@ -661,7 +694,7 @@ export const fetchCollectScheduleMock = async (id: number): Promise<ApiResponse<
       error: '采集日程不存在',
     }
   }
-  
+
   return {
     success: true,
     data: schedule,
@@ -670,15 +703,46 @@ export const fetchCollectScheduleMock = async (id: number): Promise<ApiResponse<
 
 export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<CollectPlan>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
-  
-  const plan = generateMockCollectPlans().find(p => p.id === id)
+
+  let plan = generateMockCollectPlans().find(p => p.id === id)
+
   if (!plan) {
-    return {
-      success: false,
-      error: '采集计划不存在',
+    const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
+    const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
+    const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
+    const stockCodes = ['000001', '000002', '600000', '600001', '600036']
+    const statusIdx = id % 4
+    const status = statuses[statusIdx] ?? 'PENDING'
+    const date = new Date()
+    date.setDate(date.getDate() - Math.floor(id / 100) * 7)
+
+    plan = {
+      id,
+      name: `定时触发-计划 #${id}`,
+      status,
+      status_display: statusDisplays[statusIdx] ?? '待执行',
+      execution_mode_display: '并行执行',
+      created_at: date.toISOString(),
+      started_at: status !== 'PENDING' ? new Date(date.getTime() + 60000).toISOString() : undefined,
+      completed_at: status === 'COMPLETED' || status === 'FAILED' ? new Date(date.getTime() + 3600000).toISOString() : undefined,
+      jobs: [
+        {
+          data_type_display: dataTypeDisplays[id % dataTypeDisplays.length] ?? '行情数据',
+          symbols: stockCodes.slice(0, 3 + (id % 3)),
+          params: {
+            start_date: '2009-01-01',
+            end_date: date.toISOString().split('T')[0] ?? '',
+          },
+          status: status === 'PENDING' ? 'PENDING' : status === 'RUNNING' ? 'RUNNING' : 'SUCCESS',
+          status_display: status === 'PENDING' ? '待执行' : status === 'RUNNING' ? '执行中' : '执行成功',
+          start_time: status !== 'PENDING' ? new Date(date.getTime() + 60000).toISOString() : undefined,
+          end_time: status === 'COMPLETED' ? new Date(date.getTime() + 1800000).toISOString() : undefined,
+          message: status === 'COMPLETED' ? '成功采集 100 条数据' : status === 'FAILED' ? '网络错误' : undefined,
+        },
+      ],
     }
   }
-  
+
   return {
     success: true,
     data: plan,
@@ -729,17 +793,17 @@ function generateMockIntegrityReports(): IntegrityReport[] {
   const statuses: Array<'GENERATING' | 'COMPLETED' | 'FAILED'> = ['COMPLETED', 'COMPLETED', 'FAILED']
   const frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
   const frequencyDisplays = ['日度', '周度', '月度', '季度', '年度']
-  const dataTypeOptions = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital', 'main_business', 'trade_days', 'valuation']
-  
+  const dataTypeOptions = ['trade_days', 'stock_info', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend', 'valuation_board', 'valuation_industry']
+
   for (let i = 1; i <= 8; i++) {
     const statusIndex = Math.min(i - 1, 2)
     const status = statuses[statusIndex] ?? 'COMPLETED'
     const freqIndex = Math.floor(Math.random() * frequencies.length)
     const date = new Date()
     date.setDate(date.getDate() - (i - 1) * 2)
-    
+
     const selectedTypes = dataTypeOptions.slice(0, 3 + Math.floor(Math.random() * 5))
-    
+
     reports.push({
       id: i,
       name: `完整性检查报告 #${i}`,
@@ -758,7 +822,7 @@ function generateMockIntegrityReports(): IntegrityReport[] {
       completed_at: status !== 'GENERATING' ? new Date(date.getTime() + 3600000).toISOString() : undefined,
     })
   }
-  
+
   return reports
 }
 
@@ -774,18 +838,18 @@ function generateMockIntegrityReportItems(
   }
 ): { items: IntegrityReportItem[], total: number, selected_count: number } {
   const allItems: IntegrityReportItem[] = []
-  const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital', 'main_business', 'trade_days', 'valuation']
+  const dataTypes = ['trade_days', 'stock_info', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend', 'valuation_board', 'valuation_industry']
   const stockCodes = ['000001', '000002', '000003', '000004', '000005', '600000', '600001', '600002', '600003', '600004', '600005']
-  
+
   let itemId = 1
   const periods = ['2024-Q1', '2024-Q2', '2024-Q3', '2024-Q4', '2024-01', '2024-02', '2024-03', '2024-04', '2024-05', '2024-06']
-  
+
   for (let i = 0; i < 250; i++) {
     const dataType = dataTypes[Math.floor(Math.random() * dataTypes.length)] ?? 'quote'
     const stockCode = stockCodes[Math.floor(Math.random() * stockCodes.length)] ?? '000001'
     const period = periods[Math.floor(Math.random() * periods.length)] ?? '2024-Q1'
     const status = Math.random() > 0.3 ? 'PENDING' : 'FIXED'
-    
+
     allItems.push({
       id: itemId++,
       report_id: reportId,
@@ -797,9 +861,9 @@ function generateMockIntegrityReportItems(
       selected: status === 'PENDING' && Math.random() > 0.5,
     })
   }
-  
+
   let filteredItems = allItems
-  
+
   if (filters?.status) {
     filteredItems = filteredItems.filter(item => item.status === filters.status)
   }
@@ -812,13 +876,13 @@ function generateMockIntegrityReportItems(
   if (filters?.period) {
     filteredItems = filteredItems.filter(item => item.period.includes(filters.period ?? ''))
   }
-  
+
   const total = filteredItems.length
   const selectedCount = filteredItems.filter(item => item.selected).length
-  
+
   const start = (page - 1) * pageSize
   const items = filteredItems.slice(start, start + pageSize)
-  
+
   return { items, total, selected_count: selectedCount }
 }
 
@@ -833,7 +897,7 @@ export const fetchIntegrityReportsMock = async (): Promise<ApiResponse<Integrity
 
 export const createIntegrityReportMock = async (params: IntegrityReportCreateParams): Promise<ApiResponse<IntegrityReport>> => {
   await new Promise(resolve => setTimeout(resolve, 500))
-  
+
   const report: IntegrityReport = {
     id: Math.floor(Math.random() * 1000) + 100,
     name: params.name,
@@ -850,7 +914,7 @@ export const createIntegrityReportMock = async (params: IntegrityReportCreatePar
     created_at: new Date().toISOString(),
     created_at_display: new Date().toLocaleString('zh-CN'),
   }
-  
+
   return {
     success: true,
     data: report,
@@ -874,17 +938,17 @@ export const fetchIntegrityReportDetailMock = async (
   selected_count: number
 }>> => {
   await new Promise(resolve => setTimeout(resolve, 200))
-  
+
   const reports = generateMockIntegrityReports()
   const report = reports.find(r => r.id === id) ?? reports[0]
-  
+
   if (!report) {
     return {
       success: false,
       error: '报告不存在',
     }
   }
-  
+
   if (report.status === 'GENERATING') {
     return {
       success: true,
@@ -896,7 +960,7 @@ export const fetchIntegrityReportDetailMock = async (
       },
     }
   }
-  
+
   const page = params?.page ?? 1
   const pageSize = params?.page_size ?? 100
   const result = generateMockIntegrityReportItems(id, page, pageSize, {
@@ -905,7 +969,7 @@ export const fetchIntegrityReportDetailMock = async (
     stock_code: params?.stock_code,
     period: params?.period,
   })
-  
+
   return {
     success: true,
     data: {
@@ -932,9 +996,9 @@ export const selectItemsMock = async (
   }
 ): Promise<ApiResponse<{ updated_count: number }>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
-  
+
   const count = Math.floor(Math.random() * 50) + 10
-  
+
   return {
     success: true,
     data: {
@@ -945,7 +1009,7 @@ export const selectItemsMock = async (
 
 export const generatePlanMock = async (reportId: number): Promise<ApiResponse<{ id: number }>> => {
   await new Promise(resolve => setTimeout(resolve, 500))
-  
+
   return {
     success: true,
     data: {
@@ -956,7 +1020,7 @@ export const generatePlanMock = async (reportId: number): Promise<ApiResponse<{ 
 
 export const refreshReportMock = async (reportId: number): Promise<ApiResponse<any>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
-  
+
   return {
     success: true,
     data: {},
@@ -971,7 +1035,7 @@ export interface IntegrityReportHeatmapData {
 
 export const fetchIntegrityReportHeatmapMock = async (reportId: number): Promise<ApiResponse<IntegrityReportHeatmapData>> => {
   await new Promise(resolve => setTimeout(resolve, 200))
-  
+
   const dataTypes = [
     { key: 'quote', label: '行情数据' },
     { key: 'historical_quote', label: '历史行情' },
@@ -980,14 +1044,14 @@ export const fetchIntegrityReportHeatmapMock = async (reportId: number): Promise
     { key: 'cash_flow', label: '现金流量表' },
     { key: 'dividend', label: '分红数据' },
   ]
-  
+
   const periods = ['2024-Q1', '2024-Q2', '2024-Q3', '2024-Q4', '2023-Q1', '2023-Q2', '2023-Q3', '2023-Q4']
-  
+
   const matrix: Record<string, number[]> = {}
   dataTypes.forEach(dt => {
     matrix[dt.key] = periods.map(() => Math.floor(Math.random() * 50) + 5)
   })
-  
+
   return {
     success: true,
     data: {
