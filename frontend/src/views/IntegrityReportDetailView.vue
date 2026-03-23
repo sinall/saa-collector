@@ -6,13 +6,13 @@
           <div>
             <el-button link @click="$router.back()">返回</el-button>
             <span style="margin-left: 16px; font-size: 18px;">{{ report?.name }}</span>
-            <el-tag :type="getStatusType(report?.status)" style="margin-left: 8px;">
-              {{ report?.status_display }}
+            <el-tag v-if="report" :type="getStatusType(report.status)" style="margin-left: 8px;">
+              {{ report.status_display }}
             </el-tag>
           </div>
           <div>
             <el-button
-              @click="refreshReport"
+              @click="refreshReportAction"
               :disabled="report?.status === 'GENERATING'"
               :loading="refreshing"
             >
@@ -20,7 +20,7 @@
             </el-button>
             <el-button
               type="primary"
-              @click="generatePlan"
+              @click="generatePlanAction"
               :disabled="report?.status !== 'COMPLETED' || selectedCount === 0"
               :loading="generating"
             >
@@ -130,11 +130,11 @@ import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
 import * as echarts from 'echarts'
 import {
-  fetchIntegrityReportDetailMock,
-  fetchIntegrityReportHeatmapMock,
-  selectItemsMock,
-  refreshReportMock,
-  generatePlanMock,
+  fetchIntegrityReportDetail,
+  selectItems,
+  refreshReport,
+  generatePlan,
+  fetchIntegrityReportHeatmap,
   type IntegrityReportItem
 } from '@/utils/api'
 import { Loading } from '@element-plus/icons-vue'
@@ -303,10 +303,10 @@ const loadItems = async () => {
 
   try {
     const params = buildQueryParams()
-    const response = await fetchIntegrityReportDetailMock(parseInt(props.id), params)
+    const response = await fetchIntegrityReportDetail(parseInt(props.id), params)
 
     if (response.success && response.data) {
-      report.value = response.data.report
+      report.value = response.data
       rowData.value = response.data.items || []
       totalItems.value = response.data.items_count || 0
       selectedCount.value = response.data.selected_count || 0
@@ -351,10 +351,10 @@ const onSelectionChanged = (event: any) => {
 
 const fetchReport = async () => {
   try {
-    const response = await fetchIntegrityReportDetailMock(parseInt(props.id))
+    const response = await fetchIntegrityReportDetail(parseInt(props.id))
     if (response.success && response.data) {
-      report.value = response.data.report
-      return response.data.report.status
+      report.value = response.data
+      return response.data.status
     }
     return null
   } catch (error) {
@@ -375,7 +375,7 @@ const pollReport = async () => {
 
 const selectAllFiltered = async () => {
   try {
-    const response = await selectItemsMock(parseInt(props.id), {
+    const response = await selectItems(parseInt(props.id), {
       data_types: filterDataType.value.length > 0 ? filterDataType.value : undefined,
       stock_code: filterStockCode.value || undefined,
       period: filterPeriod.value || undefined,
@@ -395,7 +395,7 @@ const selectAllFiltered = async () => {
 
 const deselectAllFiltered = async () => {
   try {
-    const response = await selectItemsMock(parseInt(props.id), {
+    const response = await selectItems(parseInt(props.id), {
       data_types: filterDataType.value.length > 0 ? filterDataType.value : undefined,
       stock_code: filterStockCode.value || undefined,
       period: filterPeriod.value || undefined,
@@ -413,10 +413,10 @@ const deselectAllFiltered = async () => {
   }
 }
 
-const refreshReport = async () => {
+const refreshReportAction = async () => {
   refreshing.value = true
   try {
-    const response = await refreshReportMock(parseInt(props.id))
+    const response = await refreshReport(parseInt(props.id))
     if (response.success) {
       ElMessage.success('报告刷新已开始')
       loading.value = true
@@ -431,7 +431,7 @@ const refreshReport = async () => {
   }
 }
 
-const generatePlan = async () => {
+const generatePlanAction = async () => {
   try {
     await ElMessageBox.confirm(
       `确定要生成采集计划吗？已选择 ${selectedCount.value} 项缺失数据。`,
@@ -444,7 +444,7 @@ const generatePlan = async () => {
     )
     
     generating.value = true
-    const response = await generatePlanMock(parseInt(props.id))
+    const response = await generatePlan(parseInt(props.id))
     
     if (response.success && response.data) {
       ElMessage.success('计划已生成')
@@ -475,7 +475,7 @@ const loadHeatmapData = async () => {
   
   heatmapLoading.value = true
   try {
-    const response = await fetchIntegrityReportHeatmapMock(parseInt(props.id))
+    const response = await fetchIntegrityReportHeatmap(parseInt(props.id))
     if (response.success && response.data) {
       renderHeatmap(response.data)
     }
@@ -484,6 +484,15 @@ const loadHeatmapData = async () => {
   } finally {
     heatmapLoading.value = false
   }
+}
+
+const getColorByValue = (value: number): string => {
+  if (value === -1) return '#f5f5f5'
+  if (value < 0.25) return '#fecaca'
+  if (value < 0.5) return '#fed7aa'
+  if (value < 0.75) return '#fef08a'
+  if (value < 0.9) return '#bbf7d0'
+  return '#86efac'
 }
 
 const renderHeatmap = (data: { data_types: { key: string; label: string }[]; periods: string[]; matrix: Record<string, number[]> }) => {
@@ -495,24 +504,32 @@ const renderHeatmap = (data: { data_types: { key: string; label: string }[]; per
 
   const { data_types, periods, matrix } = data
 
-  const chartData: [number, number, number][] = []
+  const chartData: any[] = []
   data_types.forEach((dt, yIndex) => {
     const values = matrix[dt.key] || []
     values.forEach((value, xIndex) => {
-      chartData.push([xIndex, yIndex, value])
+      chartData.push({
+        value: [xIndex, yIndex, value],
+        itemStyle: {
+          color: getColorByValue(value),
+        },
+      })
     })
   })
-
-  const maxValue = Math.max(...chartData.map(d => d[2]), 1)
 
   const option: echarts.EChartsOption = {
     tooltip: {
       position: 'top',
+      confine: true,
       formatter: (params: any) => {
-        const [xIndex, yIndex, value] = params.data
+        const [xIndex, yIndex, value] = params.data.value
         const period = periods[xIndex] ?? ''
         const dataType = data_types[yIndex]?.label ?? ''
-        return `${period}<br/>${dataType}: ${value} 项缺失`
+        if (value === -1) {
+          return `${period}<br/>${dataType}: 不适用`
+        }
+        const percentage = Math.round(value * 100)
+        return `${period}<br/>${dataType}: ${percentage}% 完整`
       },
     },
     grid: {
@@ -536,16 +553,10 @@ const renderHeatmap = (data: { data_types: { key: string; label: string }[]; per
       splitArea: { show: false },
     },
     visualMap: {
+      show: false,
       min: 0,
-      max: maxValue,
-      calculable: true,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 0,
-      inRange: {
-        color: ['#f0f9eb', '#e6f7d0', '#bae637', '#52c41a', '#237804'],
-      },
-      text: ['多', '少'],
+      max: 1,
+      calculable: false,
     },
     series: [
       {

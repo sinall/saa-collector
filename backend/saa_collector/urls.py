@@ -13,6 +13,7 @@ urlpatterns = [
     path('integrity-reports/<int:pk>/items/select-all/', views.DataIntegrityReportItemsSelectAllView.as_view(), name='integrity-report-items-select-all'),
     path('integrity-reports/<int:pk>/generate-plan/', views.DataIntegrityReportGeneratePlanView.as_view(), name='integrity-report-generate-plan'),
     path('integrity-reports/<int:pk>/refresh/', views.DataIntegrityReportRefreshView.as_view(), name='integrity-report-refresh'),
+    path('integrity-reports/<int:pk>/heatmap/', views.DataIntegrityReportHeatmapView.as_view(), name='integrity-report-heatmap'),
 
     path('collect-plans/', views.CollectPlanListView.as_view(), name='collect-plan-list'),
     path('collect-plans/<int:pk>/', views.CollectPlanDetailView.as_view(), name='collect-plan-detail'),

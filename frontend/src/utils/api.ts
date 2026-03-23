@@ -1004,6 +1004,71 @@ function generateMockIntegrityReportItems(
   return { items, total, selected_count: selectedCount }
 }
 
+export const fetchIntegrityReports = async (): Promise<ApiResponse<IntegrityReport[]>> => {
+  const response = await api.get('/integrity-reports/')
+  return {
+    success: true,
+    data: response.data.results || [],
+  }
+}
+
+export const createIntegrityReport = async (params: IntegrityReportCreateParams): Promise<ApiResponse<IntegrityReport>> => {
+  const response = await api.post('/integrity-reports/', params)
+  return response.data
+}
+
+export const fetchIntegrityReportDetail = async (
+  id: number,
+  params?: {
+    page?: number
+    page_size?: number
+    status?: string
+    data_type?: string
+    stock_code?: string
+    period?: string
+  }
+): Promise<ApiResponse<IntegrityReport & {
+  items: IntegrityReportItem[]
+  items_count: number
+  selected_count: number
+  pagination?: { page: number; page_size: number; total: number; total_pages: number }
+}>> => {
+  const response = await api.get(`/integrity-reports/${id}/`, { params })
+  return response.data
+}
+
+export const selectItems = async (
+  reportId: number,
+  params: {
+    data_types?: string[]
+    stock_code?: string
+    period?: string
+    status?: string
+    selected: boolean
+  }
+): Promise<ApiResponse<{ updated_count: number }>> => {
+  const response = await api.post(`/integrity-reports/${reportId}/items/select-all/`, params)
+  return response.data
+}
+
+export const generatePlan = async (reportId: number): Promise<ApiResponse<{ id: number }>> => {
+  const response = await api.post(`/integrity-reports/${reportId}/generate-plan/`)
+  return {
+    success: true,
+    data: { id: response.data.data.id },
+  }
+}
+
+export const refreshReport = async (reportId: number): Promise<ApiResponse<any>> => {
+  const response = await api.post(`/integrity-reports/${reportId}/refresh/`)
+  return response.data
+}
+
+export const fetchIntegrityReportHeatmap = async (reportId: number): Promise<ApiResponse<IntegrityReportHeatmapData>> => {
+  const response = await api.get(`/integrity-reports/${reportId}/heatmap/`)
+  return response.data
+}
+
 export const fetchIntegrityReportsMock = async (): Promise<ApiResponse<IntegrityReport[]>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
   const reports = generateMockIntegrityReports()
