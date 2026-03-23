@@ -39,14 +39,14 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         if df.empty:
             return
         symbols = self.build_symbols(symbols)
-        df['symbol'] = df['ts_code'].apply(lambda x: x.split('.')[0])
-        df = df[df['symbol'].isin(symbols)]
+        df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
+        df = df[df['code'].isin(symbols)]
         df['price'] = df['close']
         df['date'] = df['trade_date'].apply(lambda x: "{}-{}-{}".format(x[:4], x[4:6], x[6:]))
-        df = df[['symbol', 'price', 'date']]
+        df = df[['code', 'price', 'date']]
         records = df.to_dict('records')
         records = self.filter_records(records, start_date)
-        self.save_records(records, 'saa_prices', 'symbol')
+        self.save_records(records, 'saa_prices_ex', 'code')
 
     def filter_records(self, records, start_date=None):
         records = [record for record in records if record['date'].month() % 3 == 0]

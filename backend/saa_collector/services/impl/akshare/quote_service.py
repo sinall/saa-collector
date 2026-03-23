@@ -47,15 +47,15 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         if df.empty:
             return
         existing_symbols = self.build_symbols(symbols)
-        df['symbol'] = df['股票代码']
+        df['code'] = df['股票代码']
         df['price'] = df['收盘']
         df['date'] = pd.to_datetime(df['日期'], format='%Y%m%d')
-        df = df[['symbol', 'price', 'date']]
-        df = df[df['symbol'].isin(existing_symbols)]
+        df = df[['code', 'price', 'date']]
+        df = df[df['code'].isin(existing_symbols)]
         records = df.to_dict('records')
         if trade_date is None:
             records = self.filter_records(records, start_date)
-        self.save_records(records, 'saa_prices', 'symbol')
+        self.save_records(records, 'saa_prices_ex', 'code')
 
     def filter_records(self, records, start_date=None):
         records = [record for record in records if record['date'].month % 3 == 0]

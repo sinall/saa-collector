@@ -36,11 +36,12 @@ class CompletenessCalculator:
             'label': '最新行情',
         },
         'historical_quote': {
-            'table': 'saa_prices',
+            'table': 'saa_prices_ex',
             'date_column': 'date',
             'data_frequency': 'daily',
             'stock_level': True,
             'label': '历史行情',
+            'stock_column': 'code',
         },
         'balance_sheet': {
             'table': 'saa_raw_balance_sheet',
@@ -147,7 +148,8 @@ class CompletenessCalculator:
             config['data_frequency'],
             periods,
             start_date,
-            end_date
+            end_date,
+            config.get('stock_column', 'symbol')
         )
     
     def calculate_all(self, data_types: list, periods: list, start_date: date = None, end_date: date = None) -> dict:
@@ -244,7 +246,8 @@ class CompletenessCalculator:
         data_frequency: str,
         periods: list,
         start_date: date,
-        end_date: date
+        end_date: date,
+        stock_column: str = 'symbol'
     ) -> list:
         """计算股票级别周期性数据的完整度"""
         if not start_date or not end_date:
@@ -253,7 +256,7 @@ class CompletenessCalculator:
         stocks_by_period = self._get_stocks_count_by_period(periods)
         
         data_by_period = self._get_data_count_by_period(
-            table, date_column, data_frequency, periods, start_date, end_date
+            table, date_column, data_frequency, periods, start_date, end_date, stock_column
         )
         
         result = []
@@ -314,7 +317,8 @@ class CompletenessCalculator:
         data_frequency: str,
         periods: list,
         start_date: date,
-        end_date: date
+        end_date: date,
+        stock_column: str = 'symbol'
     ) -> dict:
         """计算每个 period 有数据的股票数（分子）"""
         date_format = self._get_date_format(self.frequency)
@@ -323,11 +327,11 @@ class CompletenessCalculator:
         params = []
         
         if self.stock_codes:
-            stock_filter = "AND symbol IN %s"
+            stock_filter = f"AND {stock_column} IN %s"
             params = [self.stock_codes]
         
         query = f"""
-            SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(DISTINCT symbol) as cnt
+            SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(DISTINCT {stock_column}) as cnt
             FROM {table}
             WHERE {date_column} >= %s AND {date_column} <= %s
             {stock_filter}
