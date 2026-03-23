@@ -41,7 +41,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import IntegrityReportFilterPanel from '@/components/IntegrityReportFilterPanel.vue'
-import { fetchIntegrityReportsMock, createIntegrityReportMock, type IntegrityReportCreateParams } from '@/utils/api'
+import { fetchIntegrityReports, createIntegrityReport, type IntegrityReportCreateParams } from '@/utils/api'
 
 const router = useRouter()
 const reports = ref<any[]>([])
@@ -51,7 +51,7 @@ const generating = ref(false)
 const fetchReports = async () => {
   loading.value = true
   try {
-    const response = await fetchIntegrityReportsMock()
+    const response = await fetchIntegrityReports()
     reports.value = response.data || []
   } finally {
     loading.value = false
@@ -76,7 +76,7 @@ const handleGenerateReport = async (params: any) => {
       date_end: params.end_date
     }
 
-    const response = await createIntegrityReportMock(data)
+    const response = await createIntegrityReport(data)
     if (response.success && response.data) {
       ElMessage.success('报告创建成功')
       router.push(`/integrity-reports/${response.data.id}`)

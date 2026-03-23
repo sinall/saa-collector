@@ -1536,6 +1536,273 @@ class DataIntegrityReportRefreshView(APIView):
         })
 
 
+class DataIntegrityReportHeatmapView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    DATA_TYPE_LABELS = {
+        'trade_days': '交易日',
+        'stock_info': '股票基本信息',
+        'quote': '最新行情',
+        'historical_quote': '历史行情',
+        'balance_sheet': '资产负债表',
+        'income': '利润表',
+        'cash_flow': '现金流量表',
+        'main_business': '主营业务',
+        'capital': '股本变动',
+        'dividend': '分红数据',
+        'valuation_board': '板块估值',
+        'valuation_industry': '行业估值',
+    }
+
+    NON_PERIODIC_TYPES = {'quote'}
+    TRADE_DAYS_TYPE = 'trade_days'
+
+    TABLE_MAPPING = {
+        'trade_days': 'saa_trade_days',
+        'historical_quote': 'saa_prices',
+        'balance_sheet': 'saa_raw_balance_sheet',
+        'income': 'saa_raw_income_statement',
+        'cash_flow': 'saa_raw_cash_flow_statement',
+        'main_business': 'saa_raw_main_business',
+        'capital': 'saa_capitals',
+        'dividend': 'saa_dividends',
+    }
+
+    def get(self, request, pk):
+        from .completeness import CompletenessCalculator
+        
+        report = get_object_or_404(DataIntegrityReport, pk=pk)
+
+        if report.status != 'COMPLETED':
+            return Response({
+                'success': True,
+                'data': {
+                    'data_types': [],
+                    'periods': [],
+                    'matrix': {},
+                }
+            })
+
+        self.frequency = report.frequency
+
+        data_type_set = set(report.data_types or [])
+
+        trade_days_types = sorted(data_type_set & {self.TRADE_DAYS_TYPE})
+        non_periodic_types = sorted(data_type_set & self.NON_PERIODIC_TYPES)
+        periodic_types = sorted(data_type_set - self.NON_PERIODIC_TYPES - {self.TRADE_DAYS_TYPE})
+
+        all_periods = self._generate_periods(report.date_start, report.date_end, report.frequency)
+        periods = sorted(all_periods)
+
+        stock_codes = None
+        if report.stock_scope == 'SELECTED' and report.stock_codes:
+            stock_codes = report.stock_codes
+
+        calculator = CompletenessCalculator(
+            frequency=report.frequency,
+            stock_codes=stock_codes,
+            date_end=report.date_end
+        )
+
+        matrix = {}
+
+        for dt in trade_days_types:
+            matrix[dt] = self._calculate_trade_days_completeness(
+                periods, report.date_start, report.date_end, report.frequency
+            )
+
+        for dt in periodic_types:
+            matrix[dt] = calculator.calculate(
+                dt, periods, report.date_start, report.date_end
+            )
+
+        for dt in non_periodic_types:
+            matrix[dt] = self._calculate_quote_completeness(
+                calculator, periods, report.date_end
+            )
+
+        data_types = [
+            {'key': dt, 'label': self.DATA_TYPE_LABELS.get(dt, dt)}
+            for dt in trade_days_types + periodic_types + non_periodic_types
+        ]
+
+        return Response({
+            'success': True,
+            'data': {
+                'data_types': data_types,
+                'periods': periods,
+                'matrix': matrix,
+            }
+        })
+
+    def _calculate_trade_days_completeness(self, periods, start_date, end_date, frequency=None):
+        """计算交易日完整度（非股票级别）"""
+        if frequency is None:
+            frequency = self.frequency if hasattr(self, 'frequency') else 'monthly'
+        existing_periods = self._get_trade_days_periods(start_date, end_date, frequency)
+        
+        result = []
+        for period in periods:
+            if period in existing_periods:
+                result.append(1.0)
+            else:
+                result.append(-1)
+        
+        return result
+
+    def _get_trade_days_periods(self, start_date, end_date, frequency=None):
+        """获取交易日实际存在的 periods"""
+        if frequency is None:
+            frequency = self.frequency if hasattr(self, 'frequency') else 'monthly'
+        date_format = self._get_date_format(frequency)
+        
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT DISTINCT DATE_FORMAT(date, %s) as period
+                FROM saa_trade_days
+                WHERE date BETWEEN %s AND %s
+            """, [date_format, start_date, end_date])
+            
+            periods = set()
+            for row in cursor.fetchall():
+                period = self._normalize_period(str(row[0]), frequency)
+                periods.add(period)
+            
+            return periods
+
+    def _calculate_quote_completeness(self, calculator, periods, date_end):
+        """计算最新行情完整度（非周期性）"""
+        latest_date = self._get_latest_trade_date(date_end)
+        if not latest_date:
+            return [-1] * len(periods)
+        
+        frequency = self.frequency if hasattr(self, 'frequency') else 'monthly'
+        latest_period = calculator._convert_date_to_period(latest_date, frequency)
+        
+        total_stocks = calculator._get_total_stocks()
+        
+        with connection.cursor() as cursor:
+            if calculator.stock_codes:
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT symbol) FROM saa_latest_prices
+                    WHERE symbol IN %s
+                """, [calculator.stock_codes])
+            else:
+                cursor.execute("SELECT COUNT(DISTINCT symbol) FROM saa_latest_prices")
+            
+            data_count = cursor.fetchone()[0] or 0
+        
+        if total_stocks > 0:
+            completeness = round(data_count / total_stocks, 2)
+            completeness = min(1.0, max(0.0, completeness))
+        else:
+            completeness = -1
+        
+        result = []
+        for period in periods:
+            if period == latest_period:
+                result.append(completeness)
+            else:
+                result.append(-1)
+        
+        return result
+
+    def _get_latest_trade_date(self, max_date):
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT MAX(date) FROM saa_trade_days
+                WHERE date <= %s
+            """, [max_date])
+            result = cursor.fetchone()[0]
+            return result
+
+    def _get_date_format(self, frequency):
+        if frequency == 'yearly':
+            return '%Y'
+        elif frequency == 'quarterly':
+            return '%Y-%m'
+        elif frequency == 'monthly':
+            return '%Y-%m'
+        elif frequency == 'weekly':
+            return '%Y-%m-%d'
+        else:
+            return '%Y-%m-%d'
+
+    def _normalize_period(self, period_str, frequency):
+        if not period_str:
+            return period_str
+        
+        if frequency == 'quarterly':
+            try:
+                parts = period_str.split('-')
+                if len(parts) == 2:
+                    year = int(parts[0])
+                    month = int(parts[1])
+                    quarter = (month - 1) // 3 + 1
+                    return f"{year}-Q{quarter}"
+            except (ValueError, IndexError):
+                pass
+        
+        return period_str
+
+    def _generate_periods(self, start_date, end_date, frequency):
+        periods = set()
+
+        if not start_date or not end_date:
+            return periods
+
+        if frequency == 'yearly':
+            year = start_date.year
+            while year <= end_date.year:
+                periods.add(str(year))
+                year += 1
+
+        elif frequency == 'quarterly':
+            year, month = start_date.year, start_date.month
+            q = (month - 1) // 3 + 1
+            while True:
+                period_date = date(year, (q - 1) * 3 + 1, 1)
+                if period_date > end_date:
+                    break
+                periods.add(f"{year}-Q{q}")
+                q += 1
+                if q > 4:
+                    q = 1
+                    year += 1
+
+        elif frequency == 'monthly':
+            year, month = start_date.year, start_date.month
+            while True:
+                period_date = date(year, month, 1)
+                if period_date > end_date:
+                    break
+                periods.add(f"{year}-{month:02d}")
+                month += 1
+                if month > 12:
+                    month = 1
+                    year += 1
+
+        elif frequency == 'weekly':
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT
+                        CONCAT(YEAR(date), '-W', LPAD(WEEK(date, 1), 2, '0'))
+                    FROM saa_trade_days
+                    WHERE date BETWEEN %s AND %s
+                """, [start_date, end_date])
+                periods = set(row[0] for row in cursor.fetchall())
+
+        elif frequency == 'daily':
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT date FROM saa_trade_days
+                    WHERE date BETWEEN %s AND %s
+                """, [start_date, end_date])
+                periods = set(str(row[0]) for row in cursor.fetchall())
+
+        return periods
+
+
 class CollectPlanListView(APIView):
     permission_classes = [IsAuthenticated]
 
