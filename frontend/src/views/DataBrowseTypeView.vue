@@ -134,7 +134,7 @@ type TypeBrowseRow = Record<string, unknown>
 const DATA_TYPE_TO_TABLE: Record<string, string> = {
   info: 'saa_stocks',
   quote: 'saa_latest_prices',
-  historical_quote: 'saa_prices',
+  historical_quote: 'saa_prices_ex',
   balance_sheet: 'saa_raw_balance_sheet',
   income: 'saa_raw_income_statement',
   cash_flow: 'saa_raw_cash_flow_statement',
@@ -146,7 +146,7 @@ const DATA_TYPE_TO_TABLE: Record<string, string> = {
 
 const displayConfigs = ref<Record<string, { table_label: string; config: { fields: DisplayFieldConfig[] } }>>({})
 
-const currentTable = computed(() => DATA_TYPE_TO_TABLE[selectedDataType.value] || 'saa_prices')
+const currentTable = computed(() => DATA_TYPE_TO_TABLE[selectedDataType.value] || 'saa_prices_ex')
 
 const currentConfig = computed(() => displayConfigs.value[currentTable.value]?.config)
 

@@ -86,7 +86,7 @@ class DataStatusView(APIView):
             ('trade_days', '交易日', 'saa_trade_days'),
             ('stock_info', '股票基本信息', 'saa_stocks'),
             ('quote', '最新行情', 'saa_latest_prices'),
-            ('historical_quote', '历史行情', 'saa_prices'),
+            ('historical_quote', '历史行情', 'saa_prices_ex'),
             ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet'),
             ('income', '利润表', 'saa_raw_income_statement'),
             ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement'),
@@ -166,7 +166,7 @@ class DataStatusView(APIView):
             'saa_stocks': None,
             'saa_trade_days': 'date',
             'saa_latest_prices': 'date',
-            'saa_prices': 'date',
+'saa_prices_ex': 'date',
             'saa_raw_balance_sheet': 'date',
             'saa_raw_income_statement': 'date',
             'saa_raw_cash_flow_statement': 'date',
@@ -470,7 +470,7 @@ class TypeBrowseDataView(APIView):
     TABLE_CONFIG = {
         'saa_stocks': {'date_column': None, 'order': 'symbol ASC'},
         'saa_latest_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
-        'saa_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_prices_ex': {'date_column': 'date', 'order': 'code ASC, date DESC'},
         'saa_raw_balance_sheet': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_raw_income_statement': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_raw_cash_flow_statement': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
@@ -481,7 +481,7 @@ class TypeBrowseDataView(APIView):
 
     NEEDS_STOCK_NAME = {
         'saa_latest_prices',
-        'saa_prices',
+        'saa_prices_ex',
         'saa_raw_balance_sheet',
         'saa_raw_income_statement',
         'saa_raw_cash_flow_statement',
@@ -748,7 +748,7 @@ class DataCompletenessCheckView(APIView):
 
     def check_data_missing_batch(self, stocks, trade_dates, data_type, frequency, start_date=None, end_date=None):
         table_mapping = {
-            'historical_quote': ('saa_prices', 'date'),
+            'historical_quote': ('saa_prices_ex', 'date'),
             'balance_sheet': ('saa_raw_balance_sheet', 'date'),
             'income': ('saa_raw_income_statement', 'date'),
             'cash_flow': ('saa_raw_cash_flow_statement', 'date'),
@@ -973,7 +973,7 @@ class DataIntegrityReportListView(APIView):
 
     TABLE_MAPPING = {
         'quote': 'saa_latest_prices',
-        'historical_quote': 'saa_prices',
+        'historical_quote': 'saa_prices_ex',
         'balance_sheet': 'saa_raw_balance_sheet',
         'income': 'saa_raw_income_statement',
         'cash_flow': 'saa_raw_cash_flow_statement',
@@ -1559,7 +1559,7 @@ class DataIntegrityReportHeatmapView(APIView):
 
     TABLE_MAPPING = {
         'trade_days': 'saa_trade_days',
-        'historical_quote': 'saa_prices',
+        'historical_quote': 'saa_prices_ex',
         'balance_sheet': 'saa_raw_balance_sheet',
         'income': 'saa_raw_income_statement',
         'cash_flow': 'saa_raw_cash_flow_statement',
@@ -1971,7 +1971,7 @@ class DataCompletenessHeatmapView(APIView):
         ('trade_days', '交易日', 'saa_trade_days', 'date', 'daily'),
         ('stock_info', '股票基本信息', 'saa_stocks', None, None),
         ('quote', '最新行情', 'saa_latest_prices', 'date', None),
-        ('historical_quote', '历史行情', 'saa_prices', 'date', 'daily'),
+        ('historical_quote', '历史行情', 'saa_prices_ex', 'date', 'daily'),
         ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet', 'date', 'quarterly'),
         ('income', '利润表', 'saa_raw_income_statement', 'date', 'quarterly'),
         ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement', 'date', 'quarterly'),
@@ -2245,7 +2245,7 @@ class DisplayFieldConfigView(APIView):
     TABLE_LABEL_MAP = {
         'saa_stocks': '基本信息',
         'saa_latest_prices': '最新行情',
-        'saa_prices': '历史行情',
+        'saa_prices_ex': '历史行情',
         'saa_raw_balance_sheet': '资产负债表',
         'saa_raw_income_statement': '利润表',
         'saa_raw_cash_flow_statement': '现金流量表',
@@ -2267,7 +2267,7 @@ class DisplayFieldConfigView(APIView):
             'label': '行情数据',
             'items': [
                 {'key': 'quote', 'label': '最新行情', 'table': 'saa_latest_prices'},
-                {'key': 'historical_quote', 'label': '历史行情', 'table': 'saa_prices'},
+                {'key': 'historical_quote', 'label': '历史行情', 'table': 'saa_prices_ex'},
             ]
         },
         {
@@ -2350,7 +2350,7 @@ class StockDataView(APIView):
     DATE_COLUMN_MAP = {
         'saa_stocks': None,
         'saa_latest_prices': 'date',
-        'saa_prices': 'date',
+        'saa_prices_ex': 'date',
         'saa_raw_balance_sheet': 'date',
         'saa_raw_income_statement': 'date',
         'saa_raw_cash_flow_statement': 'date',
@@ -2361,7 +2361,7 @@ class StockDataView(APIView):
 
     NEEDS_STOCK_NAME = {
         'saa_latest_prices',
-        'saa_prices',
+        'saa_prices_ex',
         'saa_raw_balance_sheet',
         'saa_raw_income_statement',
         'saa_raw_cash_flow_statement',

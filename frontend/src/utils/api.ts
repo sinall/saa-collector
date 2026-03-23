@@ -1311,13 +1311,18 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
       ]
     }
   },
-  'saa_prices': {
+  'saa_prices_ex': {
     table_label: '历史行情',
     config: {
       fields: [
-        { name: 'symbol', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'code', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
         { name: 'date', label: '日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
-        { name: 'price', label: '收盘价', visible: true, order: 3, width: 100, format: 'price' },
+        { name: 'open', label: '开盘价', visible: true, order: 3, width: 100, format: 'price' },
+        { name: 'close', label: '收盘价', visible: true, order: 4, width: 100, format: 'price' },
+        { name: 'high', label: '最高价', visible: true, order: 5, width: 100, format: 'price' },
+        { name: 'low', label: '最低价', visible: true, order: 6, width: 100, format: 'price' },
+        { name: 'volume', label: '成交量', visible: true, order: 7, width: 120, format: 'number' },
+        { name: 'money', label: '成交额', visible: true, order: 8, width: 140, format: 'money' },
       ]
     }
   },
@@ -1422,7 +1427,7 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
     label: '行情数据',
     items: [
       { key: 'quote', label: '最新行情', table: 'saa_latest_prices' },
-      { key: 'historical_quote', label: '历史行情', table: 'saa_prices' },
+      { key: 'historical_quote', label: '历史行情', table: 'saa_prices_ex' },
     ]
   },
   {
@@ -1540,7 +1545,7 @@ function generateMockStockData(tableName: string, symbol: string): Record<string
       date: date.toISOString().split('T')[0],
     }
 
-    if (tableName === 'saa_prices') {
+    if (tableName === 'saa_prices_ex') {
       row.price = 10 + Math.random() * 90
     } else if (tableName === 'saa_raw_balance_sheet') {
       row.total_assets = 1000000000 + Math.random() * 10000000000
