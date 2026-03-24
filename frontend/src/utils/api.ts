@@ -1211,7 +1211,7 @@ export const refreshReportMock = async (reportId: number): Promise<ApiResponse<a
 }
 
 export interface IntegrityReportHeatmapData {
-  data_types: { key: string; label: string }[]
+  data_types: { key: string; label: string; frequency?: string | null }[]
   periods: string[]
   matrix: Record<string, number[]>
 }

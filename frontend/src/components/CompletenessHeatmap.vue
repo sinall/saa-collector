@@ -2,7 +2,13 @@
   <div class="heatmap-container">
     <div class="heatmap-header">
       <span class="title">数据完整度热力图</span>
-      <el-select v-model="selectedFrequency" placeholder="选择频度" style="width: 100px" @change="onFrequencyChange">
+      <el-select
+        v-if="!hideFrequencySelector"
+        v-model="selectedFrequency"
+        placeholder="选择频度"
+        style="width: 100px"
+        @change="onFrequencyChange"
+      >
         <el-option label="日度" value="daily" />
         <el-option label="月度" value="monthly" />
         <el-option label="季度" value="quarterly" />
@@ -28,9 +34,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { fetchCompletenessHeatmap, type HeatmapResponse } from '@/utils/api'
+import { fetchCompletenessHeatmap, type HeatmapResponse, type IntegrityReportHeatmapData } from '@/utils/api'
+
+type ExternalHeatmapData = HeatmapResponse | IntegrityReportHeatmapData
 
 interface MergedCell {
   xStart: number
@@ -41,6 +49,16 @@ interface MergedCell {
   periodRange: string
 }
 
+const props = withDefaults(defineProps<{
+  externalData?: ExternalHeatmapData | null
+  hideFrequencySelector?: boolean
+  viewFrequency?: string
+}>(), {
+  externalData: null,
+  hideFrequencySelector: false,
+  viewFrequency: ''
+})
+
 const chartRef = ref<HTMLElement>()
 const selectedFrequency = ref('monthly')
 const loading = ref(false)
@@ -50,21 +68,25 @@ const sliderRange = ref<[number, number]>([0, 0])
 let chartInstance: echarts.ECharts | null = null
 let mergedCellsCache: MergedCell[] = []
 
+const effectiveFrequency = computed(() => {
+  return props.viewFrequency || selectedFrequency.value
+})
+
 const sliderMarks = computed<Record<number, string>>(() => {
   const marks: Record<number, string> = {}
   const total = allPeriods.value.length
   if (total === 0) return marks
 
-  if (selectedFrequency.value === 'yearly') {
+  if (effectiveFrequency.value === 'yearly') {
     const step = 5
     for (let i = 0; i < total; i += step) {
       const period = allPeriods.value[i]
       if (period) marks[i] = period
     }
   } else {
-    const yearPattern = selectedFrequency.value === 'monthly' 
+    const yearPattern = effectiveFrequency.value === 'monthly'
       ? /^(\d{4})-01$/
-      : selectedFrequency.value === 'quarterly'
+      : effectiveFrequency.value === 'quarterly'
         ? /^(\d{4})-Q1$/
         : /^(\d{4})-W01$/
 
@@ -89,32 +111,50 @@ const formatSliderTooltip = (value: number): string => {
 
 const DEFAULT_DISPLAY_START_YEAR = 2009
 
+const initFromData = async (data: ExternalHeatmapData, frequency: string) => {
+  heatmapData.value = data as HeatmapResponse
+  allPeriods.value = data.periods
+
+  const targetPeriod = frequency === 'monthly'
+    ? `${DEFAULT_DISPLAY_START_YEAR}-01`
+    : frequency === 'quarterly'
+      ? `${DEFAULT_DISPLAY_START_YEAR}-Q1`
+      : frequency === 'yearly'
+        ? `${DEFAULT_DISPLAY_START_YEAR}`
+        : null
+
+  const targetIndex = targetPeriod
+    ? allPeriods.value.findIndex(p => p === targetPeriod)
+    : -1
+  const endIndex = allPeriods.value.length - 1
+
+  sliderRange.value = targetIndex !== -1
+    ? [targetIndex, endIndex]
+    : [0, allPeriods.value.length - 1]
+
+  await nextTick()
+  renderChart()
+  setTimeout(() => {
+    chartInstance?.resize()
+    updateSliderAlignment()
+  }, 100)
+}
+
 const loadHeatmapData = async () => {
+  if (props.externalData) {
+    initFromData(props.externalData, props.viewFrequency || selectedFrequency.value)
+    return
+  }
+
+  if (props.hideFrequencySelector) {
+    return
+  }
+
   loading.value = true
   try {
     const response = await fetchCompletenessHeatmap(selectedFrequency.value)
     if (response.success && response.data) {
-      heatmapData.value = response.data
-      allPeriods.value = response.data.periods
-      
-      const targetPeriod = selectedFrequency.value === 'monthly' 
-        ? `${DEFAULT_DISPLAY_START_YEAR}-01` 
-        : selectedFrequency.value === 'quarterly' 
-          ? `${DEFAULT_DISPLAY_START_YEAR}-Q1` 
-          : selectedFrequency.value === 'yearly' 
-            ? `${DEFAULT_DISPLAY_START_YEAR}`
-            : null
-      
-      const targetIndex = targetPeriod 
-        ? allPeriods.value.findIndex(p => p === targetPeriod)
-        : -1
-      const endIndex = allPeriods.value.length - 1
-      
-      sliderRange.value = targetIndex !== -1 
-        ? [targetIndex, endIndex] 
-        : [0, allPeriods.value.length - 1]
-      
-      renderChart()
+      initFromData(response.data, selectedFrequency.value)
     }
   } catch (error) {
     console.error('Failed to load heatmap data:', error)
@@ -169,7 +209,7 @@ const getPeriodRange = (periodIndex: number, dataFrequency: string | undefined |
       const year = match[1]
       const month = parseInt(match[2])
       const quarter = Math.ceil(month / 3)
-      const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', 
+      const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月',
                           '7月', '8月', '9月', '10月', '11月', '12月']
       const startMonth = (quarter - 1) * 3
       return `${year}-Q${quarter} (${monthNames[startMonth]}-${monthNames[startMonth + 2]})`
@@ -204,15 +244,16 @@ const prepareMergedCells = (
     const slicedValues = values.slice(startIdx, endIdx + 1)
     const dataFreq = dt.frequency
 
-    if (dataFreq === null) {
-      const value = slicedValues[0] ?? 0
-      cells.push({
-        xStart: 0,
-        xSpan: slicedValues.length,
-        yIndex,
-        value,
-        period: '',
-        periodRange: ''
+    if (dataFreq === null || dataFreq === undefined) {
+      slicedValues.forEach((value, xIndex) => {
+        cells.push({
+          xStart: xIndex,
+          xSpan: 1,
+          yIndex,
+          value,
+          period: displayPeriods[xIndex] ?? '',
+          periodRange: displayPeriods[xIndex] ?? ''
+        })
       })
       return
     }
@@ -301,7 +342,7 @@ const renderChart = () => {
     matrix,
     startIdx,
     endIdx,
-    selectedFrequency.value,
+    effectiveFrequency.value,
     displayPeriods
   )
 
@@ -363,7 +404,9 @@ const renderChart = () => {
           const coord1 = api.coord([1, 1])
 
           const singleWidth = coord1[0] - coord0[0]
-          const singleHeight = Math.abs(coord1[1] - coord0[1])
+
+          const gridSize = api.size([1, 1])
+          const singleHeight = gridSize ? Math.abs(gridSize[1]) : 30
 
           const startX = coord0[0] + singleWidth * cell.xStart - singleWidth / 2
           const startY = coord0[1] - singleHeight * cell.yIndex - singleHeight / 2
@@ -492,6 +535,18 @@ onUnmounted(() => {
 
 watch(heatmapData, () => {
   renderChart()
+})
+
+watch(() => props.externalData, (newData) => {
+  if (newData) {
+    initFromData(newData, props.viewFrequency || selectedFrequency.value)
+  }
+})
+
+watch(() => props.viewFrequency, (newFreq) => {
+  if (props.externalData && newFreq) {
+    initFromData(props.externalData, newFreq)
+  }
 })
 </script>
 

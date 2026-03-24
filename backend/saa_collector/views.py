@@ -1539,37 +1539,8 @@ class DataIntegrityReportRefreshView(APIView):
 class DataIntegrityReportHeatmapView(APIView):
     permission_classes = [IsAuthenticated]
 
-    DATA_TYPE_LABELS = {
-        'trade_days': '交易日',
-        'stock_info': '股票基本信息',
-        'quote': '最新行情',
-        'historical_quote': '历史行情',
-        'balance_sheet': '资产负债表',
-        'income': '利润表',
-        'cash_flow': '现金流量表',
-        'main_business': '主营业务',
-        'capital': '股本变动',
-        'dividend': '分红数据',
-        'valuation_board': '板块估值',
-        'valuation_industry': '行业估值',
-    }
-
-    NON_PERIODIC_TYPES = {'quote'}
-    TRADE_DAYS_TYPE = 'trade_days'
-
-    TABLE_MAPPING = {
-        'trade_days': 'saa_trade_days',
-        'historical_quote': 'saa_prices_ex',
-        'balance_sheet': 'saa_raw_balance_sheet',
-        'income': 'saa_raw_income_statement',
-        'cash_flow': 'saa_raw_cash_flow_statement',
-        'main_business': 'saa_raw_main_business',
-        'capital': 'saa_capitals',
-        'dividend': 'saa_dividends',
-    }
-
     def get(self, request, pk):
-        from .completeness import CompletenessCalculator
+        from saa_collector.services.completeness_service import CompletenessService
         
         report = get_object_or_404(DataIntegrityReport, pk=pk)
 
@@ -1577,77 +1548,56 @@ class DataIntegrityReportHeatmapView(APIView):
             return Response({
                 'success': True,
                 'data': {
+                    'date_range': {'start': '', 'end': ''},
+                    'frequency': report.frequency,
                     'data_types': [],
                     'periods': [],
                     'matrix': {},
                 }
             })
 
-        self.frequency = report.frequency
-
-        data_type_set = set(report.data_types or [])
-
-        trade_days_types = sorted(data_type_set & {self.TRADE_DAYS_TYPE})
-        non_periodic_types = sorted(data_type_set & self.NON_PERIODIC_TYPES)
-        periodic_types = sorted(data_type_set - self.NON_PERIODIC_TYPES - {self.TRADE_DAYS_TYPE})
-
-        all_periods = self._generate_periods(report.date_start, report.date_end, report.frequency)
-        periods = sorted(all_periods)
-
         stock_codes = None
         if report.stock_scope == 'SELECTED' and report.stock_codes:
             stock_codes = report.stock_codes
 
-        calculator = CompletenessCalculator(
-            frequency=report.frequency,
+        service = CompletenessService(
             stock_codes=stock_codes,
             date_end=report.date_end
         )
+        
+        periods = service.generate_periods(report.frequency, report.date_start, report.date_end)
+        
+        if not periods:
+            return Response({
+                'success': True,
+                'data': {
+                    'date_range': {'start': '', 'end': ''},
+                    'frequency': report.frequency,
+                    'data_types': [],
+                    'periods': [],
+                    'matrix': {},
+                }
+            })
 
-        matrix = {}
-
-        for dt in trade_days_types:
-            matrix[dt] = self._calculate_trade_days_completeness(
-                periods, report.date_start, report.date_end, report.frequency
-            )
-
-        for dt in periodic_types:
-            matrix[dt] = calculator.calculate(
-                dt, periods, report.date_start, report.date_end
-            )
-
-        for dt in non_periodic_types:
-            matrix[dt] = self._calculate_quote_completeness(
-                calculator, periods, report.date_end
-            )
-
-        data_types = [
-            {'key': dt, 'label': self.DATA_TYPE_LABELS.get(dt, dt)}
-            for dt in trade_days_types + periodic_types + non_periodic_types
-        ]
-
-        return Response({
-            'success': True,
-            'data': {
-                'data_types': data_types,
-                'periods': periods,
-                'matrix': matrix,
-            }
-        })
+        data_types = report.data_types or []
+        result = service.calculate_all(data_types, periods, report.frequency)
+        
+        return Response({'success': True, 'data': result})
 
     def _calculate_trade_days_completeness(self, periods, start_date, end_date, frequency=None):
         """计算交易日完整度（非股票级别）"""
         if frequency is None:
             frequency = self.frequency if hasattr(self, 'frequency') else 'monthly'
+
         existing_periods = self._get_trade_days_periods(start_date, end_date, frequency)
-        
+
         result = []
         for period in periods:
             if period in existing_periods:
                 result.append(1.0)
             else:
-                result.append(-1)
-        
+                result.append(0.0)
+
         return result
 
     def _get_trade_days_periods(self, start_date, end_date, frequency=None):
@@ -1727,6 +1677,25 @@ class DataIntegrityReportHeatmapView(APIView):
             return '%Y-%m-%d'
         else:
             return '%Y-%m-%d'
+
+    def _get_period_start_date(self, period, frequency):
+        if frequency == 'yearly':
+            return date(int(period), 1, 1)
+        elif frequency == 'quarterly':
+            year = int(period[:4])
+            q = int(period[-1])
+            return date(year, (q - 1) * 3 + 1, 1)
+        elif frequency == 'monthly':
+            return date(int(period[:4]), int(period[5:7]), 1)
+        elif frequency == 'weekly':
+            from datetime import datetime
+            year = int(period[:4])
+            week = int(period[6:8])
+            return datetime.strptime(f"{year}-W{week:02d}-1", "%Y-W%W-%w").date()
+        elif frequency == 'daily':
+            from datetime import datetime
+            return datetime.strptime(period, '%Y-%m-%d').date()
+        return date(1970, 1, 1)
 
     def _normalize_period(self, period_str, frequency):
         if not period_str:
