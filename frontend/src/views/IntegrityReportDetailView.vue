@@ -37,7 +37,11 @@
 
       <div v-else>
         <div class="heatmap-section">
-          <div v-loading="heatmapLoading" class="heatmap-chart" ref="heatmapChartRef"></div>
+          <CompletenessHeatmap
+            :external-data="heatmapData"
+            :hide-frequency-selector="true"
+            :view-frequency="report?.frequency || 'monthly'"
+          />
         </div>
 
         <div class="filter-bar">
@@ -128,17 +132,18 @@ import { ref, computed, onMounted, onUnmounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
-import * as echarts from 'echarts'
 import {
   fetchIntegrityReportDetail,
   selectItems,
   refreshReport,
   generatePlan,
   fetchIntegrityReportHeatmap,
-  type IntegrityReportItem
+  type IntegrityReportItem,
+  type IntegrityReportHeatmapData
 } from '@/utils/api'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
 
 import type { GridApi } from 'ag-grid-community'
 
@@ -149,9 +154,7 @@ const loading = ref(true)
 const generating = ref(false)
 let pollTimer: number | null = null
 
-const heatmapChartRef = ref<HTMLElement>()
-const heatmapLoading = ref(false)
-let heatmapChartInstance: echarts.ECharts | null = null
+const heatmapData = ref<IntegrityReportHeatmapData | null>(null)
 
 const gridApi = ref<GridApi | null>(null)
 const rowData = ref<IntegrityReportItem[]>([])
@@ -222,7 +225,7 @@ const columnDefs = [
         'trade_days': '交易日',
         'valuation': '估值数据',
       }
-      
+
       const typeColors: Record<string, string> = {
         'quote': '#409eff',
         'historical_quote': '#67c23a',
@@ -235,11 +238,11 @@ const columnDefs = [
         'trade_days': '#ffd666',
         'valuation': '#ff9c6e',
       }
-      
+
       const value = params.value ?? ''
       const label = typeLabels[value] || value
       const color = typeColors[value] || '#909399'
-      
+
       return `<span style="
         background: ${color}20;
         color: ${color};
@@ -370,6 +373,7 @@ const pollReport = async () => {
   } else {
     loading.value = false
     loadItems()
+    loadHeatmapData()
   }
 }
 
@@ -442,10 +446,10 @@ const generatePlanAction = async () => {
         type: 'info',
       }
     )
-    
+
     generating.value = true
     const response = await generatePlan(parseInt(props.id))
-    
+
     if (response.success && response.data) {
       ElMessage.success('计划已生成')
       router.push(`/collect-plans/${response.data.id}/edit`)
@@ -471,132 +475,31 @@ const getStatusType = (status: string) => {
 }
 
 const loadHeatmapData = async () => {
-  if (!heatmapChartRef.value) return
-  
-  heatmapLoading.value = true
   try {
     const response = await fetchIntegrityReportHeatmap(parseInt(props.id))
     if (response.success && response.data) {
-      renderHeatmap(response.data)
+      heatmapData.value = response.data
     }
   } catch (error) {
     console.error('Failed to load heatmap data:', error)
-  } finally {
-    heatmapLoading.value = false
   }
-}
-
-const getColorByValue = (value: number): string => {
-  if (value === -1) return '#f5f5f5'
-  if (value < 0.25) return '#fecaca'
-  if (value < 0.5) return '#fed7aa'
-  if (value < 0.75) return '#fef08a'
-  if (value < 0.9) return '#bbf7d0'
-  return '#86efac'
-}
-
-const renderHeatmap = (data: { data_types: { key: string; label: string }[]; periods: string[]; matrix: Record<string, number[]> }) => {
-  if (!heatmapChartRef.value) return
-
-  if (!heatmapChartInstance) {
-    heatmapChartInstance = echarts.init(heatmapChartRef.value)
-  }
-
-  const { data_types, periods, matrix } = data
-
-  const chartData: any[] = []
-  data_types.forEach((dt, yIndex) => {
-    const values = matrix[dt.key] || []
-    values.forEach((value, xIndex) => {
-      chartData.push({
-        value: [xIndex, yIndex, value],
-        itemStyle: {
-          color: getColorByValue(value),
-        },
-      })
-    })
-  })
-
-  const option: echarts.EChartsOption = {
-    tooltip: {
-      position: 'top',
-      confine: true,
-      formatter: (params: any) => {
-        const [xIndex, yIndex, value] = params.data.value
-        const period = periods[xIndex] ?? ''
-        const dataType = data_types[yIndex]?.label ?? ''
-        if (value === -1) {
-          return `${period}<br/>${dataType}: 不适用`
-        }
-        const percentage = Math.round(value * 100)
-        return `${period}<br/>${dataType}: ${percentage}% 完整`
-      },
-    },
-    grid: {
-      top: 20,
-      bottom: 60,
-      left: 100,
-      right: 30,
-    },
-    xAxis: {
-      type: 'category',
-      data: periods,
-      axisLabel: {
-        rotate: 45,
-        fontSize: 11,
-      },
-      splitArea: { show: false },
-    },
-    yAxis: {
-      type: 'category',
-      data: data_types.map(dt => dt.label),
-      splitArea: { show: false },
-    },
-    visualMap: {
-      show: false,
-      min: 0,
-      max: 1,
-      calculable: false,
-    },
-    series: [
-      {
-        type: 'heatmap',
-        data: chartData,
-        label: { show: false },
-        emphasis: {
-          itemStyle: {
-            shadowBlur: 10,
-            shadowColor: 'rgba(0, 0, 0, 0.5)',
-          },
-        },
-      },
-    ],
-  }
-
-  heatmapChartInstance.setOption(option, true)
-}
-
-const handleResize = () => {
-  heatmapChartInstance?.resize()
 }
 
 onMounted(() => {
   pollReport()
   loadHeatmapData()
-  window.addEventListener('resize', handleResize)
 })
 
 onActivated(() => {
   loading.value = true
   pollReport()
+  loadHeatmapData()
 })
 
 onUnmounted(() => {
   if (pollTimer) {
     clearTimeout(pollTimer)
   }
-  window.removeEventListener('resize', handleResize)
-  heatmapChartInstance?.dispose()
 })
 </script>
 
@@ -610,14 +513,7 @@ onUnmounted(() => {
   align-items: center;
 }
 .heatmap-section {
-  background: #fafafa;
-  border-radius: 8px;
-  padding: 16px;
   margin-bottom: 16px;
-}
-.heatmap-chart {
-  width: 100%;
-  height: 250px;
 }
 .filter-bar {
   display: flex;
