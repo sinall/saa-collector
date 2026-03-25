@@ -6,100 +6,13 @@
 from datetime import date, datetime, timedelta
 from django.db import connection
 
-
-EARLIEST_YEAR = 2009
+from .constants import DATA_TYPE_CONFIG, EARLIEST_YEAR
 
 
 class CompletenessCalculator:
     """数据完整度计算器"""
-    
-    DATA_TYPE_CONFIG = {
-        'trade_days': {
-            'table': 'saa_trade_days',
-            'date_column': 'date',
-            'data_frequency': 'daily',
-            'stock_level': False,
-            'label': '交易日',
-        },
-        'stock_info': {
-            'table': 'saa_stocks',
-            'date_column': None,
-            'data_frequency': None,
-            'stock_level': True,
-            'label': '股票基本信息',
-        },
-        'quote': {
-            'table': 'saa_latest_prices',
-            'date_column': 'date',
-            'data_frequency': None,
-            'stock_level': True,
-            'label': '最新行情',
-        },
-        'historical_quote': {
-            'table': 'saa_prices_ex',
-            'date_column': 'date',
-            'data_frequency': 'daily',
-            'stock_level': True,
-            'label': '历史行情',
-            'stock_column': 'code',
-        },
-        'balance_sheet': {
-            'table': 'saa_raw_balance_sheet',
-            'date_column': 'date',
-            'data_frequency': 'quarterly',
-            'stock_level': True,
-            'label': '资产负债表',
-        },
-        'income': {
-            'table': 'saa_raw_income_statement',
-            'date_column': 'date',
-            'data_frequency': 'quarterly',
-            'stock_level': True,
-            'label': '利润表',
-        },
-        'cash_flow': {
-            'table': 'saa_raw_cash_flow_statement',
-            'date_column': 'date',
-            'data_frequency': 'quarterly',
-            'stock_level': True,
-            'label': '现金流量表',
-        },
-        'main_business': {
-            'table': 'saa_raw_main_business',
-            'date_column': 'date',
-            'data_frequency': 'quarterly',
-            'stock_level': True,
-            'label': '主营业务',
-        },
-        'capital': {
-            'table': 'saa_capitals',
-            'date_column': 'date',
-            'data_frequency': 'yearly',
-            'stock_level': True,
-            'label': '股本变动',
-        },
-        'dividend': {
-            'table': 'saa_dividends',
-            'date_column': 'date',
-            'data_frequency': 'yearly',
-            'stock_level': True,
-            'label': '分红数据',
-        },
-        'valuation_board': {
-            'table': 'saa_board_valuation_level',
-            'date_column': 'report_date',
-            'data_frequency': 'daily',
-            'stock_level': False,
-            'label': '板块估值',
-        },
-        'valuation_industry': {
-            'table': 'saa_industry_valuation_levels',
-            'date_column': 'report_date',
-            'data_frequency': 'daily',
-            'stock_level': False,
-            'label': '行业估值',
-        },
-    }
+
+    DATA_TYPE_CONFIG = DATA_TYPE_CONFIG
     
     def __init__(self, frequency: str, stock_codes: list = None, date_end: date = None):
         """

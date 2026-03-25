@@ -19,6 +19,13 @@
               刷新报告
             </el-button>
             <el-button
+              type="success"
+              @click="rangeRepairVisible = true"
+              :disabled="report?.status !== 'COMPLETED'"
+            >
+              按范围修复
+            </el-button>
+            <el-button
               type="primary"
               @click="generatePlanAction"
               :disabled="report?.status !== 'COMPLETED' || selectedCount === 0"
@@ -124,6 +131,13 @@
         </div>
       </div>
     </el-card>
+
+    <RangeRepairDrawer
+      v-model:visible="rangeRepairVisible"
+      :report-id="parseInt(props.id)"
+      :report-frequency="report?.frequency || 'monthly'"
+      @plan-created="onPlanCreated"
+    />
   </div>
 </template>
 
@@ -144,6 +158,7 @@ import {
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
+import RangeRepairDrawer from '@/components/RangeRepairDrawer.vue'
 
 import type { GridApi } from 'ag-grid-community'
 
@@ -152,6 +167,7 @@ const router = useRouter()
 const report = ref<any>(null)
 const loading = ref(true)
 const generating = ref(false)
+const rangeRepairVisible = ref(false)
 let pollTimer: number | null = null
 
 const heatmapData = ref<IntegrityReportHeatmapData | null>(null)
@@ -223,7 +239,8 @@ const columnDefs = [
         'main_business': '主营业务',
         'capital': '股本变动',
         'trade_days': '交易日',
-        'valuation': '估值数据',
+        'valuation_board': '板块估值',
+        'valuation_industry': '行业估值',
       }
 
       const typeColors: Record<string, string> = {
@@ -236,7 +253,8 @@ const columnDefs = [
         'main_business': '#ff85c0',
         'capital': '#87e8de',
         'trade_days': '#ffd666',
-        'valuation': '#ff9c6e',
+        'valuation_board': '#ff9c6e',
+        'valuation_industry': '#ffa940',
       }
 
       const value = params.value ?? ''
@@ -472,6 +490,10 @@ const getStatusType = (status: string) => {
     'FAILED': 'danger',
   }
   return types[status] || 'info'
+}
+
+const onPlanCreated = (planId: number) => {
+  loadItems()
 }
 
 const loadHeatmapData = async () => {

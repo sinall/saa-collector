@@ -31,24 +31,17 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
-DATA_TYPE_FREQUENCY = {
-    'trade_days': 'daily',
-    'stock_info': None,
-    'quote': 'daily',
-    'historical_quote': 'daily',
-    'balance_sheet': 'quarterly',
-    'income': 'quarterly',
-    'cash_flow': 'quarterly',
-    'main_business': 'quarterly',
-    'capital': 'yearly',
-    'dividend': 'yearly',
-    'valuation_board': 'daily',
-    'valuation_industry': 'daily',
-}
-
-A_STOCK_EARLIEST_DATE = '1990-12-19'
-EARLIEST_YEAR = 1990
-EXPECTED_A_SHARE_STOCKS = 5500
+from .constants import (
+    DATA_TYPE_FREQUENCY,
+    DATA_TYPE_CONFIG,
+    TABLE_MAPPING,
+    QUARTERLY_TYPES,
+    YEARLY_TYPES,
+    NON_STOCK_LEVEL_TYPES,
+    A_STOCK_EARLIEST_DATE,
+    EARLIEST_YEAR,
+    EXPECTED_A_SHARE_STOCKS,
+)
 
 
 def calculate_expected_periods(earliest_date, latest_date, frequency):
@@ -967,21 +960,7 @@ class DataCompletenessCheckView(APIView):
 class DataIntegrityReportListView(APIView):
     permission_classes = [IsAuthenticated]
 
-    QUARTERLY_TYPES = {'balance_sheet', 'income', 'cash_flow', 'main_business'}
-    YEARLY_TYPES = {'dividend', 'capital'}
     BATCH_SIZE = 500
-
-    TABLE_MAPPING = {
-        'quote': 'saa_latest_prices',
-        'historical_quote': 'saa_prices_ex',
-        'balance_sheet': 'saa_raw_balance_sheet',
-        'income': 'saa_raw_income_statement',
-        'cash_flow': 'saa_raw_cash_flow_statement',
-        'main_business': 'saa_raw_main_business',
-        'dividend': 'saa_dividends',
-        'capital': 'saa_capitals',
-        'trade_days': 'saa_trade_days',
-    }
 
     def get(self, request):
         reports = DataIntegrityReport.objects.annotate(
@@ -1040,7 +1019,9 @@ class DataIntegrityReportListView(APIView):
                 items = self._check_trade_days_missing(report)
             elif data_type == 'quote':
                 items = self._check_quote_missing(report, stocks)
-            elif data_type in self.TABLE_MAPPING:
+            elif data_type in NON_STOCK_LEVEL_TYPES:
+                items = self._check_non_stock_level_missing(report, data_type)
+            elif data_type in TABLE_MAPPING:
                 items = self._check_missing_periods_batch(report, stocks, data_type)
             else:
                 items = []
@@ -1070,9 +1051,9 @@ class DataIntegrityReportListView(APIView):
             return {row[0]: row[1] for row in cursor.fetchall()}
 
     def _get_check_frequency(self, data_type, report_frequency):
-        if data_type in self.QUARTERLY_TYPES:
+        if data_type in QUARTERLY_TYPES:
             return 'quarterly'
-        elif data_type in self.YEARLY_TYPES:
+        elif data_type in YEARLY_TYPES:
             return 'yearly'
         return report_frequency
 
@@ -1094,7 +1075,7 @@ class DataIntegrityReportListView(APIView):
         if not symbols:
             return []
 
-        table_name = self.TABLE_MAPPING['quote']
+        table_name = TABLE_MAPPING['quote']
         with connection.cursor() as cursor:
             placeholders = ','.join(['%s'] * len(symbols))
             cursor.execute(f"""
@@ -1124,6 +1105,57 @@ class DataIntegrityReportListView(APIView):
                 ))
 
         return missing_items
+
+    def _check_non_stock_level_missing(self, report, data_type):
+        """检查非股票级别数据的缺失（如估值数据）"""
+        config = DATA_TYPE_CONFIG.get(data_type)
+        if not config:
+            logger.warning(f"No config found for data_type: {data_type}")
+            return []
+
+        table_name = config['table']
+        date_column = config['date_column']
+        data_frequency = config.get('data_frequency', 'daily')
+
+        check_frequency = self._get_check_frequency(data_type, report.frequency)
+        expected = self._generate_periods(report.date_start, report.date_end, check_frequency)
+
+        try:
+            with connection.cursor() as cursor:
+                if check_frequency == 'yearly':
+                    select_expr = f"YEAR({date_column})"
+                elif check_frequency == 'quarterly':
+                    select_expr = f"CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column}))"
+                elif check_frequency == 'monthly':
+                    select_expr = f"DATE_FORMAT({date_column}, '%Y-%m')"
+                elif check_frequency == 'weekly':
+                    select_expr = f"CONCAT(YEAR({date_column}), '-W', LPAD(WEEK({date_column}, 1), 2, '0'))"
+                else:
+                    select_expr = date_column
+
+                cursor.execute(f"""
+                    SELECT DISTINCT {select_expr} as period
+                    FROM {table_name}
+                    WHERE {date_column} BETWEEN %s AND %s
+                """, [report.date_start, report.date_end])
+
+                existing = {str(row[0]) for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Error checking {data_type} in table {table_name}: {e}")
+            return []
+
+        missing_periods = sorted(expected - existing)
+
+        if not missing_periods:
+            return []
+
+        return [DataIntegrityItem(
+            report=report,
+            data_type=data_type,
+            stock_code=None,
+            missing_periods=missing_periods,
+            selected=False
+        )]
 
     def _generate_periods(self, start_date, end_date, frequency):
         periods = set()
@@ -1208,7 +1240,7 @@ class DataIntegrityReportListView(APIView):
         return filtered
 
     def _get_existing_periods_batch(self, symbols, data_type, start_date, end_date, frequency):
-        table_name = self.TABLE_MAPPING.get(data_type)
+        table_name = TABLE_MAPPING.get(data_type)
         if not table_name:
             return {}
 
@@ -1260,7 +1292,7 @@ class DataIntegrityReportListView(APIView):
 
         expected = self._generate_periods(report.date_start, report.date_end, frequency)
 
-        table_name = self.TABLE_MAPPING['trade_days']
+        table_name = TABLE_MAPPING['trade_days']
         with connection.cursor() as cursor:
             if frequency == 'yearly':
                 select_expr = "YEAR(date)"
@@ -1770,6 +1802,301 @@ class DataIntegrityReportHeatmapView(APIView):
                 periods = set(str(row[0]) for row in cursor.fetchall())
 
         return periods
+
+
+DATA_TYPE_LABELS = {
+    'quote': '最新行情',
+    'historical_quote': '历史行情',
+    'balance_sheet': '资产负债表',
+    'income': '利润表',
+    'cash_flow': '现金流量表',
+    'dividend': '分红数据',
+    'main_business': '主营业务',
+    'capital': '股本变动',
+    'trade_days': '交易日',
+    'valuation_board': '板块估值',
+    'valuation_industry': '行业估值',
+}
+
+
+def period_to_months(period, frequency):
+    """
+    将 period 字符串映射到 YYYY-MM 格式的集合。
+    一个 period 可能对应多个月（如 quarterly, yearly）。
+    """
+    if not period:
+        return set()
+
+    if frequency == 'daily':
+        if len(period) >= 7:
+            return {period[:7]}
+    elif frequency == 'weekly':
+        try:
+            year = int(period[:4])
+            week = int(period[6:8]) if len(period) >= 8 else int(period[6:])
+            from datetime import datetime
+            d = datetime.strptime(f"{year}-W{week:02d}-1", "%Y-W%W-%w").date()
+            return {f"{d.year}-{d.month:02d}"}
+        except (ValueError, IndexError):
+            pass
+    elif frequency == 'monthly':
+        return {period}
+    elif frequency == 'quarterly':
+        try:
+            year = int(period[:4])
+            q = int(period[-1])
+            start_month = (q - 1) * 3 + 1
+            return {f"{year}-{m:02d}" for m in range(start_month, start_month + 3)}
+        except (ValueError, IndexError):
+            pass
+    elif frequency == 'yearly':
+        try:
+            year = int(period)
+            return {f"{year}-{m:02d}" for m in range(1, 13)}
+        except ValueError:
+            pass
+    return set()
+
+
+class DataIntegrityReportSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        report = get_object_or_404(DataIntegrityReport, pk=pk)
+
+        if report.status != 'COMPLETED':
+            return Response({
+                'success': True,
+                'data': {
+                    'by_data_type': [],
+                    'by_period': [],
+                    'total_missing': 0,
+                    'total_stocks': 0,
+                }
+            })
+
+        data_types_filter = request.query_params.get('data_types')
+        stock_codes_filter = request.query_params.get('stock_codes')
+        status_filter = request.query_params.get('status', 'PENDING')
+
+        items_qs = DataIntegrityItem.objects.filter(report=report)
+
+        if status_filter:
+            items_qs = items_qs.filter(status=status_filter)
+
+        if data_types_filter:
+            data_types_list = [dt.strip() for dt in data_types_filter.split(',')]
+            items_qs = items_qs.filter(data_type__in=data_types_list)
+
+        if stock_codes_filter:
+            stock_codes_list = [sc.strip() for sc in stock_codes_filter.split(',')]
+            items_qs = items_qs.filter(stock_code__in=stock_codes_list)
+
+        by_data_type = self._aggregate_by_data_type(items_qs)
+        by_period = self._aggregate_by_period(items_qs, report.frequency)
+
+        total_missing = sum(item['missing_count'] for item in by_data_type)
+        total_stocks = len(set(
+            item.stock_code for item in items_qs
+            if item.stock_code
+        ))
+
+        return Response({
+            'success': True,
+            'data': {
+                'by_data_type': by_data_type,
+                'by_period': by_period,
+                'total_missing': total_missing,
+                'total_stocks': total_stocks,
+            }
+        })
+
+    def _aggregate_by_data_type(self, items_qs):
+        data_type_stats = {}
+        for item in items_qs:
+            if item.data_type not in data_type_stats:
+                data_type_stats[item.data_type] = {
+                    'missing_count': 0,
+                    'stock_codes': set(),
+                }
+            data_type_stats[item.data_type]['missing_count'] += len(item.missing_periods or [])
+            if item.stock_code:
+                data_type_stats[item.data_type]['stock_codes'].add(item.stock_code)
+
+        result = []
+        for data_type, stats in data_type_stats.items():
+            result.append({
+                'data_type': data_type,
+                'label': DATA_TYPE_LABELS.get(data_type, data_type),
+                'missing_count': stats['missing_count'],
+                'stock_count': len(stats['stock_codes']),
+            })
+
+        result.sort(key=lambda x: x['missing_count'], reverse=True)
+        return result
+
+    def _aggregate_by_period(self, items_qs, frequency):
+        month_stats = {}
+
+        for item in items_qs:
+            for period in (item.missing_periods or []):
+                months = period_to_months(period, frequency)
+                for month in months:
+                    if month not in month_stats:
+                        month_stats[month] = 0
+                    month_stats[month] += 1
+
+        if not month_stats:
+            return []
+
+        year_data = {}
+        for month_key, count in month_stats.items():
+            year = int(month_key[:4])
+            month = int(month_key[5:7])
+            quarter = (month - 1) // 3 + 1
+
+            if year not in year_data:
+                year_data[year] = {
+                    'missing_count': 0,
+                    'quarters': {},
+                }
+            year_data[year]['missing_count'] += count
+
+            if quarter not in year_data[year]['quarters']:
+                year_data[year]['quarters'][quarter] = {
+                    'missing_count': 0,
+                    'months': {},
+                }
+            year_data[year]['quarters'][quarter]['missing_count'] += count
+            year_data[year]['quarters'][quarter]['months'][month] = count
+
+        result = []
+        for year in sorted(year_data.keys(), reverse=True):
+            year_entry = {
+                'year': year,
+                'missing_count': year_data[year]['missing_count'],
+                'quarters': [],
+            }
+            for quarter in sorted(year_data[year]['quarters'].keys()):
+                q_data = year_data[year]['quarters'][quarter]
+                quarter_entry = {
+                    'quarter': quarter,
+                    'missing_count': q_data['missing_count'],
+                    'months': [],
+                }
+                for month in sorted(q_data['months'].keys()):
+                    quarter_entry['months'].append({
+                        'month': month,
+                        'missing_count': q_data['months'][month],
+                    })
+                year_entry['quarters'].append(quarter_entry)
+            result.append(year_entry)
+
+        return result
+
+
+class DataIntegrityReportGeneratePlanByRangeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        report = get_object_or_404(DataIntegrityReport, pk=pk)
+
+        if report.status != 'COMPLETED':
+            return Response({
+                'success': False,
+                'error': '报告未完成'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        data_types = request.data.get('data_types', [])
+        periods = request.data.get('periods', [])
+        stock_scope = request.data.get('stock_scope', 'ALL')
+        stock_codes = request.data.get('stock_codes', [])
+
+        if not data_types:
+            return Response({
+                'success': False,
+                'error': '请至少选择一个数据类型'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not periods:
+            return Response({
+                'success': False,
+                'error': '请至少选择一个时间范围'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        items_qs = DataIntegrityItem.objects.filter(
+            report=report,
+            data_type__in=data_types,
+            status='PENDING'
+        )
+
+        if stock_scope == 'SELECTED' and stock_codes:
+            items_qs = items_qs.filter(stock_code__in=stock_codes)
+
+        selected_months = set(periods)
+        data_type_groups = {}
+
+        for item in items_qs.iterator():
+            matched = self._match_periods(item.missing_periods, selected_months, report.frequency)
+            if not matched:
+                continue
+
+            if item.data_type not in data_type_groups:
+                data_type_groups[item.data_type] = {
+                    'stock_codes': set(),
+                    'periods': set(),
+                }
+            if item.stock_code:
+                data_type_groups[item.data_type]['stock_codes'].add(item.stock_code)
+            data_type_groups[item.data_type]['periods'].update(matched)
+
+        if not data_type_groups:
+            return Response({
+                'success': False,
+                'error': '没有找到匹配的缺失项'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        plan = CollectPlan.objects.create(
+            name=f"来自报告: {report.name}（按范围修复）",
+            source_report=report,
+            execution_mode='PARALLEL'
+        )
+
+        for data_type, info in data_type_groups.items():
+            sorted_periods = sorted(info['periods'])
+            CollectJob.objects.create(
+                plan=plan,
+                data_type=data_type,
+                symbols=list(info['stock_codes']),
+                params={
+                    'start_date': sorted_periods[0] if sorted_periods else None,
+                    'end_date': sorted_periods[-1] if sorted_periods else None,
+                },
+                status='PENDING'
+            )
+
+        return Response({
+            'success': True,
+            'data': {
+                'id': plan.id,
+                'name': plan.name,
+                'jobs_count': len(data_type_groups),
+            }
+        }, status=status.HTTP_201_CREATED)
+
+    def _match_periods(self, missing_periods, selected_months, frequency):
+        """
+        返回 missing_periods 中与 selected_months 有交集的原始 period 值。
+        """
+        if not missing_periods:
+            return []
+
+        matched = []
+        for period in missing_periods:
+            period_months = period_to_months(period, frequency)
+            if period_months & selected_months:
+                matched.append(period)
+        return matched
 
 
 class CollectPlanListView(APIView):

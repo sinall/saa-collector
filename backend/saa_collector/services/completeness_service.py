@@ -7,26 +7,15 @@ from datetime import date, timedelta
 from django.db import connection
 from calendar import monthrange
 
-
-EARLIEST_YEAR = 2009
+from ..constants import DATA_TYPE_CONFIG, EARLIEST_YEAR
 
 
 class CompletenessService:
     """完整度计算服务"""
 
     DATA_TYPE_CONFIG = [
-        ('trade_days', '交易日', 'saa_trade_days', 'date', 'daily'),
-        ('stock_info', '股票基本信息', 'saa_stocks', None, None),
-        ('quote', '最新行情', 'saa_latest_prices', 'date', None),
-        ('historical_quote', '历史行情', 'saa_prices_ex', 'date', 'daily'),
-        ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet', 'date', 'quarterly'),
-        ('income', '利润表', 'saa_raw_income_statement', 'date', 'quarterly'),
-        ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement', 'date', 'quarterly'),
-        ('main_business', '主营业务', 'saa_raw_main_business', 'date', 'quarterly'),
-        ('capital', '股本变动', 'saa_capitals', 'date', 'yearly'),
-        ('dividend', '分红数据', 'saa_dividends', 'date', 'yearly'),
-        ('valuation_board', '板块估值', 'saa_board_valuation_level', 'report_date', 'daily'),
-        ('valuation_industry', '行业估值', 'saa_industry_valuation_levels', 'report_date', 'daily'),
+        (key, config['label'], config['table'], config['date_column'], config['data_frequency'])
+        for key, config in DATA_TYPE_CONFIG.items()
     ]
 
     def __init__(self, stock_codes=None, date_end=None):
