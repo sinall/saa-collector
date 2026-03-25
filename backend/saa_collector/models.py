@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 
+from .constants import DATA_TYPE_CHOICES
+
 
 class CollectJob(models.Model):
     STATUS_CHOICES = [
@@ -9,21 +11,8 @@ class CollectJob(models.Model):
         ('SUCCESS', '成功'),
         ('FAILED', '失败'),
     ]
-    
-    DATA_TYPE_CHOICES = [
-        ('trade_days', '交易日'),
-        ('stock_info', '股票基本信息'),
-        ('quote', '最新行情'),
-        ('historical_quote', '历史行情'),
-        ('balance_sheet', '资产负债表'),
-        ('income', '利润表'),
-        ('cash_flow', '现金流量表'),
-        ('main_business', '主营业务'),
-        ('capital', '股本变动'),
-        ('dividend', '分红数据'),
-        ('valuation_board', '板块估值'),
-        ('valuation_industry', '行业估值'),
-    ]
+
+    DATA_TYPE_CHOICES = DATA_TYPE_CHOICES
     
     id = models.BigAutoField(primary_key=True)
     data_type = models.CharField('数据类型', max_length=50, choices=DATA_TYPE_CHOICES)
@@ -109,7 +98,7 @@ class DataIntegrityItem(models.Model):
     id = models.BigAutoField(primary_key=True)
     report = models.ForeignKey(DataIntegrityReport, on_delete=models.CASCADE, related_name='items')
     data_type = models.CharField('数据类型', max_length=50)
-    stock_code = models.CharField('股票代码', max_length=20)
+    stock_code = models.CharField('股票代码', max_length=20, null=True, blank=True)
     missing_periods = models.JSONField('缺失周期', default=list)
     selected = models.BooleanField('已选择', default=False)
     status = models.CharField('修复状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')

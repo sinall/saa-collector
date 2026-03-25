@@ -35,7 +35,8 @@ const dataTypes = [
   { value: 'cash_flow', label: '现金流量表' },
   { value: 'dividend', label: '分红数据' },
   { value: 'capital', label: '股本变动' },
-  { value: 'valuation', label: '估值数据' },
+  { value: 'valuation_board', label: '板块估值' },
+  { value: 'valuation_industry', label: '行业估值' },
   { value: 'main_business', label: '主营业务' },
 ]
 

@@ -1069,6 +1069,54 @@ export const fetchIntegrityReportHeatmap = async (reportId: number): Promise<Api
   return response.data
 }
 
+export interface IntegrityReportSummary {
+  by_data_type: Array<{
+    data_type: string
+    label: string
+    missing_count: number
+    stock_count: number
+  }>
+  by_period: Array<{
+    year: number
+    missing_count: number
+    quarters: Array<{
+      quarter: number
+      missing_count: number
+      months: Array<{
+        month: number
+        missing_count: number
+      }>
+    }>
+  }>
+  total_missing: number
+  total_stocks: number
+}
+
+export const fetchIntegrityReportSummary = async (
+  reportId: number,
+  params?: {
+    data_types?: string
+    stock_codes?: string
+    status?: string
+  }
+): Promise<ApiResponse<IntegrityReportSummary>> => {
+  const response = await api.get(`/integrity-reports/${reportId}/summary/`, { params })
+  return response.data
+}
+
+export const generatePlanByRange = async (
+  reportId: number,
+  params: {
+    data_types: string[]
+    periods: string[]
+    stock_scope: 'ALL' | 'SELECTED'
+    stock_codes?: string[]
+  }
+): Promise<ApiResponse<{ id: number; name: string; jobs_count: number }>> => {
+  const response = await api.post(`/integrity-reports/${reportId}/generate-plan-by-range/`, params)
+  return response.data
+}
+
 export const fetchIntegrityReportsMock = async (): Promise<ApiResponse<IntegrityReport[]>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
   const reports = generateMockIntegrityReports()
