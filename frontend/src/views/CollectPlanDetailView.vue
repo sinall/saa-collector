@@ -108,7 +108,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { fetchCollectPlan, fetchIntegrityReportSummary } from '@/utils/api'
- import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
