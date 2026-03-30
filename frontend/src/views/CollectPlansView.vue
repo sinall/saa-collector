@@ -126,9 +126,15 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
+import {
+  fetchCollectPlans,
+  executeCollectPlan,
+  deleteCollectPlan
+} from '@/utils/api'
+import type { CollectPlan } from '@/utils/api'
 
 const router = useRouter()
-const plans = ref<any[]>([])
+const plans = ref<CollectPlan[]>([])
 const loading = ref(false)
 const sourceFilter = ref('')
 
@@ -155,94 +161,65 @@ const dataTypeOptions = [
   { value: 'valuation', label: '估值数据' }
 ]
 
-const mockPlans = [
-  {
-    id: 1,
-    name: '2026-03-17 历史行情月度完整性检查修复计划',
-    status: 'COMPLETED',
-    status_display: '已完成',
-    source: 'INTEGRITY',
-    source_report_id: 1,
+interface DisplayPlan {
+  id: number
+  name: string
+  status: string
+  status_display: string
+  source: string
+  source_report_id: number | null
+  source_schedule_id: number | null
+  source_schedule_name: string | null
+  execution_mode: string
+  execution_mode_display: string
+  total_jobs: number
+  success_jobs: number
+  created_at: string
+}
+
+const getPlanSource = (plan: CollectPlan): string => {
+  if (plan.source_report) return 'INTEGRITY'
+  return 'MANUAL'
+}
+
+const getSuccessJobs = (plan: CollectPlan): number => {
+  if (!plan.jobs) return 0
+  return plan.jobs.filter(j => j.status === 'SUCCESS').length
+}
+
+const displayPlans = computed<DisplayPlan[]>(() => {
+  return plans.value.map(plan => ({
+    id: plan.id,
+    name: plan.name,
+    status: plan.status,
+    status_display: plan.status_display,
+    source: getPlanSource(plan),
+    source_report_id: plan.source_report || null,
     source_schedule_id: null,
     source_schedule_name: null,
-    execution_mode: 'PARALLEL',
-    execution_mode_display: '并行执行',
-    total_jobs: 3,
-    success_jobs: 3,
-    created_at: '2026-03-17 10:30:00'
-  },
-  {
-    id: 2,
-    name: '即时采集-000001,000002行情',
-    status: 'RUNNING',
-    status_display: '执行中',
-    source: 'MANUAL',
-    source_report_id: null,
-    source_schedule_id: null,
-    source_schedule_name: null,
-    execution_mode: 'PARALLEL',
-    execution_mode_display: '并行执行',
-    total_jobs: 1,
-    success_jobs: 0,
-    created_at: '2026-03-17 11:00:00'
-  },
-  {
-    id: 3,
-    name: '定时触发-每日行情采集',
-    status: 'PENDING',
-    status_display: '待执行',
-    source: 'SCHEDULE',
-    source_report_id: null,
-    source_schedule_id: 1,
-    source_schedule_name: '每日行情采集',
-    execution_mode: 'PARALLEL',
-    execution_mode_display: '并行执行',
-    total_jobs: 1,
-    success_jobs: 0,
-    created_at: '2026-03-17 09:00:00'
-  },
-  {
-    id: 4,
-    name: '2026-03-16 财务数据季度完整性检查修复计划',
-    status: 'FAILED',
-    status_display: '失败',
-    source: 'INTEGRITY',
-    source_report_id: 2,
-    source_schedule_id: null,
-    source_schedule_name: null,
-    execution_mode: 'SEQUENTIAL',
-    execution_mode_display: '顺序执行',
-    total_jobs: 5,
-    success_jobs: 2,
-    created_at: '2026-03-16 14:00:00'
-  },
-  {
-    id: 5,
-    name: '即时采集-全量股票信息',
-    status: 'PENDING',
-    status_display: '待执行',
-    source: 'MANUAL',
-    source_report_id: null,
-    source_schedule_id: null,
-    source_schedule_name: null,
-    execution_mode: 'PARALLEL',
-    execution_mode_display: '并行执行',
-    total_jobs: 1,
-    success_jobs: 0,
-    created_at: '2026-03-17 12:00:00'
-  }
-]
+    execution_mode: plan.execution_mode || 'PARALLEL',
+    execution_mode_display: plan.execution_mode_display,
+    total_jobs: plan.jobs_count || (plan.jobs?.length || 0),
+    success_jobs: getSuccessJobs(plan),
+    created_at: plan.created_at
+  }))
+})
 
 const filteredPlans = computed(() => {
-  if (!sourceFilter.value) return plans.value
-  return plans.value.filter(p => p.source === sourceFilter.value)
+  if (!sourceFilter.value) return displayPlans.value
+  return displayPlans.value.filter(p => p.source === sourceFilter.value)
 })
 
 const fetchPlans = async () => {
   loading.value = true
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
-    plans.value = mockPlans
+    const response = await fetchCollectPlans({ page_size: 100 })
+    if (response.success && response.data) {
+      plans.value = response.data.results
+    }
+  } catch (error) {
+    console.error('Failed to fetch plans:', error)
+    ElMessage.error('获取采集计划列表失败')
   } finally {
     loading.value = false
   }
@@ -280,24 +257,37 @@ const viewPlan = (id: number) => {
   router.push(`/collect-plans/${id}`)
 }
 
-const executePlan = async (row: any) => {
+const executePlan = async (row: DisplayPlan) => {
   try {
     await ElMessageBox.confirm('确定要执行该计划吗？', '提示', { type: 'info' })
-    row.status = 'RUNNING'
-    row.status_display = '执行中'
-    ElMessage.success('计划已开始执行')
-  } catch {
-    // cancelled
+    const response = await executeCollectPlan(row.id)
+    if (response.success) {
+      ElMessage.success('计划已开始执行')
+      fetchPlans()
+    } else {
+      ElMessage.error(response.error || '执行失败')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.error || '执行失败')
+    }
   }
 }
 
 const deletePlan = async (id: number) => {
   try {
     await ElMessageBox.confirm('确定要删除该计划吗？', '提示', { type: 'warning' })
-    plans.value = plans.value.filter(p => p.id !== id)
-    ElMessage.success('删除成功')
-  } catch {
-    // cancelled
+    const response = await deleteCollectPlan(id)
+    if (response.success) {
+      ElMessage.success('删除成功')
+      fetchPlans()
+    } else {
+      ElMessage.error(response.error || '删除失败')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.error || '删除失败')
+    }
   }
 }
 
@@ -319,8 +309,6 @@ const createInstantPlan = async () => {
 
   creating.value = true
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
     const dataTypeName = dataTypeOptions.find(d => d.value === instantForm.value.data_type)?.label || instantForm.value.data_type
     const name = instantForm.value.name || `即时采集-${dataTypeName}-${new Date().toISOString().split('T')[0]}`
     
@@ -331,15 +319,14 @@ const createInstantPlan = async () => {
         data_type: instantForm.value.data_type,
         symbols: instantForm.value.symbols,
         params: {
-          date_start: instantForm.value.dateRange[0]?.toISOString().split('T')[0],
-          date_end: instantForm.value.dateRange[1]?.toISOString().split('T')[0]
+          start_date: instantForm.value.dateRange[0]?.toISOString().split('T')[0],
+          end_date: instantForm.value.dateRange[1]?.toISOString().split('T')[0]
         }
       }]
     })
     
-    ElMessage.success('计划创建成功')
+    ElMessage.info('即时采集功能需要后端支持，请使用采集页面进行即时采集')
     instantCollectVisible.value = false
-    fetchPlans()
   } finally {
     creating.value = false
   }

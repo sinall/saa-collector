@@ -658,16 +658,16 @@ export interface CollectPlan {
   name: string
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
   status_display: string
-  execution_mode?: string
+  execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
   execution_mode_display: string
   source_report?: number
   source_report_name?: string
-  jobs_count?: number
   created_at: string
   started_at?: string
   completed_at?: string
+  jobs_count?: number
   jobs: {
-    id: number
+    id?: number
     data_type: string
     data_type_display: string
     symbols: string[]
@@ -826,8 +826,41 @@ export const fetchCollectScheduleMock = async (id: number): Promise<ApiResponse<
   }
 }
 
+export const fetchCollectPlans = async (params?: {
+  page?: number
+  page_size?: number
+}): Promise<ApiResponse<{ results: CollectPlan[], pagination: { total: number } }>> => {
+  const response = await api.get('/collect-plans/', { params })
+  return {
+    success: true,
+    data: {
+      results: response.data.results || [],
+      pagination: { total: response.data.count || 0 }
+    }
+  }
+}
+
 export const fetchCollectPlan = async (id: number): Promise<ApiResponse<CollectPlan>> => {
   const response = await api.get(`/collect-plans/${id}/`)
+  return response.data
+}
+
+export const executeCollectPlan = async (id: number): Promise<ApiResponse<any>> => {
+  const response = await api.post(`/collect-plans/${id}/execute/`)
+  return response.data
+}
+
+export const deleteCollectPlan = async (id: number): Promise<ApiResponse<null>> => {
+  const response = await api.delete(`/collect-plans/${id}/`)
+  return response.data
+}
+
+export const createCollectPlan = async (params: {
+  name: string
+  source_report?: number
+  execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
+}): Promise<ApiResponse<CollectPlan>> => {
+  const response = await api.post('/collect-plans/', params)
   return response.data
 }
 
@@ -1330,7 +1363,7 @@ export interface DisplayFieldConfig {
   fixed?: boolean
   order: number
   width: number
-  format?: 'price' | 'volume' | 'money' | 'percent' | 'date'
+  format?: 'price' | 'volume' | 'money' | 'percent' | 'date' | 'number'
 }
 
 export interface DisplayTableConfig {
