@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from saa_collector.services.factory.service_factory import ServiceFactory
+from saa_collector.services.impl.akshare.calendar_service import CalendarServiceImpl
 from saa_collector.services.impl.akshare.capital_service import CapitalServiceImpl
 from saa_collector.services.impl.akshare.quote_service import QuoteServiceImpl
 from saa_collector.services.impl.akshare.statement_service import StatementServiceImpl
@@ -7,6 +8,9 @@ from saa_collector.services.impl.akshare.stock_info_service import StockInfoServ
 
 
 class AkshareServiceFactoryImpl(ServiceFactory):
+    def create_calendar_service(self):
+        return CalendarServiceImpl()
+
     def create_stock_info_service(self):
         return StockInfoServiceImpl()
 

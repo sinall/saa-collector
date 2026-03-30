@@ -5,33 +5,26 @@
         <div class="card-header">
           <div>
             <el-button link @click="$router.back()">返回</el-button>
-            <span style="margin-left: 16px; font-size: 18px;">{{ report?.name }}</span>
+            <span style="margin-left: 16px; font-size: 16px;">{{ report?.name }}</span>
             <el-tag v-if="report" :type="getStatusType(report.status)" style="margin-left: 8px;">
               {{ report.status_display }}
             </el-tag>
           </div>
           <div>
             <el-button
+              type="primary"
+              @click="handleGeneratePlan"
+              :disabled="report?.status === 'GENERATING'"
+              :loading="generating"
+            >
+              生成采集计划
+            </el-button>
+            <el-button
               @click="refreshReportAction"
               :disabled="report?.status === 'GENERATING'"
               :loading="refreshing"
             >
               刷新报告
-            </el-button>
-            <el-button
-              type="success"
-              @click="rangeRepairVisible = true"
-              :disabled="report?.status !== 'COMPLETED'"
-            >
-              按范围修复
-            </el-button>
-            <el-button
-              type="primary"
-              @click="generatePlanAction"
-              :disabled="report?.status !== 'COMPLETED' || selectedCount === 0"
-              :loading="generating"
-            >
-              生成采集计划
             </el-button>
           </div>
         </div>
@@ -42,123 +35,70 @@
         <span>报告生成中，请稍候...</span>
       </div>
 
-      <div v-else>
-        <div class="heatmap-section">
+      <template v-else>
+        <el-card class="heatmap-card">
           <CompletenessHeatmap
             :external-data="heatmapData"
             :hide-frequency-selector="true"
             :view-frequency="report?.frequency || 'monthly'"
           />
-        </div>
+        </el-card>
 
-        <div class="filter-bar">
-          <el-select
-            v-model="filterStatus"
-            placeholder="修复状态"
-            clearable
-            style="width: 120px;"
-            @change="handleFilterChange"
-          >
-            <el-option label="待修复" value="PENDING" />
-            <el-option label="已修复" value="FIXED" />
-          </el-select>
-          <el-select
-            v-model="filterDataType"
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-            placeholder="数据类型"
-            clearable
-            style="width: 200px;"
-            @change="handleFilterChange"
-          >
-            <el-option
-              v-for="(label, value) in DATA_TYPE_DISPLAY"
-              :key="value"
-              :label="label"
-              :value="value"
-            />
-          </el-select>
-          <el-input
-            v-model="filterStockCode"
-            placeholder="股票代码"
-            clearable
-            style="width: 150px;"
-            @change="handleFilterChange"
-          />
-          <el-input
-            v-model="filterPeriod"
-            placeholder="缺失周期"
-            clearable
-            style="width: 150px;"
-            @change="handleFilterChange"
-          />
-          <el-button @click="resetFilters">重置</el-button>
-          <div class="filter-bar-actions">
-            <el-button size="small" @click="selectAllFiltered" :disabled="!hasFilteredItems">
-              全选筛选
-            </el-button>
-            <el-button size="small" @click="deselectAllFiltered" :disabled="!hasFilteredItems">
-              取消全选
-            </el-button>
+        <el-card class="data-card">
+          <div class="content-layout">
+            <div class="tree-panel">
+              <IntegrityReportTreeFilter
+                :report-id="parseInt(props.id)"
+                @filter-change="handleFilterChange"
+              />
+            </div>
+            <div class="right-content">
+              <ag-grid-vue
+                class="ag-theme-quartz"
+                :theme="gridTheme"
+                :columnDefs="columnDefs"
+                :rowData="rowData"
+                :defaultColDef="defaultColDef"
+                @grid-ready="onGridReady"
+                style="height: 100%; width: 100%;"
+              />
+
+              <div class="pagination-container" v-if="totalItems > 0">
+                <el-pagination
+                  v-model:current-page="currentPage"
+                  v-model:page-size="pageSize"
+                  :page-sizes="[50, 100, 200, 500]"
+                  :total="totalItems"
+                  layout="total, sizes, prev, pager, next"
+                  @current-change="handlePageChange"
+                  @size-change="handleSizeChange"
+                />
+              </div>
+            </div>
           </div>
-        </div>
-
-        <ag-grid-vue
-          class="ag-theme-quartz"
-          :theme="gridTheme"
-          :columnDefs="columnDefs"
-          :rowData="rowData"
-          :defaultColDef="defaultColDef"
-          :rowSelection="'multiple'"
-          :suppressRowClickSelection="true"
-          @grid-ready="onGridReady"
-          @selection-changed="onSelectionChanged"
-          style="height: 500px; width: 100%; margin-top: 16px;"
-        />
-
-        <div class="pagination-container" v-if="totalItems > 0">
-          <span class="selection-info">已选择 {{ selectedCount }} 项</span>
-          <el-pagination
-            v-model:current-page="currentPage"
-            v-model:page-size="pageSize"
-            :page-sizes="[50, 100, 200, 500]"
-            :total="totalItems"
-            layout="total, sizes, prev, pager, next, jumper"
-            @current-change="handlePageChange"
-            @size-change="handleSizeChange"
-          />
-        </div>
-      </div>
+        </el-card>
+      </template>
     </el-card>
-
-    <RangeRepairDrawer
-      v-model:visible="rangeRepairVisible"
-      :report-id="parseInt(props.id)"
-      :report-frequency="report?.frequency || 'monthly'"
-      @plan-created="onPlanCreated"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onActivated } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
 import {
   fetchIntegrityReportDetail,
-  selectItems,
   refreshReport,
-  generatePlan,
   fetchIntegrityReportHeatmap,
+  generatePlan,
   type IntegrityReportItem,
   type IntegrityReportHeatmapData
 } from '@/utils/api'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
-import RangeRepairDrawer from '@/components/RangeRepairDrawer.vue'
+import IntegrityReportTreeFilter, { type FilterParams } from '@/components/IntegrityReportTreeFilter.vue'
 
 import type { GridApi } from 'ag-grid-community'
 
@@ -167,55 +107,30 @@ const router = useRouter()
 const report = ref<any>(null)
 const loading = ref(true)
 const generating = ref(false)
-const rangeRepairVisible = ref(false)
+const refreshing = ref(false)
 let pollTimer: number | null = null
 
 const heatmapData = ref<IntegrityReportHeatmapData | null>(null)
-
 const gridApi = ref<GridApi | null>(null)
 const rowData = ref<IntegrityReportItem[]>([])
 const currentPage = ref(1)
 const pageSize = ref(100)
 const totalItems = ref(0)
-const selectedCount = ref(0)
 
-const filterDataType = ref<string[]>([])
-const filterStockCode = ref('')
-const filterPeriod = ref('')
-const filterStatus = ref('')
-
-const hasFilteredItems = computed(() => (report.value?.items_count || 0) > 0)
+const currentFilter = ref<FilterParams>({
+  dataTypes: [],
+  periods: [],
+  status: '',
+  stockCode: ''
+})
 
 const gridTheme = themeQuartz
 
-const refreshing = ref(false)
-
-const DATA_TYPE_DISPLAY: Record<string, string> = {
-  'quote': '最新行情',
-  'historical_quote': '历史行情',
-  'balance_sheet': '资产负债表',
-  'income': '利润表',
-  'cash_flow': '现金流量表',
-  'dividend': '分红数据',
-  'main_business': '主营业务',
-  'capital': '股本变动',
-  'trade_days': '交易日',
-}
-
 const columnDefs = [
-  {
-    headerName: '选择',
-    width: 60,
-    pinned: 'left' as const,
-    checkboxSelection: true,
-    headerCheckboxSelection: true,
-    suppressMenu: true,
-    suppressMovable: true,
-  },
   {
     field: 'status_display',
     headerName: '状态',
-    width: 120,
+    width: 100,
     cellRenderer: (params: any) => {
       const status = params.data?.status
       const icon = status === 'FIXED' ? '✓' : '⏳'
@@ -227,7 +142,7 @@ const columnDefs = [
   {
     field: 'data_type',
     headerName: '数据类型',
-    width: 150,
+    width: 140,
     cellRenderer: (params: any) => {
       const typeLabels: Record<string, string> = {
         'quote': '最新行情',
@@ -242,25 +157,22 @@ const columnDefs = [
         'valuation_board': '板块估值',
         'valuation_industry': '行业估值',
       }
-
       const typeColors: Record<string, string> = {
         'quote': '#409eff',
         'historical_quote': '#67c23a',
         'balance_sheet': '#e6a23c',
         'income': '#f56c6c',
         'cash_flow': '#909399',
-        'dividend': '#b37feb',
+        'dividend': '#b37beb',
         'main_business': '#ff85c0',
         'capital': '#87e8de',
         'trade_days': '#ffd666',
         'valuation_board': '#ff9c6e',
         'valuation_industry': '#ffa940',
       }
-
       const value = params.value ?? ''
       const label = typeLabels[value] || value
       const color = typeColors[value] || '#909399'
-
       return `<span style="
         background: ${color}20;
         color: ${color};
@@ -275,10 +187,6 @@ const columnDefs = [
     field: 'stock_code',
     headerName: '股票代码',
     width: 120,
-    cellRenderer: (params: any) => {
-      const code = params.value ?? ''
-      return `<a href="/stock/${code}" style="color: #409eff; text-decoration: none;">${code}</a>`
-    },
   },
   {
     field: 'period',
@@ -294,7 +202,6 @@ const defaultColDef = {
 
 const onGridReady = (params: any) => {
   gridApi.value = params.api
-  loadItems()
 }
 
 const buildQueryParams = () => {
@@ -302,35 +209,30 @@ const buildQueryParams = () => {
     page: currentPage.value,
     page_size: pageSize.value,
   }
-
-  if (filterStatus.value) {
-    params.status = filterStatus.value
+  if (currentFilter.value.status) {
+    params.status = currentFilter.value.status
   }
-  if (filterDataType.value && filterDataType.value.length > 0) {
-    params.data_type = filterDataType.value.join(',')
+  if (currentFilter.value.stockCode) {
+    params.stock_code = currentFilter.value.stockCode
   }
-  if (filterStockCode.value) {
-    params.stock_code = filterStockCode.value
+  if (currentFilter.value.dataTypes.length > 0) {
+    params.data_types = currentFilter.value.dataTypes.join(',')
   }
-  if (filterPeriod.value) {
-    params.period = filterPeriod.value
+  if (currentFilter.value.periods.length > 0) {
+    params.periods = currentFilter.value.periods.join(',')
   }
-
   return params
 }
 
 const loadItems = async () => {
   if (!gridApi.value) return
-
   try {
     const params = buildQueryParams()
     const response = await fetchIntegrityReportDetail(parseInt(props.id), params)
-
     if (response.success && response.data) {
       report.value = response.data
       rowData.value = response.data.items || []
       totalItems.value = response.data.items_count || 0
-      selectedCount.value = response.data.selected_count || 0
     } else {
       ElMessage.error(response.error || '加载数据失败')
     }
@@ -340,16 +242,8 @@ const loadItems = async () => {
   }
 }
 
-const handleFilterChange = () => {
-  currentPage.value = 1
-  loadItems()
-}
-
-const resetFilters = () => {
-  filterStatus.value = ''
-  filterDataType.value = []
-  filterStockCode.value = ''
-  filterPeriod.value = ''
+const handleFilterChange = (filterParams: FilterParams) => {
+  currentFilter.value = filterParams
   currentPage.value = 1
   loadItems()
 }
@@ -363,11 +257,6 @@ const handleSizeChange = (size: number) => {
   pageSize.value = size
   currentPage.value = 1
   loadItems()
-}
-
-const onSelectionChanged = (event: any) => {
-  const selectedRows = gridApi.value?.getSelectedRows() || []
-  selectedCount.value = selectedRows.length
 }
 
 const fetchReport = async () => {
@@ -395,46 +284,6 @@ const pollReport = async () => {
   }
 }
 
-const selectAllFiltered = async () => {
-  try {
-    const response = await selectItems(parseInt(props.id), {
-      data_types: filterDataType.value.length > 0 ? filterDataType.value : undefined,
-      stock_code: filterStockCode.value || undefined,
-      period: filterPeriod.value || undefined,
-      status: filterStatus.value || undefined,
-      selected: true,
-    })
-    if (response.success && response.data) {
-      ElMessage.success(`已选择 ${response.data.updated_count} 项`)
-      loadItems()
-    } else {
-      ElMessage.error(response.error || '操作失败')
-    }
-  } catch (error) {
-    ElMessage.error('操作失败')
-  }
-}
-
-const deselectAllFiltered = async () => {
-  try {
-    const response = await selectItems(parseInt(props.id), {
-      data_types: filterDataType.value.length > 0 ? filterDataType.value : undefined,
-      stock_code: filterStockCode.value || undefined,
-      period: filterPeriod.value || undefined,
-      status: filterStatus.value || undefined,
-      selected: false,
-    })
-    if (response.success && response.data) {
-      ElMessage.success(`已取消选择 ${response.data.updated_count} 项`)
-      loadItems()
-    } else {
-      ElMessage.error(response.error || '操作失败')
-    }
-  } catch (error) {
-    ElMessage.error('操作失败')
-  }
-}
-
 const refreshReportAction = async () => {
   refreshing.value = true
   try {
@@ -453,10 +302,10 @@ const refreshReportAction = async () => {
   }
 }
 
-const generatePlanAction = async () => {
+const handleGeneratePlan = async () => {
   try {
     await ElMessageBox.confirm(
-      `确定要生成采集计划吗？已选择 ${selectedCount.value} 项缺失数据。`,
+      '确定要基于此报告生成采集计划吗？',
       '确认生成',
       {
         confirmButtonText: '确定',
@@ -464,13 +313,11 @@ const generatePlanAction = async () => {
         type: 'info',
       }
     )
-
     generating.value = true
     const response = await generatePlan(parseInt(props.id))
-
     if (response.success && response.data) {
-      ElMessage.success('计划已生成')
-      router.push(`/collect-plans/${response.data.id}/edit`)
+      ElMessage.success('采集计划已生成')
+      router.push(`/collect-plans/${response.data.id}`)
     } else {
       ElMessage.error(response.error || '生成失败')
     }
@@ -490,10 +337,6 @@ const getStatusType = (status: string) => {
     'FAILED': 'danger',
   }
   return types[status] || 'info'
-}
-
-const onPlanCreated = (planId: number) => {
-  loadItems()
 }
 
 const loadHeatmapData = async () => {
@@ -529,56 +372,67 @@ onUnmounted(() => {
 .integrity-report-detail {
   padding: 20px;
 }
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.heatmap-section {
+
+.heatmap-card {
   margin-bottom: 16px;
 }
-.filter-bar {
+
+.data-card :deep(.el-card__body) {
+  padding: 16px;
+  height: calc(100vh - 260px);
+}
+
+.data-card {
+  background: #fff;
+}
+
+.content-layout {
   display: flex;
-  gap: 12px;
+  gap: 16px;
+  height: 100%;
+}
+
+.tree-panel {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.right-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pagination-container {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  flex-wrap: wrap;
 }
-.filter-bar-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
+
 .generating {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   padding: 40px;
   color: #909399;
 }
-.pagination-container {
-  margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 16px;
-}
-.selection-info {
-  color: #606266;
-  font-size: 14px;
+
+.generating .el-icon {
+  font-size: 24px;
+  margin-right: 8px;
 }
 
 :deep(.ag-theme-quartz) {
   --ag-header-background-color: #f5f7fa;
   --ag-header-foreground-color: #333;
   --ag-border-color: #e4e7ed;
-}
-
-:deep(.ag-row-selected) {
-  background-color: #ecf5ff !important;
-}
-
-:deep(.ag-row-hover) {
-  background-color: #f5f7fa !important;
 }
 </style>

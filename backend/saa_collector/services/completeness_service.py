@@ -273,8 +273,12 @@ class CompletenessService:
             period = periods[i]
             period_key = self._get_period_key(period, frequency)
             actual_count = period_counts.get(period_key, 0)
-            expected_count = expected_counts.get(period, 1)
-            result[i] = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
+            if table_name == 'saa_trade_days':
+                expected = self._get_expected_trade_days(period, frequency)
+                result[i] = round(actual_count / expected, 2) if expected > 0 else 0.0
+            else:
+                expected_count = expected_counts.get(period, 1)
+                result[i] = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
 
         return result
     
@@ -414,3 +418,21 @@ class CompletenessService:
             year = int(period)
             return f"{year}-01-01", f"{year}-12-31"
         return period, period
+
+    def _get_expected_trade_days(self, period, frequency):
+        """获取预期交易日数（天数 - 最小周末数）"""
+        if frequency == 'monthly':
+            year, month = int(period[:4]), int(period[5:7])
+            _, days_in_month = monthrange(year, month)
+            return days_in_month - 8
+        elif frequency == 'quarterly':
+            year = int(period[:4])
+            quarter = int(period[6])
+            start_month = (quarter - 1) * 3 + 1
+            total_days = sum(monthrange(year, m)[1] for m in range(start_month, start_month + 3))
+            return total_days - 12
+        elif frequency == 'yearly':
+            year = int(period)
+            days = 366 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 365
+            return days - 104
+        return 20

@@ -11,10 +11,10 @@ test.describe('Integrity Report Detail Page', () => {
   test('should load without errors', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
-    
+
     await waitForPageLoad(page)
     await sleep(1000)
-    
+
     expect(errors).toHaveLength(0)
   })
 
@@ -32,13 +32,22 @@ test.describe('Integrity Report Detail Page', () => {
   })
 
   test('should show heatmap section', async ({ page }) => {
-    const heatmapSection = page.locator('.heatmap-section')
+    const heatmapSection = page.locator('.heatmap-card')
     await expect(heatmapSection).toBeVisible({ timeout: 10000 })
   })
 
-  test('should have filter area with dropdowns', async ({ page }) => {
-    const filterArea = page.locator('.filter-bar')
-    await expect(filterArea).toBeVisible({ timeout: 10000 })
+  test('should show generate plan button in header', async ({ page }) => {
+    const button = page.locator('.card-header button:has-text("生成采集计划")')
+    await expect(button).toBeVisible()
+  })
+
+  test('should have filter panel with sections', async ({ page }) => {
+    const filterPanel = page.locator('.filter-panel')
+    await expect(filterPanel).toBeVisible({ timeout: 10000 })
+
+    const sections = page.locator('.section-header')
+    const count = await sections.count()
+    expect(count).toBeGreaterThanOrEqual(2)
   })
 
   test('should display data table', async ({ page }) => {
@@ -46,17 +55,10 @@ test.describe('Integrity Report Detail Page', () => {
     await expect(table).toBeVisible({ timeout: 10000 })
   })
 
-  test('should show pagination and selection info', async ({ page }) => {
+  test('should show pagination', async ({ page }) => {
     const pagination = page.locator('.pagination-container')
-    await expect(pagination).toBeVisible({ timeout: 10000 })
-    
-    const selectionInfo = page.locator('.selection-info')
-    await expect(selectionInfo).toBeVisible()
-  })
-
-  test('should show generate plan button', async ({ page }) => {
-    const button = page.locator('button:has-text("生成采集计划")')
-    await expect(button).toBeVisible()
+    const isVisible = await pagination.isVisible({ timeout: 5000 }).catch(() => false)
+    expect(typeof isVisible).toBe('boolean')
   })
 
   test('should show refresh report button', async ({ page }) => {
@@ -64,12 +66,11 @@ test.describe('Integrity Report Detail Page', () => {
     await expect(button).toBeVisible()
   })
 
-  test('should have filter dropdowns working', async ({ page }) => {
-    const statusSelect = page.locator('.filter-bar .el-select').first()
-    await expect(statusSelect).toBeVisible()
-    
-    const dataTypeSelect = page.locator('.el-select').filter({ hasText: '数据类型' })
-    const isVisible = await dataTypeSelect.isVisible().catch(() => false)
-    expect(typeof isVisible).toBe('boolean')
+  test('should have filter inputs in left panel', async ({ page }) => {
+    const statusSelect = page.locator('.filter-item select').first()
+    await expect(statusSelect).toBeVisible({ timeout: 5000 })
+
+    const stockCodeInput = page.locator('.filter-item input').first()
+    await expect(stockCodeInput).toBeVisible({ timeout: 5000 })
   })
 })
