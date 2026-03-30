@@ -658,12 +658,17 @@ export interface CollectPlan {
   name: string
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
   status_display: string
+  execution_mode?: string
   execution_mode_display: string
+  source_report?: number
   source_report_name?: string
+  jobs_count?: number
   created_at: string
   started_at?: string
   completed_at?: string
   jobs: {
+    id: number
+    data_type: string
     data_type_display: string
     symbols: string[]
     params: {
@@ -783,6 +788,8 @@ function generateMockCollectPlans(): CollectPlan[] {
       completed_at: status === 'COMPLETED' || status === 'FAILED' ? new Date(date.getTime() + 3600000).toISOString() : undefined,
       jobs: [
         {
+          id: i * 10 + 1,
+          data_type: dataTypes[i % dataTypes.length] ?? 'quote',
           data_type_display: dataTypeDisplays[i % dataTypeDisplays.length] ?? '行情数据',
           symbols: stockCodes.slice(0, 3 + Math.floor(Math.random() * 3)),
           params: {
@@ -819,6 +826,11 @@ export const fetchCollectScheduleMock = async (id: number): Promise<ApiResponse<
   }
 }
 
+export const fetchCollectPlan = async (id: number): Promise<ApiResponse<CollectPlan>> => {
+  const response = await api.get(`/collect-plans/${id}/`)
+  return response.data
+}
+
 export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<CollectPlan>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
 
@@ -827,6 +839,7 @@ export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<Coll
   if (!plan) {
     const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
     const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
+    const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
     const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
     const stockCodes = ['000001', '000002', '600000', '600001', '600036']
     const statusIdx = id % 4
@@ -845,6 +858,8 @@ export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<Coll
       completed_at: status === 'COMPLETED' || status === 'FAILED' ? new Date(date.getTime() + 3600000).toISOString() : undefined,
       jobs: [
         {
+          id: id * 10 + 1,
+          data_type: dataTypes[id % dataTypes.length] ?? 'quote',
           data_type_display: dataTypeDisplays[id % dataTypeDisplays.length] ?? '行情数据',
           symbols: stockCodes.slice(0, 3 + (id % 3)),
           params: {
@@ -1117,6 +1132,21 @@ export const generatePlanByRange = async (
   return response.data
 }
 
+export interface IntegrityReportTreeNode {
+  key: string
+  label: string
+  count: number
+  children?: IntegrityReportTreeNode[]
+}
+
+export const fetchIntegrityReportTreeSummary = async (
+  reportId: number,
+  params?: { status?: string }
+): Promise<ApiResponse<{ tree: IntegrityReportTreeNode[] }>> => {
+  const response = await api.get(`/integrity-reports/${reportId}/tree-summary/`, { params })
+  return response.data
+}
+
 export const fetchIntegrityReportsMock = async (): Promise<ApiResponse<IntegrityReport[]>> => {
   await new Promise(resolve => setTimeout(resolve, 300))
   const reports = generateMockIntegrityReports()
@@ -1369,7 +1399,7 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
         { name: 'close', label: '收盘价', visible: true, order: 4, width: 100, format: 'price' },
         { name: 'high', label: '最高价', visible: true, order: 5, width: 100, format: 'price' },
         { name: 'low', label: '最低价', visible: true, order: 6, width: 100, format: 'price' },
-        { name: 'volume', label: '成交量', visible: true, order: 7, width: 120, format: 'number' },
+        { name: 'volume', label: '成交量', visible: true, order: 7, width: 120, format: 'volume' },
         { name: 'money', label: '成交额', visible: true, order: 8, width: 140, format: 'money' },
       ]
     }

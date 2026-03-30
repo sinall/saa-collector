@@ -18,6 +18,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
+
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan
 from .serializers import (
     CollectJobSerializer, CollectJobCreateSerializer,
@@ -470,6 +471,7 @@ class TypeBrowseDataView(APIView):
         'saa_raw_main_business': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_capitals': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_dividends': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
+        'saa_trade_days': {'date_column': 'date', 'order': 'date DESC'},
     }
 
     NEEDS_STOCK_NAME = {
@@ -1012,7 +1014,7 @@ class DataIntegrityReportListView(APIView):
         stocks = self._get_stocks_with_listing_dates(report)
         items_to_create = []
 
-        data_types = report.data_types if report.data_types else ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital']
+        data_types = report.data_types if report.data_types else ['trade_days', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital']
 
         for data_type in data_types:
             if data_type == 'trade_days':
@@ -1494,11 +1496,11 @@ class DataIntegrityReportGeneratePlanView(APIView):
                 'error': '报告未完成'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        selected_items = report.items.filter(selected=True)
-        if not selected_items.exists():
+        all_items = report.items.all()
+        if not all_items.exists():
             return Response({
                 'success': False,
-                'error': '未选择任何缺失项'
+                'error': '报告中没有缺失项'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         plan = CollectPlan.objects.create(
@@ -1508,7 +1510,7 @@ class DataIntegrityReportGeneratePlanView(APIView):
         )
 
         data_type_items = {}
-        for item in selected_items:
+        for item in all_items:
             if item.data_type not in data_type_items:
                 data_type_items[item.data_type] = {
                     'stock_codes': set(),
@@ -1844,7 +1846,10 @@ def period_to_months(period, frequency):
     elif frequency == 'quarterly':
         try:
             year = int(period[:4])
-            q = int(period[-1])
+            if 'Q' in period:
+                q = int(period.split('Q')[1])
+            else:
+                q = int(period[-1])
             start_month = (q - 1) * 3 + 1
             return {f"{year}-{m:02d}" for m in range(start_month, start_month + 3)}
         except (ValueError, IndexError):
@@ -2033,11 +2038,28 @@ class DataIntegrityReportGeneratePlanByRangeView(APIView):
         if stock_scope == 'SELECTED' and stock_codes:
             items_qs = items_qs.filter(stock_code__in=stock_codes)
 
-        selected_months = set(periods)
+        selected_months = set()
+        for period in periods:
+            if len(period) == 4 and period.isdigit():
+                year = int(period)
+                for m in range(1, 13):
+                    selected_months.add(f"{year}-{m:02d}")
+            elif '-Q' in period:
+                year = int(period[:4])
+                q = int(period.split('Q')[1])
+                start_month = (q - 1) * 3 + 1
+                for m in range(start_month, start_month + 3):
+                    selected_months.add(f"{year}-{m:02d}")
+            else:
+                selected_months.add(period)
+
         data_type_groups = {}
+
+        logger.info(f"[generate-plan-by-range] report.frequency={report.frequency}, selected_months={selected_months}")
 
         for item in items_qs.iterator():
             matched = self._match_periods(item.missing_periods, selected_months, report.frequency)
+            logger.info(f"[generate-plan-by-range] item.data_type={item.data_type}, missing_periods={item.missing_periods[:5] if item.missing_periods else []}, matched={matched}")
             if not matched:
                 continue
 
@@ -2049,6 +2071,8 @@ class DataIntegrityReportGeneratePlanByRangeView(APIView):
             if item.stock_code:
                 data_type_groups[item.data_type]['stock_codes'].add(item.stock_code)
             data_type_groups[item.data_type]['periods'].update(matched)
+
+        logger.info(f"[generate-plan-by-range] data_type_groups periods: {[(k, sorted(v['periods'])) for k, v in data_type_groups.items()]}")
 
         if not data_type_groups:
             return Response({
@@ -2064,13 +2088,15 @@ class DataIntegrityReportGeneratePlanByRangeView(APIView):
 
         for data_type, info in data_type_groups.items():
             sorted_periods = sorted(info['periods'])
+            start_month = sorted_periods[0] if sorted_periods else None
+            end_month = sorted_periods[-1] if sorted_periods else None
             CollectJob.objects.create(
                 plan=plan,
                 data_type=data_type,
                 symbols=list(info['stock_codes']),
                 params={
-                    'start_date': sorted_periods[0] if sorted_periods else None,
-                    'end_date': sorted_periods[-1] if sorted_periods else None,
+                    'start_date': self._month_to_start_date(start_month),
+                    'end_date': self._month_to_end_date(end_month),
                 },
                 status='PENDING'
             )
@@ -2084,19 +2110,195 @@ class DataIntegrityReportGeneratePlanByRangeView(APIView):
             }
         }, status=status.HTTP_201_CREATED)
 
+    def _month_to_start_date(self, year_month: str | None) -> str | None:
+        """Convert YYYY-MM to YYYY-MM-01 (first day of month)"""
+        if not year_month:
+            return None
+        return f"{year_month}-01"
+
+    def _month_to_end_date(self, year_month: str | None) -> str | None:
+        """Convert YYYY-MM to YYYY-MM-DD (last day of month)"""
+        if not year_month:
+            return None
+        from calendar import monthrange
+        year, month = map(int, year_month.split('-'))
+        last_day = monthrange(year, month)[1]
+        return f"{year_month}-{last_day:02d}"
+
     def _match_periods(self, missing_periods, selected_months, frequency):
         """
-        返回 missing_periods 中与 selected_months 有交集的原始 period 值。
+        返回 missing_periods 中与 selected_months 有交集的月份 (YYYY-MM 格式)。
         """
         if not missing_periods:
-            return []
+            return set()
 
-        matched = []
+        matched_months = set()
         for period in missing_periods:
             period_months = period_to_months(period, frequency)
-            if period_months & selected_months:
-                matched.append(period)
-        return matched
+            matched_months.update(period_months & selected_months)
+        return matched_months
+
+
+class DataIntegrityReportTreeSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        report = get_object_or_404(DataIntegrityReport, pk=pk)
+
+        if report.status != 'COMPLETED':
+            return Response({
+                'success': True,
+                'data': {'tree': []}
+            })
+
+        status_filter = request.query_params.get('status', 'PENDING')
+
+        items_qs = DataIntegrityItem.objects.filter(report=report)
+
+        if status_filter:
+            items_qs = items_qs.filter(status=status_filter)
+
+        tree = self._build_tree(items_qs, report.frequency)
+
+        return Response({
+            'success': True,
+            'data': {'tree': tree}
+        })
+
+    def _build_tree(self, items_qs, report_frequency):
+        data_type_period_stats = {}
+
+        for item in items_qs:
+            data_type = item.data_type
+            if data_type not in data_type_period_stats:
+                data_type_period_stats[data_type] = {}
+
+            frequency = DATA_TYPE_FREQUENCY.get(data_type, report_frequency)
+
+            for period in (item.missing_periods or []):
+                if period not in data_type_period_stats[data_type]:
+                    data_type_period_stats[data_type][period] = 0
+                data_type_period_stats[data_type][period] += 1
+
+        tree = []
+        for data_type, period_stats in data_type_period_stats.items():
+            frequency = DATA_TYPE_FREQUENCY.get(data_type, report_frequency)
+
+            data_type_node = {
+                'key': data_type,
+                'label': DATA_TYPE_LABELS.get(data_type, data_type),
+                'count': sum(period_stats.values()),
+                'children': []
+            }
+
+            if frequency == 'yearly':
+                year_data = {}
+                for period, count in period_stats.items():
+                    try:
+                        year = int(period)
+                        year_data[year] = year_data.get(year, 0) + count
+                    except ValueError:
+                        continue
+
+                for year in sorted(year_data.keys(), reverse=True):
+                    year_node = {
+                        'key': f"{data_type}-{year}",
+                        'label': f"{year}年",
+                        'count': year_data[year],
+                    }
+                    data_type_node['children'].append(year_node)
+
+            elif frequency == 'quarterly':
+                year_data = {}
+                for period, count in period_stats.items():
+                    try:
+                        year = int(period[:4])
+                        if 'Q' in period:
+                            q = int(period.split('Q')[1])
+                        else:
+                            q = int(period[-1])
+                        if year not in year_data:
+                            year_data[year] = {}
+                        year_data[year][q] = year_data[year].get(q, 0) + count
+                    except (ValueError, IndexError):
+                        continue
+
+                for year in sorted(year_data.keys(), reverse=True):
+                    year_node = {
+                        'key': f"{data_type}-{year}",
+                        'label': f"{year}年",
+                        'count': sum(year_data[year].values()),
+                        'children': []
+                    }
+
+                    for quarter in sorted(year_data[year].keys()):
+                        quarter_node = {
+                            'key': f"{data_type}-{year}-Q{quarter}",
+                            'label': f"Q{quarter}",
+                            'count': year_data[year][quarter],
+                        }
+                        year_node['children'].append(quarter_node)
+
+                    data_type_node['children'].append(year_node)
+
+            else:
+                month_stats = {}
+                for period, count in period_stats.items():
+                    months = period_to_months(period, frequency)
+                    for month_key in months:
+                        month_stats[month_key] = month_stats.get(month_key, 0) + count
+
+                year_data = {}
+                for month_key, count in month_stats.items():
+                    try:
+                        year = int(month_key[:4])
+                        month = int(month_key[5:7])
+                        quarter = (month - 1) // 3 + 1
+
+                        if year not in year_data:
+                            year_data[year] = {}
+                        if quarter not in year_data[year]:
+                            year_data[year][quarter] = {}
+                        year_data[year][quarter][month] = count
+                    except (ValueError, IndexError):
+                        continue
+
+                for year in sorted(year_data.keys(), reverse=True):
+                    year_node = {
+                        'key': f"{data_type}-{year}",
+                        'label': f"{year}年",
+                        'count': sum(
+                            sum(quarter_data.values())
+                            for quarter_data in year_data[year].values()
+                        ),
+                        'children': []
+                    }
+
+                    for quarter in sorted(year_data[year].keys()):
+                        q_data = year_data[year][quarter]
+                        quarter_node = {
+                            'key': f"{data_type}-{year}-Q{quarter}",
+                            'label': f"Q{quarter}",
+                            'count': sum(q_data.values()),
+                            'children': []
+                        }
+
+                        for month in sorted(q_data.keys()):
+                            month_node = {
+                                'key': f"{data_type}-{year}-{month:02d}",
+                                'label': f"{month}月",
+                                'count': q_data[month],
+                            }
+                            quarter_node['children'].append(month_node)
+
+                        year_node['children'].append(quarter_node)
+
+                    data_type_node['children'].append(year_node)
+
+            tree.append(data_type_node)
+
+        tree.sort(key=lambda x: x['count'], reverse=True)
+        return tree
 
 
 class CollectPlanListView(APIView):
@@ -2173,6 +2375,17 @@ class CollectPlanExecuteView(APIView):
     def post(self, request, pk):
         plan = get_object_or_404(CollectPlan, pk=pk)
 
+        if plan.status in ('COMPLETED', 'FAILED'):
+            plan.status = 'PENDING'
+            plan.started_at = None
+            plan.completed_at = None
+            plan.jobs.update(
+                status='PENDING',
+                start_time=None,
+                end_time=None,
+                message=None
+            )
+
         if plan.status != 'PENDING':
             return Response({
                 'success': False,
@@ -2233,6 +2446,7 @@ class CollectPlanExecuteView(APIView):
         try:
             job = CollectJob.objects.get(id=job_id)
             job.start()
+            self._execute_collect(job)
             job.complete(success=True, message='执行完成')
         except Exception as e:
             logger.exception(f"Job {job_id} execution failed: {e}")
@@ -2241,6 +2455,57 @@ class CollectPlanExecuteView(APIView):
                 job.complete(success=False, message=str(e))
             except:
                 pass
+
+    def _execute_collect(self, job):
+        from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
+        from datetime import datetime
+
+        factory = CompoundServiceFactory()
+        data_type = job.data_type
+        symbols = job.symbols if job.symbols else None
+        start_date = job.params.get('start_date')
+        end_date = job.params.get('end_date')
+
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        if data_type == 'trade_days':
+            service = factory.create_calendar_service()
+            service.collect(start_date, end_date)
+        elif data_type == 'stock_info':
+            service = factory.create_stock_info_service()
+            service.collect(symbols)
+        elif data_type == 'quote':
+            service = factory.create_quote_service()
+            service.collect(symbols)
+        elif data_type == 'historical_quote':
+            service = factory.create_quote_service()
+            service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
+            service = factory.create_statement_service()
+            report_types = job.params.get('report_types', [])
+            if data_type == 'balance_sheet' or 'balance_sheet' in report_types:
+                service.collect_balance_sheet(symbols, start_date)
+            if data_type == 'income' or 'income' in report_types:
+                service.collect_income(symbols, start_date)
+            if data_type == 'cash_flow' or 'cash_flow' in report_types:
+                service.collect_cash_flow(symbols, start_date)
+            if data_type == 'dividend' or 'dividend' in report_types:
+                service.collect_dividend(symbols, start_date)
+        elif data_type == 'capital':
+            service = factory.create_capital_service()
+            service.collect(symbols, start_date)
+        elif data_type == 'main_business':
+            service = factory.create_statement_service()
+            service.collect_main_business(symbols, start_date)
+        elif data_type == 'valuation':
+            from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
+            collect_job = ValuationCollectJob()
+            collect_job()
+        else:
+            logger.warning(f"Unknown data type: {data_type}")
 
     def _update_report_items(self, plan):
         if not plan.source_report:

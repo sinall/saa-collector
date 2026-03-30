@@ -72,9 +72,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { fetchCollectPlanMock } from '@/utils/api'
+import { fetchCollectPlan } from '@/utils/api'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -108,7 +108,7 @@ const fetchPlan = async () => {
   if (!route.params.id) return
   loading.value = true
   try {
-    const response = await fetchCollectPlanMock(Number(route.params.id))
+    const response = await fetchCollectPlan(Number(route.params.id))
     if (!response.success || !response.data) {
       ElMessage.error(response.error || '获取计划失败')
       return
@@ -156,6 +156,15 @@ onMounted(() => {
     addJob()
   }
 })
+
+watch(
+  () => route.params.id,
+  (newId, oldId) => {
+    if (route.name === 'collect-plan-edit' && newId && newId !== oldId) {
+      fetchPlan()
+    }
+  }
+)
 </script>
 
 <style scoped>

@@ -51,6 +51,51 @@ test.describe('Collect Schedule Detail Page', () => {
   })
 })
 
+test.describe('Collect Plan Edit Page - Browser Navigation', () => {
+  test('should not make wrong API call when navigating back from collect-plan-edit to integrity-reports', async ({ page }) => {
+    const failedRequests: string[] = []
+    const consoleErrors: string[] = []
+    
+    page.on('requestfailed', request => {
+      failedRequests.push(`${request.method()} ${request.url()}`)
+    })
+    
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text())
+      }
+    })
+    
+    page.on('response', response => {
+      if (response.status() === 404) {
+        failedRequests.push(`404: ${response.url()}`)
+      }
+    })
+    
+    await page.goto('/integrity-reports/1')
+    await waitForPageLoad(page)
+    await sleep(1000)
+    
+    await page.goto('/collect-plans/1/edit')
+    await waitForPageLoad(page)
+    await sleep(1000)
+    
+    await page.goBack()
+    await waitForPageLoad(page)
+    await sleep(1000)
+    
+    const wrongApiCalls = failedRequests.filter(r => 
+      r.includes('/api/collect-plans/1/') || r.includes('404')
+    )
+    expect(wrongApiCalls).toHaveLength(0)
+    
+    const wrongConsoleErrors = consoleErrors.filter(e => 
+      e.includes('404') || e.includes('Not Found')
+    )
+    expect(wrongConsoleErrors).toHaveLength(0)
+  })
+})
+
 test.describe('Collect Plan Detail Page', () => {
   test('should load plan detail without errors', async ({ page }) => {
     const errors: string[] = []

@@ -4,6 +4,10 @@ from abc import abstractmethod
 
 class CalendarService:
     @abstractmethod
+    def collect(self, start_date, end_date):
+        pass
+
+    @abstractmethod
     def get_last_trade_day_monthly(self, exchange=None, start_date=None, end_date=None, is_open='1'):
         pass
 
