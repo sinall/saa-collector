@@ -16,8 +16,7 @@ class CollectJob(models.Model):
     
     id = models.BigAutoField(primary_key=True)
     data_type = models.CharField('数据类型', max_length=50, choices=DATA_TYPE_CHOICES)
-    symbols = models.JSONField('股票列表', default=list)
-    params = models.JSONField('其他参数', default=dict)
+    config = models.JSONField('任务配置', default=dict)
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
     start_time = models.DateTimeField('开始时间', null=True, blank=True)
     end_time = models.DateTimeField('结束时间', null=True, blank=True)
@@ -54,31 +53,38 @@ class DataIntegrityReport(models.Model):
         ('FAILED', '失败'),
     ]
     
-    STOCK_SCOPE_CHOICES = [
-        ('ALL', '全部股票'),
-        ('SELECTED', '选定股票'),
-    ]
-    
-    FREQUENCY_CHOICES = [
-        ('daily', '日度'),
-        ('weekly', '周度'),
-        ('monthly', '月度'),
-        ('quarterly', '季度'),
-        ('yearly', '年度'),
-    ]
-    
     id = models.BigAutoField(primary_key=True)
     name = models.CharField('报告名称', max_length=200)
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='GENERATING')
-    stock_scope = models.CharField('股票范围', max_length=20, choices=STOCK_SCOPE_CHOICES, default='ALL')
-    stock_codes = models.JSONField('股票列表', default=list)
-    data_types = models.JSONField('数据类型列表', default=list)
-    frequency = models.CharField('频度', max_length=20, choices=FREQUENCY_CHOICES, default='monthly')
-    date_start = models.DateField('开始日期', null=True, blank=True)
-    date_end = models.DateField('结束日期', null=True, blank=True)
+    filters = models.JSONField('筛选条件', default=dict)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     completed_at = models.DateTimeField('完成时间', null=True, blank=True)
+
     
+    @property
+    def stock_scope(self):
+        return self.filters.get('stock_scope', 'ALL')
+
+    @property
+    def stock_codes(self):
+        return self.filters.get('stock_codes', [])
+
+    @property
+    def data_types(self):
+        return self.filters.get('data_types', [])
+
+    @property
+    def frequency(self):
+        return self.filters.get('frequency', 'monthly')
+
+    @property
+    def date_start(self):
+        return self.filters.get('date_start')
+
+    @property
+    def date_end(self):
+        return self.filters.get('date_end')
+
     class Meta:
         db_table = 'collector_data_integrity_report'
         ordering = ['-created_at']
@@ -99,7 +105,7 @@ class DataIntegrityItem(models.Model):
     report = models.ForeignKey(DataIntegrityReport, on_delete=models.CASCADE, related_name='items')
     data_type = models.CharField('数据类型', max_length=50)
     stock_code = models.CharField('股票代码', max_length=20, null=True, blank=True)
-    missing_periods = models.JSONField('缺失周期', default=list)
+    miss_period = models.CharField('缺失周期', max_length=20, null=True, blank=True)
     selected = models.BooleanField('已选择', default=False)
     status = models.CharField('修复状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
     fixed_at = models.DateTimeField('修复时间', null=True, blank=True)
