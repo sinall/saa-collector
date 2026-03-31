@@ -16,7 +16,7 @@ urlpatterns = [
     path('integrity-reports/<int:pk>/heatmap/', views.DataIntegrityReportHeatmapView.as_view(), name='integrity-report-heatmap'),
     path('integrity-reports/<int:pk>/summary/', views.DataIntegrityReportSummaryView.as_view(), name='integrity-report-summary'),
     path('integrity-reports/<int:pk>/tree-summary/', views.DataIntegrityReportTreeSummaryView.as_view(), name='integrity-report-tree-summary'),
-    path('integrity-reports/<int:pk>/generate-plan-by-range/', views.DataIntegrityReportGeneratePlanByRangeView.as_view(), name='integrity-report-generate-plan-by-range'),
+
 
     path('collect-plans/', views.CollectPlanListView.as_view(), name='collect-plan-list'),
     path('collect-plans/<int:pk>/', views.CollectPlanDetailView.as_view(), name='collect-plan-detail'),

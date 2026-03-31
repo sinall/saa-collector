@@ -1,6 +1,7 @@
 <template>
   <div class="data-check">
     <CollectorFilterPanel
+      ref="filterPanelRef"
       query-button-text="检查"
       :loading="loading"
       :show-report-types="false"
@@ -13,19 +14,29 @@
             <h4>频度</h4>
           </div>
           <div class="section-content">
-             <select v-model="selectedFrequency">
-               <option label="日度" value="daily" />
-               <option label="周度" value="weekly" />
-               <option label="月度" value="monthly" />
-               <option label="季度" value="quarterly" />
-               <option label="年度" value="yearly" />
-             </select>
+            <select v-model="selectedFrequency">
+              <option label="日度" value="daily" />
+              <option label="周度" value="weekly" />
+              <option label="月度" value="monthly" />
+              <option label="季度" value="quarterly" />
+              <option label="年度" value="yearly" />
+            </select>
           </div>
         </section>
       </template>
     </CollectorFilterPanel>
 
     <main class="results-panel">
+      <div class="action-bar">
+        <el-button
+          type="primary"
+          :loading="generating"
+          @click="handleGenerateReport"
+        >
+          生成报告
+        </el-button>
+      </div>
+
       <div v-if="loading" class="loading-state">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>检查中...</span>
@@ -96,15 +107,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz, type ColDef } from 'ag-grid-community'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import CollectorFilterPanel from '@/components/CollectorFilterPanel.vue'
-import { checkDataCompleteness, type MissingDataRecord, type SummaryItem } from '@/utils/api'
+import {
+  checkDataCompleteness,
+  createIntegrityReport,
+  type MissingDataRecord,
+  type SummaryItem,
+  type IntegrityReportCreateParams
+} from '@/utils/api'
 
+const router = useRouter()
+const filterPanelRef = ref<InstanceType<typeof CollectorFilterPanel> | null>(null)
 const loading = ref(false)
+const generating = ref(false)
 const error = ref('')
 const hasChecked = ref(false)
 const selectedFrequency = ref('monthly')
@@ -113,6 +134,7 @@ const totalExpected = ref(0)
 const summary = ref<SummaryItem[]>([])
 const missingRecords = ref<MissingDataRecord[]>([])
 const gridApi = ref<any>(null)
+const lastQueryParams = ref<any>(null)
 
 const columnDefs: ColDef[] = [
   {
@@ -170,6 +192,7 @@ const handleDataTypeChange = (dataType: string) => {
 }
 
 const handleQuery = async (params: any) => {
+  lastQueryParams.value = params
   loading.value = true
   error.value = ''
   hasChecked.value = false
@@ -209,6 +232,70 @@ const handleQuery = async (params: any) => {
     loading.value = false
   }
 }
+
+const handleGenerateReport = async () => {
+  const params = lastQueryParams.value
+  if (!params || !params.data_type) {
+    ElMessage.warning('请先进行数据检查')
+    return
+  }
+
+  generating.value = true
+  try {
+    const data: IntegrityReportCreateParams = {
+      name: generateReportName(params),
+      stock_scope: params.stock_mode === 'all' || !params.symbols || params.symbols.length === 0 ? 'ALL' : 'SELECTED',
+      stock_codes: params.symbols || [],
+      data_types: [params.data_type],
+      frequency: selectedFrequency.value,
+      date_start: params.start_date || '2009-01-01',
+      date_end: params.end_date || new Date().toISOString().split('T')[0]
+    }
+
+    const response = await createIntegrityReport(data)
+    if (response.success && response.data) {
+      ElMessage.success('报告创建成功，正在生成中...')
+      router.push(`/integrity-reports/${response.data.id}`)
+    } else {
+      ElMessage.error(response.error || '创建报告失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('创建报告失败')
+  } finally {
+    generating.value = false
+  }
+}
+
+const generateReportName = (params: any) => {
+  const typeNames: Record<string, string> = {
+    'trade_days': '交易日',
+    'stock_info': '股票基本信息',
+    'quote': '最新行情',
+    'historical_quote': '历史行情',
+    'balance_sheet': '资产负债表',
+    'income': '利润表',
+    'cash_flow': '现金流量表',
+    'dividend': '分红数据',
+    'capital': '股本变动',
+    'valuation_board': '板块估值',
+    'valuation_industry': '行业估值',
+    'main_business': '主营业务'
+  }
+
+  const typeLabel = typeNames[params.data_type] || params.data_type
+
+  const freqNames: Record<string, string> = {
+    'daily': '日度',
+    'weekly': '周度',
+    'monthly': '月度',
+    'quarterly': '季度',
+    'yearly': '年度'
+  }
+  const freqLabel = freqNames[selectedFrequency.value] || selectedFrequency.value
+
+  const date = new Date().toISOString().split('T')[0]
+  return `${date} ${typeLabel}${freqLabel}完整性检查`
+}
 </script>
 
 <style scoped>
@@ -222,6 +309,12 @@ const handleQuery = async (params: any) => {
   padding: 1rem;
   background: #f5f7fa;
   overflow: auto;
+}
+
+.action-bar {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .loading-state {

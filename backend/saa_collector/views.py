@@ -1527,7 +1527,7 @@ class DataIntegrityReportGeneratePlanView(APIView):
             CollectJob.objects.create(
                 plan=plan,
                 data_type=data_type,
-                symbols=list(info['stock_codes']),
+                symbols=[] if report.stock_scope == 'ALL' else list(info['stock_codes']),
                 params={
                     'start_date': str(date_start) if date_start else None,
                     'end_date': str(date_end) if date_end else None,
@@ -1842,7 +1842,20 @@ def period_to_months(period, frequency):
         except (ValueError, IndexError):
             pass
     elif frequency == 'monthly':
-        return {period}
+        # 检测是否为季度格式（如资产负债表等季度数据）
+        if 'Q' in period:
+            try:
+                year = int(period[:4])
+                quarter = int(period.split('Q')[1])
+                # 季度数据 → 转换为季度末月份（报告日所在月）
+                # Q1→3月, Q2→6月, Q3→9月, Q4→12月
+                end_month = quarter * 3
+                return {f"{year}-{end_month:02d}"}
+            except (ValueError, IndexError):
+                # 格式错误时返回原值
+                return {period}
+        else:
+            return {period}
     elif frequency == 'quarterly':
         try:
             year = int(period[:4])
@@ -1998,145 +2011,6 @@ class DataIntegrityReportSummaryView(APIView):
             result.append(year_entry)
 
         return result
-
-
-class DataIntegrityReportGeneratePlanByRangeView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, pk):
-        report = get_object_or_404(DataIntegrityReport, pk=pk)
-
-        if report.status != 'COMPLETED':
-            return Response({
-                'success': False,
-                'error': '报告未完成'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        data_types = request.data.get('data_types', [])
-        periods = request.data.get('periods', [])
-        stock_scope = request.data.get('stock_scope', 'ALL')
-        stock_codes = request.data.get('stock_codes', [])
-
-        if not data_types:
-            return Response({
-                'success': False,
-                'error': '请至少选择一个数据类型'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        if not periods:
-            return Response({
-                'success': False,
-                'error': '请至少选择一个时间范围'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        items_qs = DataIntegrityItem.objects.filter(
-            report=report,
-            data_type__in=data_types,
-            status='PENDING'
-        )
-
-        if stock_scope == 'SELECTED' and stock_codes:
-            items_qs = items_qs.filter(stock_code__in=stock_codes)
-
-        selected_months = set()
-        for period in periods:
-            if len(period) == 4 and period.isdigit():
-                year = int(period)
-                for m in range(1, 13):
-                    selected_months.add(f"{year}-{m:02d}")
-            elif '-Q' in period:
-                year = int(period[:4])
-                q = int(period.split('Q')[1])
-                start_month = (q - 1) * 3 + 1
-                for m in range(start_month, start_month + 3):
-                    selected_months.add(f"{year}-{m:02d}")
-            else:
-                selected_months.add(period)
-
-        data_type_groups = {}
-
-        logger.info(f"[generate-plan-by-range] report.frequency={report.frequency}, selected_months={selected_months}")
-
-        for item in items_qs.iterator():
-            matched = self._match_periods(item.missing_periods, selected_months, report.frequency)
-            logger.info(f"[generate-plan-by-range] item.data_type={item.data_type}, missing_periods={item.missing_periods[:5] if item.missing_periods else []}, matched={matched}")
-            if not matched:
-                continue
-
-            if item.data_type not in data_type_groups:
-                data_type_groups[item.data_type] = {
-                    'stock_codes': set(),
-                    'periods': set(),
-                }
-            if item.stock_code:
-                data_type_groups[item.data_type]['stock_codes'].add(item.stock_code)
-            data_type_groups[item.data_type]['periods'].update(matched)
-
-        logger.info(f"[generate-plan-by-range] data_type_groups periods: {[(k, sorted(v['periods'])) for k, v in data_type_groups.items()]}")
-
-        if not data_type_groups:
-            return Response({
-                'success': False,
-                'error': '没有找到匹配的缺失项'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        plan = CollectPlan.objects.create(
-            name=f"来自报告: {report.name}（按范围修复）",
-            source_report=report,
-            execution_mode='PARALLEL'
-        )
-
-        for data_type, info in data_type_groups.items():
-            sorted_periods = sorted(info['periods'])
-            start_month = sorted_periods[0] if sorted_periods else None
-            end_month = sorted_periods[-1] if sorted_periods else None
-            CollectJob.objects.create(
-                plan=plan,
-                data_type=data_type,
-                symbols=list(info['stock_codes']),
-                params={
-                    'start_date': self._month_to_start_date(start_month),
-                    'end_date': self._month_to_end_date(end_month),
-                },
-                status='PENDING'
-            )
-
-        return Response({
-            'success': True,
-            'data': {
-                'id': plan.id,
-                'name': plan.name,
-                'jobs_count': len(data_type_groups),
-            }
-        }, status=status.HTTP_201_CREATED)
-
-    def _month_to_start_date(self, year_month: str | None) -> str | None:
-        """Convert YYYY-MM to YYYY-MM-01 (first day of month)"""
-        if not year_month:
-            return None
-        return f"{year_month}-01"
-
-    def _month_to_end_date(self, year_month: str | None) -> str | None:
-        """Convert YYYY-MM to YYYY-MM-DD (last day of month)"""
-        if not year_month:
-            return None
-        from calendar import monthrange
-        year, month = map(int, year_month.split('-'))
-        last_day = monthrange(year, month)[1]
-        return f"{year_month}-{last_day:02d}"
-
-    def _match_periods(self, missing_periods, selected_months, frequency):
-        """
-        返回 missing_periods 中与 selected_months 有交集的月份 (YYYY-MM 格式)。
-        """
-        if not missing_periods:
-            return set()
-
-        matched_months = set()
-        for period in missing_periods:
-            period_months = period_to_months(period, frequency)
-            matched_months.update(period_months & selected_months)
-        return matched_months
 
 
 class DataIntegrityReportTreeSummaryView(APIView):
