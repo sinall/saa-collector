@@ -236,10 +236,10 @@ const buildQueryParams = () => {
     params.stock_code = currentFilter.value.stockCode
   }
   if (currentFilter.value.dataTypes.length > 0) {
-    params.data_types = currentFilter.value.dataTypes.join(',')
+    params.data_type = currentFilter.value.dataTypes.join(',')
   }
   if (currentFilter.value.periods.length > 0) {
-    params.periods = currentFilter.value.periods.join(',')
+    params.period = currentFilter.value.periods.join(',')
   }
   return params
 }

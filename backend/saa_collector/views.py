@@ -1398,8 +1398,12 @@ class DataIntegrityReportDetailView(APIView):
             items_queryset = items_queryset.filter(status=status_filter)
 
         period_filter = request.query_params.get('period')
+        if period_filter:
+            periods = [p.strip() for p in period_filter.split(',')]
+        else:
+            periods = None
 
-        flattened_rows = self._flatten_items(items_queryset, period_filter)
+        flattened_rows = self._flatten_items(items_queryset, periods)
 
         total_count = len(flattened_rows)
         page = int(request.query_params.get('page', 1))
@@ -1425,12 +1429,12 @@ class DataIntegrityReportDetailView(APIView):
 
         return Response({'success': True, 'data': report_data})
 
-    def _flatten_items(self, items_queryset, period_filter=None):
+    def _flatten_items(self, items_queryset, periods=None):
         flattened = []
         for item in items_queryset:
             if not item.miss_period:
                 continue
-            if period_filter and period_filter not in item.miss_period:
+            if periods and item.miss_period not in periods:
                 continue
             flattened.append({
                 'id': item.id,
