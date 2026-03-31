@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -254,11 +254,13 @@ class BaseCollectView(APIView):
 
         job = CollectJob.objects.create(
             data_type=self.data_type,
-            symbols=serializer.validated_data.get('symbols', []),
-            params={
-                'start_date': str(serializer.validated_data.get('start_date')) if serializer.validated_data.get('start_date') else None,
-                'end_date': str(serializer.validated_data.get('end_date')) if serializer.validated_data.get('end_date') else None,
-                'report_types': serializer.validated_data.get('report_types', []),
+            config={
+                'symbols': serializer.validated_data.get('symbols', []),
+                'params': {
+                    'start_date': str(serializer.validated_data.get('start_date')) if serializer.validated_data.get('start_date') else None,
+                    'end_date': str(serializer.validated_data.get('end_date')) if serializer.validated_data.get('end_date') else None,
+                    'report_types': serializer.validated_data.get('report_types', []),
+                }
             }
         )
 
@@ -1011,6 +1013,9 @@ class DataIntegrityReportListView(APIView):
                 pass
 
     def _do_generate_report(self, report):
+        report._date_start = datetime.strptime(report.date_start, '%Y-%m-%d').date() if report.date_start else None
+        report._date_end = datetime.strptime(report.date_end, '%Y-%m-%d').date() if report.date_end else None
+
         stocks = self._get_stocks_with_listing_dates(report)
         items_to_create = []
 
@@ -1102,7 +1107,7 @@ class DataIntegrityReportListView(APIView):
                     report=report,
                     data_type='quote',
                     stock_code=symbol,
-                    missing_periods=[missing_period],
+                    miss_period=missing_period,
                     selected=False
                 ))
 
@@ -1120,7 +1125,7 @@ class DataIntegrityReportListView(APIView):
         data_frequency = config.get('data_frequency', 'daily')
 
         check_frequency = self._get_check_frequency(data_type, report.frequency)
-        expected = self._generate_periods(report.date_start, report.date_end, check_frequency)
+        expected = self._generate_periods(report._date_start, report._date_end, check_frequency)
 
         try:
             with connection.cursor() as cursor:
@@ -1151,13 +1156,16 @@ class DataIntegrityReportListView(APIView):
         if not missing_periods:
             return []
 
-        return [DataIntegrityItem(
-            report=report,
-            data_type=data_type,
-            stock_code=None,
-            missing_periods=missing_periods,
-            selected=False
-        )]
+        items = []
+        for period in missing_periods:
+            items.append(DataIntegrityItem(
+                report=report,
+                data_type=data_type,
+                stock_code=None,
+                miss_period=period,
+                selected=False
+            ))
+        return items
 
     def _generate_periods(self, start_date, end_date, frequency):
         periods = set()
@@ -1292,7 +1300,7 @@ class DataIntegrityReportListView(APIView):
     def _check_trade_days_missing(self, report):
         frequency = self._get_check_frequency('trade_days', report.frequency)
 
-        expected = self._generate_periods(report.date_start, report.date_end, frequency)
+        expected = self._generate_periods(report._date_start, report._date_end, frequency)
 
         table_name = TABLE_MAPPING['trade_days']
         with connection.cursor() as cursor:
@@ -1318,19 +1326,22 @@ class DataIntegrityReportListView(APIView):
         missing = expected - existing
 
         if missing:
-            return [DataIntegrityItem(
-                report=report,
-                data_type='trade_days',
-                stock_code='-',
-                missing_periods=sorted(missing),
-                selected=False
-            )]
+            items = []
+            for period in sorted(missing):
+                items.append(DataIntegrityItem(
+                    report=report,
+                    data_type='trade_days',
+                    stock_code='-',
+                    miss_period=period,
+                    selected=False
+                ))
+            return items
         return []
 
     def _check_missing_periods_batch(self, report, stocks, data_type):
         frequency = self._get_check_frequency(data_type, report.frequency)
 
-        all_periods = self._generate_periods(report.date_start, report.date_end, frequency)
+        all_periods = self._generate_periods(report._date_start, report._date_end, frequency)
 
         symbols = list(stocks.keys())
         existing_data = self._get_existing_periods_batch(
@@ -1346,12 +1357,12 @@ class DataIntegrityReportListView(APIView):
             existing = existing_data.get(symbol, set())
             missing = valid_periods - existing
 
-            if missing:
+            for period in sorted(missing):
                 missing_items.append(DataIntegrityItem(
                     report=report,
                     data_type=data_type,
                     stock_code=symbol,
-                    missing_periods=sorted(missing),
+                    miss_period=period,
                     selected=False
                 ))
 
@@ -1417,19 +1428,20 @@ class DataIntegrityReportDetailView(APIView):
     def _flatten_items(self, items_queryset, period_filter=None):
         flattened = []
         for item in items_queryset:
-            for period in item.missing_periods:
-                if period_filter and period_filter not in period:
-                    continue
-                flattened.append({
-                    'id': item.id,
-                    'data_type': item.data_type,
-                    'stock_code': item.stock_code,
-                    'period': period,
-                    'selected': item.selected,
-                    'status': item.status,
-                    'status_display': item.get_status_display(),
-                    'fixed_at': item.fixed_at,
-                })
+            if not item.miss_period:
+                continue
+            if period_filter and period_filter not in item.miss_period:
+                continue
+            flattened.append({
+                'id': item.id,
+                'data_type': item.data_type,
+                'stock_code': item.stock_code,
+                'period': item.miss_period,
+                'selected': item.selected,
+                'status': item.status,
+                'status_display': item.get_status_display(),
+                'fixed_at': item.fixed_at,
+            })
         return flattened
 
 
@@ -1472,7 +1484,7 @@ class DataIntegrityReportItemsSelectAllView(APIView):
 
         period = request.data.get('period')
         if period:
-            items_queryset = items_queryset.filter(missing_periods__contains=period)
+            items_queryset = items_queryset.filter(miss_period__icontains=period)
 
         status_filter = request.data.get('status')
         if status_filter:
@@ -1517,7 +1529,8 @@ class DataIntegrityReportGeneratePlanView(APIView):
                     'periods': set()
                 }
             data_type_items[item.data_type]['stock_codes'].add(item.stock_code)
-            data_type_items[item.data_type]['periods'].update(item.missing_periods)
+            if item.miss_period:
+                data_type_items[item.data_type]['periods'].add(item.miss_period)
 
         for data_type, info in data_type_items.items():
             periods = sorted(info['periods'])
@@ -1527,8 +1540,8 @@ class DataIntegrityReportGeneratePlanView(APIView):
             CollectJob.objects.create(
                 plan=plan,
                 data_type=data_type,
-                symbols=[] if report.stock_scope == 'ALL' else list(info['stock_codes']),
-                params={
+                config={
+                    'symbols': [] if report.stock_scope == 'ALL' else list(info['stock_codes']),
                     'start_date': str(date_start) if date_start else None,
                     'end_date': str(date_end) if date_end else None,
                 },
@@ -1594,12 +1607,15 @@ class DataIntegrityReportHeatmapView(APIView):
         if report.stock_scope == 'SELECTED' and report.stock_codes:
             stock_codes = report.stock_codes
 
+        date_start = datetime.strptime(report.date_start, '%Y-%m-%d').date() if report.date_start else None
+        date_end = datetime.strptime(report.date_end, '%Y-%m-%d').date() if report.date_end else None
+
         service = CompletenessService(
             stock_codes=stock_codes,
-            date_end=report.date_end
+            date_end=date_end
         )
         
-        periods = service.generate_periods(report.frequency, report.date_start, report.date_end)
+        periods = service.generate_periods(report.frequency, date_start, date_end)
         
         if not periods:
             return Response({
@@ -1937,7 +1953,8 @@ class DataIntegrityReportSummaryView(APIView):
                     'missing_count': 0,
                     'stock_codes': set(),
                 }
-            data_type_stats[item.data_type]['missing_count'] += len(item.missing_periods or [])
+            if item.miss_period:
+                data_type_stats[item.data_type]['missing_count'] += 1
             if item.stock_code:
                 data_type_stats[item.data_type]['stock_codes'].add(item.stock_code)
 
@@ -1953,11 +1970,14 @@ class DataIntegrityReportSummaryView(APIView):
         result.sort(key=lambda x: x['missing_count'], reverse=True)
         return result
 
+
+
     def _aggregate_by_period(self, items_qs, frequency):
         month_stats = {}
 
         for item in items_qs:
-            for period in (item.missing_periods or []):
+            if item.miss_period:
+                period = item.miss_period
                 months = period_to_months(period, frequency)
                 for month in months:
                     if month not in month_stats:
@@ -2049,7 +2069,8 @@ class DataIntegrityReportTreeSummaryView(APIView):
 
             frequency = DATA_TYPE_FREQUENCY.get(data_type, report_frequency)
 
-            for period in (item.missing_periods or []):
+            if item.miss_period:
+                period = item.miss_period
                 if period not in data_type_period_stats[data_type]:
                     data_type_period_stats[data_type][period] = 0
                 data_type_period_stats[data_type][period] += 1

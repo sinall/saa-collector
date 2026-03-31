@@ -6,7 +6,7 @@ class CollectJobSerializer(serializers.ModelSerializer):
     class Meta:
         model = CollectJob
         fields = [
-            'id', 'data_type', 'data_type_display', 'symbols', 'params',
+            'id', 'data_type', 'data_type_display', 'config',
             'status', 'status_display', 'start_time', 'end_time',
             'message', 'created_at'
         ]
@@ -44,8 +44,8 @@ class DataIntegrityItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DataIntegrityItem
-        fields = ['id', 'data_type', 'stock_code', 'missing_periods', 'selected', 'status', 'status_display', 'fixed_at']
-        read_only_fields = ['id', 'data_type', 'stock_code', 'missing_periods', 'status', 'status_display', 'fixed_at']
+        fields = ['id', 'data_type', 'stock_code', 'miss_period', 'selected', 'status', 'status_display', 'fixed_at']
+        read_only_fields = ['id', 'data_type', 'stock_code', 'miss_period', 'status', 'status_display', 'fixed_at']
 class FlattenedIntegrityItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     data_type = serializers.CharField()
@@ -57,8 +57,6 @@ class FlattenedIntegrityItemSerializer(serializers.Serializer):
     fixed_at = serializers.DateTimeField(allow_null=True)
 class DataIntegrityReportSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    stock_scope_display = serializers.CharField(source='get_stock_scope_display', read_only=True)
-    frequency_display = serializers.CharField(source='get_frequency_display', read_only=True)
     items_count = serializers.IntegerField(read_only=True)
     created_at_display = serializers.DateTimeField(
         source='created_at',
@@ -71,18 +69,43 @@ class DataIntegrityReportSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True
     )
+    stock_scope = serializers.SerializerMethodField()
+    stock_codes = serializers.SerializerMethodField()
+    data_types = serializers.SerializerMethodField()
+    frequency = serializers.SerializerMethodField()
+    date_start = serializers.SerializerMethodField()
+    date_end = serializers.SerializerMethodField()
+
     class Meta:
         model = DataIntegrityReport
         fields = [
             'id', 'name', 'status', 'status_display',
-            'stock_scope', 'stock_scope_display', 'stock_codes',
-            'data_types', 'frequency', 'frequency_display',
-            'date_start', 'date_end',
+            'filters',
+            'stock_scope', 'stock_codes', 'data_types',
+            'frequency', 'date_start', 'date_end',
             'created_at', 'created_at_display',
             'completed_at', 'completed_at_display',
             'items_count'
         ]
-        read_only_fields = ['id', 'status', 'created_at', 'completed_at']
+        read_only_fields = ['id', 'status', 'filters', 'created_at', 'completed_at']
+
+    def get_stock_scope(self, obj):
+        return obj.filters.get('stock_scope', 'ALL')
+
+    def get_stock_codes(self, obj):
+        return obj.filters.get('stock_codes', [])
+
+    def get_data_types(self, obj):
+        return obj.filters.get('data_types', [])
+
+    def get_frequency(self, obj):
+        return obj.filters.get('frequency', 'monthly')
+
+    def get_date_start(self, obj):
+        return obj.filters.get('date_start')
+
+    def get_date_end(self, obj):
+        return obj.filters.get('date_end')
 class DataIntegrityReportCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     stock_scope = serializers.ChoiceField(choices=['ALL', 'SELECTED'], default='ALL')
@@ -102,8 +125,20 @@ class DataIntegrityReportCreateSerializer(serializers.Serializer):
     )
     date_start = serializers.DateField(required=False, allow_null=True)
     date_end = serializers.DateField(required=False, allow_null=True)
+
     def create(self, validated_data):
-        return DataIntegrityReport.objects.create(**validated_data)
+        filters = {
+            'stock_scope': validated_data.get('stock_scope', 'ALL'),
+            'stock_codes': validated_data.get('stock_codes', []),
+            'data_types': validated_data.get('data_types', []),
+            'frequency': validated_data.get('frequency', 'monthly'),
+            'date_start': str(validated_data['date_start']) if validated_data.get('date_start') else None,
+            'date_end': str(validated_data['date_end']) if validated_data.get('date_end') else None,
+        }
+        return DataIntegrityReport.objects.create(
+            name=validated_data['name'],
+            filters=filters
+        )
 class DataIntegrityItemBulkUpdateSerializer(serializers.Serializer):
     item_ids = serializers.ListField(
         child=serializers.IntegerField(),
@@ -116,7 +151,7 @@ class CollectJobBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = CollectJob
         fields = [
-            'id', 'data_type', 'data_type_display', 'symbols', 'params',
+            'id', 'data_type', 'data_type_display', 'config',
             'status', 'status_display', 'start_time', 'end_time', 'message'
         ]
 class CollectPlanSerializer(serializers.ModelSerializer):
