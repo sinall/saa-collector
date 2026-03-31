@@ -90,14 +90,14 @@ const handleQuery = () => {
     frequency: selectedFrequency.value,
     symbols: stockMode.value === 'manual' ? [...selectedStocks.value] : [],
   }
-  
+
   if (startDate.value) {
     params.start_date = startDate.value
   }
   if (endDate.value) {
     params.end_date = endDate.value
   }
-  
+
   emit('query', params)
 }
 </script>
@@ -115,13 +115,13 @@ const handleQuery = () => {
       <section class="filter-section">
         <h4 class="section-title">数据类型</h4>
         <div class="checkbox-grid">
-          <label 
-            v-for="dt in dataTypes" 
+          <label
+            v-for="dt in dataTypes"
             :key="dt.value"
             class="checkbox-item"
           >
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               :checked="selectedDataTypes.includes(dt.value)"
               @change="toggleDataType(dt.value)"
             />
@@ -160,7 +160,7 @@ const handleQuery = () => {
               指定股票
             </label>
           </div>
-          
+
           <template v-if="stockMode === 'manual'">
             <textarea
               v-model="manualStocks"
@@ -189,7 +189,7 @@ const handleQuery = () => {
       </section>
 
       <div class="query-section">
-        <button 
+        <button
           @click="handleQuery"
           class="query-btn"
           :disabled="loading || selectedDataTypes.length === 0"

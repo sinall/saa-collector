@@ -1151,20 +1151,6 @@ export const fetchIntegrityReportSummary = async (
   const response = await api.get(`/integrity-reports/${reportId}/summary/`, { params })
   return response.data
 }
-
-export const generatePlanByRange = async (
-  reportId: number,
-  params: {
-    data_types: string[]
-    periods: string[]
-    stock_scope: 'ALL' | 'SELECTED'
-    stock_codes?: string[]
-  }
-): Promise<ApiResponse<{ id: number; name: string; jobs_count: number }>> => {
-  const response = await api.post(`/integrity-reports/${reportId}/generate-plan-by-range/`, params)
-  return response.data
-}
-
 export interface IntegrityReportTreeNode {
   key: string
   label: string

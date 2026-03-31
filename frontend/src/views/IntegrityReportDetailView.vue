@@ -36,6 +36,24 @@
       </div>
 
       <template v-else>
+        <el-card v-if="report" class="filter-info-card">
+          <template #header>
+            <span>数据筛选条件</span>
+          </template>
+          <el-descriptions :column="4" border size="small">
+            <el-descriptions-item label="数据类型">
+              <el-tag v-for="dt in report.data_types" :key="dt" size="small" style="margin-right: 4px;">
+                {{ getDataTypeLabel(dt) }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="频度">{{ getFrequencyLabel(report.frequency) }}</el-descriptions-item>
+            <el-descriptions-item label="股票范围">
+              {{ report.stock_scope === 'ALL' ? '全部股票' : `选定股票 (${report.stock_codes?.length || 0} 只)` }}
+            </el-descriptions-item>
+            <el-descriptions-item label="时间范围">{{ report.date_start }} 至 {{ report.date_end }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
         <el-card class="heatmap-card">
           <CompletenessHeatmap
             :external-data="heatmapData"
@@ -48,6 +66,7 @@
           <div class="content-layout">
             <div class="tree-panel">
               <IntegrityReportTreeFilter
+                ref="treeFilterRef"
                 :report-id="parseInt(props.id)"
                 @filter-change="handleFilterChange"
               />
@@ -110,6 +129,7 @@ const generating = ref(false)
 const refreshing = ref(false)
 let pollTimer: number | null = null
 
+const treeFilterRef = ref<InstanceType<typeof IntegrityReportTreeFilter> | null>(null)
 const heatmapData = ref<IntegrityReportHeatmapData | null>(null)
 const gridApi = ref<GridApi | null>(null)
 const rowData = ref<IntegrityReportItem[]>([])
@@ -302,10 +322,14 @@ const refreshReportAction = async () => {
   }
 }
 
+
+
+
+
 const handleGeneratePlan = async () => {
   try {
     await ElMessageBox.confirm(
-      '确定要基于此报告生成采集计划吗？',
+      '确定要生成采集计划吗？将基于报告的所有缺失项生成任务。',
       '确认生成',
       {
         confirmButtonText: '确定',
@@ -314,9 +338,11 @@ const handleGeneratePlan = async () => {
       }
     )
     generating.value = true
+
     const response = await generatePlan(parseInt(props.id))
+
     if (response.success && response.data) {
-      ElMessage.success('采集计划已生成')
+      ElMessage.success(`采集计划已生成`)
       router.push(`/collect-plans/${response.data.id}`)
     } else {
       ElMessage.error(response.error || '生成失败')
@@ -328,6 +354,34 @@ const handleGeneratePlan = async () => {
   } finally {
     generating.value = false
   }
+}
+
+const getDataTypeLabel = (dataType: string) => {
+  const labels: Record<string, string> = {
+    'trade_days': '交易日',
+    'quote': '最新行情',
+    'historical_quote': '历史行情',
+    'balance_sheet': '资产负债表',
+    'income': '利润表',
+    'cash_flow': '现金流量表',
+    'dividend': '分红数据',
+    'capital': '股本变动',
+    'valuation_board': '板块估值',
+    'valuation_industry': '行业估值',
+    'main_business': '主营业务',
+  }
+  return labels[dataType] || dataType
+}
+
+const getFrequencyLabel = (frequency: string) => {
+  const labels: Record<string, string> = {
+    'daily': '日度',
+    'weekly': '周度',
+    'monthly': '月度',
+    'quarterly': '季度',
+    'yearly': '年度',
+  }
+  return labels[frequency] || frequency
 }
 
 const getStatusType = (status: string) => {
@@ -379,13 +433,21 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.filter-info-card {
+  margin-bottom: 16px;
+}
+
+.filter-info-card :deep(.el-card__body) {
+  padding: 12px 16px;
+}
+
 .heatmap-card {
   margin-bottom: 16px;
 }
 
 .data-card :deep(.el-card__body) {
   padding: 16px;
-  height: calc(100vh - 260px);
+  height: calc(100vh - 380px);
 }
 
 .data-card {

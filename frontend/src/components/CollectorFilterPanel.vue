@@ -9,6 +9,7 @@ interface FilterParams {
   dates?: string[]
   report_types?: string[]
   stock_list_code?: string
+  stock_mode?: 'all' | 'manual' | 'index'
 }
 
 const props = withDefaults(defineProps<{
@@ -47,7 +48,7 @@ const dataTypes = [
   { value: 'main_business', label: '主营业务', needDate: true },
 ]
 
-const stockMode = ref<'manual' | 'index'>('manual')
+const stockMode = ref<'all' | 'manual' | 'index'>('all')
 const dateMode = ref<'single' | 'range'>('range')
 const selectedDataType = ref('trade_days')
 const manualStocks = ref('000002, 600519')
@@ -75,7 +76,7 @@ const indexOptions = [
 const today = new Date().toISOString().split('T')[0]
 
 const selectedStocks = computed(() => {
-  if (stockMode.value === 'index') {
+  if (stockMode.value === 'all' || stockMode.value === 'index') {
     return []
   }
   return manualStocks.value
@@ -114,7 +115,8 @@ watch(dateMode, () => {
 const handleQuery = () => {
   const params: FilterParams = {
     data_type: selectedDataType.value,
-    symbols: [...selectedStocks.value],
+    symbols: stockMode.value === 'all' ? [] : [...selectedStocks.value],
+    stock_mode: stockMode.value,
     report_types: isStatementType.value && props.showReportTypes ? [...selectedReportTypes.value] : undefined,
   }
   
@@ -149,11 +151,8 @@ defineExpose({
   selectedStocks,
   startDate,
   endDate,
-  singleDate,
-  selectedReportTypes,
   stockMode,
-  selectedList,
-  dateMode
+  selectedReportTypes
 })
 </script>
 
@@ -189,6 +188,10 @@ defineExpose({
         <div v-if="stockExpanded" class="section-content">
           <div class="radio-group">
             <label>
+              <input type="radio" value="all" v-model="stockMode" />
+              全部股票
+            </label>
+            <label>
               <input type="radio" value="manual" v-model="stockMode" />
               指定股票
             </label>
@@ -201,12 +204,16 @@ defineExpose({
           <template v-if="stockMode === 'manual'">
             <textarea
               v-model="manualStocks"
-              placeholder="例如: 000001, 600000&#10;留空采集全部"
+              placeholder="例如: 000001, 600000"
               rows="3"
             />
             <div class="selection-count">
               {{ selectedStocks.length > 0 ? `已选 ${selectedStocks.length} 只` : '全部股票' }}
             </div>
+          </template>
+          
+          <template v-else-if="stockMode === 'all'">
+            <div class="selection-count">全部股票</div>
           </template>
           
           <template v-else>
