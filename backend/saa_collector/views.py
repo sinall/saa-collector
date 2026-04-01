@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan
@@ -2204,7 +2204,11 @@ class CollectPlanListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        plans = CollectPlan.objects.all()
+        plans = CollectPlan.objects.select_related('source_report').annotate(
+            jobs_count=Count('jobs')
+        ).prefetch_related(
+            Prefetch('jobs', queryset=CollectJob.objects.all().order_by('-created_at'))
+        ).order_by('-created_at')
         paginator = StandardPagination()
         page = paginator.paginate_queryset(plans, request, view=self)
         serializer = CollectPlanSerializer(page, many=True)
