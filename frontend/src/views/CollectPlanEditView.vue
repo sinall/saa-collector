@@ -119,9 +119,9 @@ const fetchPlan = async () => {
     form.value.jobs = plan.jobs?.map((job: any) => ({
       id: job.id,
       data_type: job.data_type,
-      symbols_input: job.symbols?.join('\n') || '',
-      date_start: job.params?.start_date || null,
-      date_end: job.params?.end_date || null
+      symbols_input: job.config?.symbols?.join('\n') || '',
+      date_start: job.config?.start_date || null,
+      date_end: job.config?.end_date || null
     })) || []
   } finally {
     loading.value = false

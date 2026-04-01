@@ -171,7 +171,9 @@ class CollectPlanSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'status', 'created_at', 'started_at', 'completed_at']
     def get_jobs_count(self, obj):
-        return obj.jobs.count()
+        if hasattr(obj, 'jobs_count'):
+            return obj.jobs_count
+        return len(obj.jobs.all()) if hasattr(obj, 'jobs') else 0
 class CollectPlanCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     source_report = serializers.PrimaryKeyRelatedField(

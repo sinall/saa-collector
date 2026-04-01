@@ -70,18 +70,18 @@
         <el-table-column prop="data_type_display" label="数据类型" width="150" />
         <el-table-column label="股票范围">
           <template #default="{ row }">
-            <span v-if="!row.symbols || row.symbols.length === 0">全部股票</span>
-            <span v-else>{{ row.symbols.slice(0, 5).join(', ') }}{{ row.symbols.length > 5 ? '...' : '' }}</span>
+            <span v-if="!row.config?.symbols || row.config.symbols.length === 0">全部股票</span>
+            <span v-else>{{ row.config.symbols.slice(0, 5).join(', ') }}{{ row.config.symbols.length > 5 ? '...' : '' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="开始日期" width="120">
           <template #default="{ row }">
-            {{ row.params?.start_date || '-' }}
+            {{ row.config?.start_date || '-' }}
           </template>
         </el-table-column>
         <el-table-column label="结束日期" width="120">
           <template #default="{ row }">
-            {{ row.params?.end_date || '-' }}
+            {{ row.config?.end_date || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="status_display" label="状态" width="100">
