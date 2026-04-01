@@ -41,6 +41,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
                 self._logger.exception('Failed to collect statement for %s', symbol)
 
     def collect_balance_sheet(self, symbols, start_date=None):
+        symbols = self.build_symbols(symbols)
         sub_resource = 'balance_sheet'
         table = self._get_table(sub_resource)
         df = self.query(sub_resource, symbols, self.channel, start_date)
@@ -48,6 +49,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
         self.save_statements(records, table)
 
     def collect_income(self, symbols, start_date=None):
+        symbols = self.build_symbols(symbols)
         sub_resource = 'income_statement'
         table = self._get_table(sub_resource)
         df = self.query(sub_resource, symbols, self.channel, start_date)
@@ -55,6 +57,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
         self.save_statements(records, table)
 
     def collect_cash_flow(self, symbols, start_date=None):
+        symbols = self.build_symbols(symbols)
         sub_resource = 'cash_flow_statement'
         table = self._get_table(sub_resource)
         df = self.query(sub_resource, symbols, self.channel, start_date)
@@ -62,6 +65,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
         self.save_statements(records, table)
 
     def collect_dividend(self, symbols, start_date=None):
+        symbols = self.build_symbols(symbols)
         sub_resource = 'dividend'
         table = self._get_table(sub_resource)
         df = self.query(sub_resource, symbols, self.channel, start_date)
@@ -69,6 +73,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
         self.save_statements(records, table)
 
     def collect_main_business(self, symbols, start_date=None):
+        symbols = self.build_symbols(symbols)
         sub_resource = 'main_business'
         table = self._get_table(sub_resource)
         df = self.query(sub_resource, symbols, self.channel, start_date)

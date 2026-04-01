@@ -45,6 +45,21 @@ from .constants import (
 )
 
 
+def parse_period_to_date(period_str):
+    if not period_str:
+        return None
+    if 'Q' in period_str:
+        try:
+            year = int(period_str[:4])
+            quarter = int(period_str.split('Q')[1])
+            end_month = quarter * 3
+            end_day = 31 if end_month in [3, 12] else 30 if end_month in [4, 6, 9, 11] else 28
+            return datetime.strptime(f"{year}-{end_month:02d}-{end_day}", '%Y-%m-%d').date()
+        except (ValueError, IndexError):
+            pass
+    return datetime.strptime(period_str, '%Y-%m-%d').date()
+
+
 def calculate_expected_periods(earliest_date, latest_date, frequency):
     if not earliest_date or not latest_date or not frequency:
         return 0
@@ -297,9 +312,9 @@ class CollectStockInfoView(BaseCollectView):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
         service = factory.create_stock_info_service()
-        symbols = job.symbols if job.symbols else None
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
         service.collect(symbols)
-        job.complete(success=True, message=f"Collected stock info for {len(job.symbols) if job.symbols else 'all'} symbols")
+        job.complete(success=True, message=f"Collected stock info for {len(job.config.get('symbols', [])) if job.config.get('symbols') else 'all'} symbols")
 
 
 class CollectQuotesView(BaseCollectView):
@@ -309,9 +324,9 @@ class CollectQuotesView(BaseCollectView):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
         service = factory.create_quote_service()
-        symbols = job.symbols if job.symbols else None
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
         service.collect(symbols)
-        job.complete(success=True, message=f"Collected quotes for {len(job.symbols) if job.symbols else 'all'} symbols")
+        job.complete(success=True, message=f"Collected quotes for {len(job.config.get('symbols', [])) if job.config.get('symbols') else 'all'} symbols")
 
 
 class CollectHistoricalQuotesView(BaseCollectView):
@@ -321,9 +336,10 @@ class CollectHistoricalQuotesView(BaseCollectView):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
         service = factory.create_quote_service()
-        symbols = job.symbols if job.symbols else None
-        start_date = job.params.get('start_date')
-        end_date = job.params.get('end_date')
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        params = job.config.get('params', {})
+        start_date = job.config.get('start_date') or params.get('start_date')
+        end_date = job.config.get('end_date') or params.get('end_date')
         service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         job.complete(success=True, message=f"Collected historical quotes")
 
@@ -335,13 +351,13 @@ class CollectStatementsView(BaseCollectView):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
         service = factory.create_statement_service()
-        symbols = job.symbols if job.symbols else None
-        start_date = job.params.get('start_date')
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        params = job.config.get('params', {})
+        start_date = job.config.get('start_date') or params.get('start_date')
         if start_date:
-            from datetime import datetime
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_date = parse_period_to_date(start_date)
 
-        report_types = job.params.get('report_types', [])
+        report_types = params.get('report_types', [])
 
         if 'balance_sheet' in report_types or not report_types:
             service.collect_balance_sheet(symbols, start_date)
@@ -362,11 +378,11 @@ class CollectCapitalView(BaseCollectView):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
         service = factory.create_capital_service()
-        symbols = job.symbols if job.symbols else None
-        start_date = job.params.get('start_date')
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        params = job.config.get('params', {})
+        start_date = job.config.get('start_date') or params.get('start_date')
         if start_date:
-            from datetime import datetime
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_date = parse_period_to_date(start_date)
         service.collect(symbols, start_date)
         job.complete(success=True, message=f"Collected capital changes")
 
@@ -388,11 +404,11 @@ class CollectMainBusinessView(BaseCollectView):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
         factory = CompoundServiceFactory()
         service = factory.create_statement_service()
-        symbols = job.symbols if job.symbols else None
-        start_date = job.params.get('start_date')
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        params = job.config.get('params', {})
+        start_date = job.config.get('start_date') or params.get('start_date')
         if start_date:
-            from datetime import datetime
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_date = parse_period_to_date(start_date)
         service.collect_main_business(symbols, start_date)
         job.complete(success=True, message=f"Collected main business data")
 
@@ -2361,18 +2377,18 @@ class CollectPlanExecuteView(APIView):
 
     def _execute_collect(self, job):
         from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
-        from datetime import datetime
 
         factory = CompoundServiceFactory()
         data_type = job.data_type
-        symbols = job.symbols if job.symbols else None
-        start_date = job.params.get('start_date')
-        end_date = job.params.get('end_date')
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        params = job.config.get('params', {})
+        start_date = job.config.get('start_date') or params.get('start_date')
+        end_date = job.config.get('end_date') or params.get('end_date')
 
         if start_date:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_date = parse_period_to_date(start_date)
         if end_date:
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            end_date = parse_period_to_date(end_date)
 
         if data_type == 'trade_days':
             service = factory.create_calendar_service()
@@ -2388,7 +2404,7 @@ class CollectPlanExecuteView(APIView):
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
-            report_types = job.params.get('report_types', [])
+            report_types = params.get('report_types', [])
             if data_type == 'balance_sheet' or 'balance_sheet' in report_types:
                 service.collect_balance_sheet(symbols, start_date)
             if data_type == 'income' or 'income' in report_types:
@@ -2416,15 +2432,17 @@ class CollectPlanExecuteView(APIView):
 
         successful_jobs = plan.jobs.filter(status='SUCCESS')
         for job in successful_jobs:
-            DataIntegrityItem.objects.filter(
-                report=plan.source_report,
-                data_type=job.data_type,
-                stock_code__in=job.symbols,
-                status='PENDING'
-            ).update(
-                status='FIXED',
-                fixed_at=timezone.now(),
-                fixed_by_plan=plan
+            symbols = job.config.get('symbols', [])
+            if symbols:
+                DataIntegrityItem.objects.filter(
+                    report=plan.source_report,
+                    data_type=job.data_type,
+                    stock_code__in=symbols,
+                    status='PENDING'
+                ).update(
+                    status='FIXED',
+                    fixed_at=timezone.now(),
+                    fixed_by_plan=plan
             )
 
 
