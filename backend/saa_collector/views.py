@@ -1555,16 +1555,15 @@ class DataIntegrityReportGeneratePlanView(APIView):
 
         for data_type, info in data_type_items.items():
             periods = sorted(info['periods'])
-            date_start = periods[0] if periods else report.date_start
-            date_end = periods[-1] if periods else report.date_end
 
             CollectJob.objects.create(
                 plan=plan,
                 data_type=data_type,
                 config={
                     'symbols': [] if report.stock_scope == 'ALL' else list(info['stock_codes']),
-                    'start_date': str(date_start) if date_start else None,
-                    'end_date': str(date_end) if date_end else None,
+                    'start_date': str(report.date_start) if report.date_start else None,
+                    'end_date': str(report.date_end) if report.date_end else None,
+                    'miss_periods': periods,
                 },
                 status='PENDING'
             )
@@ -2369,7 +2368,7 @@ class CollectPlanExecuteView(APIView):
             self._execute_collect(job)
             job.complete(success=True, message='执行完成')
         except Exception as e:
-            logger.exception(f"Job {job_id} execution failed: {e}")
+            logger.exception(f"[Job {job_id}] Execution failed: {e}")
             try:
                 job = CollectJob.objects.get(id=job_id)
                 job.complete(success=False, message=str(e))
@@ -2390,6 +2389,9 @@ class CollectPlanExecuteView(APIView):
             start_date = parse_period_to_date(start_date)
         if end_date:
             end_date = parse_period_to_date(end_date)
+
+        logger.info(f"[Job {job.id}] Collecting: data_type={data_type}, symbols={symbols}, "
+                    f"start_date={start_date}, end_date={end_date}")
 
         if data_type == 'trade_days':
             service = factory.create_calendar_service()
@@ -2425,7 +2427,7 @@ class CollectPlanExecuteView(APIView):
             collect_job = ValuationCollectJob()
             collect_job()
         else:
-            logger.warning(f"Unknown data type: {data_type}")
+            logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")
 
     def _update_report_items(self, plan):
         if not plan.source_report:
