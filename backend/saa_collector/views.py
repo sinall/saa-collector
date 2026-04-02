@@ -2436,7 +2436,12 @@ class CollectPlanExecuteView(APIView):
         successful_jobs = plan.jobs.filter(status='SUCCESS')
         for job in successful_jobs:
             symbols = job.config.get('symbols', [])
-            if symbols:
+            miss_periods = job.config.get('miss_periods', [])
+
+            if not symbols:
+                continue
+
+            if not miss_periods:
                 DataIntegrityItem.objects.filter(
                     report=plan.source_report,
                     data_type=job.data_type,
@@ -2446,7 +2451,66 @@ class CollectPlanExecuteView(APIView):
                     status='FIXED',
                     fixed_at=timezone.now(),
                     fixed_by_plan=plan
-            )
+                )
+                logger.info(f"[Job {job.id}] Marked all items as FIXED for data_type={job.data_type}")
+                continue
+
+            fixed_count = 0
+            for symbol in symbols:
+                for period in miss_periods:
+                    if self._verify_data_exists(job.data_type, symbol, period):
+                        updated = DataIntegrityItem.objects.filter(
+                            report=plan.source_report,
+                            data_type=job.data_type,
+                            stock_code=symbol,
+                            miss_period=period,
+                            status='PENDING'
+                        ).update(
+                            status='FIXED',
+                            fixed_at=timezone.now(),
+                            fixed_by_plan=plan
+                        )
+                        if updated > 0:
+                            fixed_count += 1
+                            logger.info(f"[Job {job.id}] Verified and fixed: {symbol} - {period}")
+                    else:
+                        logger.warning(f"[Job {job.id}] Data not found in DB: {symbol} - {period}, skip marking as FIXED")
+
+            logger.info(f"[Job {job.id}] Fixed {fixed_count} items after verification")
+
+    def _verify_data_exists(self, data_type, symbol, period):
+        if data_type not in DATA_TYPE_CONFIG:
+            logger.warning(f"Unknown data_type: {data_type}")
+            return False
+
+        config = DATA_TYPE_CONFIG[data_type]
+        table_name = config['table']
+        date_column = config['date_column']
+        stock_column = config.get('stock_column', 'symbol')
+
+        if not date_column:
+            return False
+
+        period_date = parse_period_to_date(period)
+        if not period_date:
+            logger.warning(f"Invalid period format: {period}")
+            return False
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table_name} "
+                    f"WHERE {stock_column} = %s AND {date_column} = %s",
+                    [symbol, period_date]
+                )
+                count = cursor.fetchone()[0]
+                exists = count > 0
+                if not exists:
+                    logger.debug(f"No data found in {table_name}: {stock_column}={symbol}, {date_column}={period_date}")
+                return exists
+        except Exception as e:
+            logger.exception(f"Error verifying data existence: {e}")
+            return False
 
 
 class DataCompletenessHeatmapView(APIView):
