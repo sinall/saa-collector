@@ -24,23 +24,18 @@ class CompletenessService:
         self._stock_listing_times = None
 
     def _load_stock_listing_times(self, cursor):
-        """
-        一次性加载股票上市时间到内存
-        
-        Returns:
-            list: [(listing_time or None), ...]
-        """
         if self._stock_listing_times is not None:
             return self._stock_listing_times
 
-        stock_filter = ""
         params = []
         if self.stock_codes:
-            stock_filter = " WHERE symbol IN %s"
-            params = [self.stock_codes]
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            query = f"SELECT listing_time FROM saa_stocks WHERE symbol IN ({placeholders})"
+            cursor.execute(query, self.stock_codes)
+        else:
+            query = "SELECT listing_time FROM saa_stocks"
+            cursor.execute(query)
 
-        query = f"SELECT listing_time FROM saa_stocks{stock_filter}"
-        cursor.execute(query, params)
         self._stock_listing_times = [row[0] for row in cursor.fetchall()]
         return self._stock_listing_times
 
@@ -255,19 +250,30 @@ class CompletenessService:
         stock_filter = ""
         params = []
         if self.stock_codes:
-            stock_filter = " AND symbol IN %s"
-            params = [self.stock_codes]
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            stock_filter = f" AND symbol IN ({placeholders})"
+            params = self.stock_codes
 
-        query = f"""
-            SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(*) as cnt
-            FROM {table_name}
-            WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
-            GROUP BY DATE_FORMAT({date_column}, %s)
-        """
-        params = [date_format, start_date, end_date] + params + [date_format]
-
-        cursor.execute(query, params)
-        period_counts = {self._get_period_key(row[0], frequency): row[1] for row in cursor.fetchall()}
+        if data_frequency == 'yearly':
+            query = f"""
+                SELECT YEAR({date_column}) as year, COUNT(DISTINCT symbol) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
+                GROUP BY YEAR({date_column})
+            """
+            params = [start_date, end_date] + params
+            cursor.execute(query, params)
+            period_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
+        else:
+            query = f"""
+                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(DISTINCT symbol) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
+                GROUP BY DATE_FORMAT({date_column}, '%Y-%m')
+            """
+            params = [start_date, end_date] + params
+            cursor.execute(query, params)
+            period_counts = {self._get_period_key(row[0], frequency): row[1] for row in cursor.fetchall()}
 
         for i in applicable_indices:
             period = periods[i]
@@ -299,12 +305,14 @@ class CompletenessService:
         stock_filter = ""
         params = []
         if self.stock_codes:
-            stock_filter = " AND symbol IN %s"
-            params = [self.stock_codes]
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            stock_filter = f" AND symbol IN ({placeholders})"
+            params = self.stock_codes
 
+        
         if data_frequency == 'yearly':
             query = f"""
-                SELECT YEAR({date_column}) as year, COUNT(*) as cnt
+                SELECT YEAR({date_column}) as year, COUNT(DISTINCT symbol) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY YEAR({date_column})
@@ -312,33 +320,40 @@ class CompletenessService:
             params = [start_date, end_date] + params
             cursor.execute(query, params)
             raw_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
+        elif data_frequency == 'quarterly':
+            query = f"""
+                SELECT 
+                    CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column})) as quarter_key,
+                    COUNT(DISTINCT symbol) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
+                GROUP BY CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column}))
+            """
+            params = [start_date, end_date] + params
+            cursor.execute(query, params)
+            raw_counts = {row[0]: row[1] for row in cursor.fetchall()}
         else:
             query = f"""
-                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(*) as cnt
+                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(DISTINCT symbol) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY DATE_FORMAT({date_column}, '%Y-%m')
             """
             params = [start_date, end_date] + params
             cursor.execute(query, params)
-            raw_counts = {}
-            for row in cursor.fetchall():
-                month_str = row[0]
-                year = month_str[:4]
-                month = int(month_str[5:7])
-                quarter = (month - 1) // 3 + 1
-                quarter_key = f"{year}-Q{quarter}"
-                if quarter_key not in raw_counts:
-                    raw_counts[quarter_key] = 0
-                raw_counts[quarter_key] += row[1]
+            raw_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
 
         result = [0.0] * len(periods)
         for agg_key, indices in aggregate_keys.items():
             actual_count = raw_counts.get(agg_key, 0)
             for i in indices:
                 period = periods[i]
-                expected_count = expected_counts.get(period, 1)
-                result[i] = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
+                # 添加适用性检查
+                if not self._is_period_applicable(period, frequency, data_frequency):
+                    result[i] = -1  # 不适用
+                else:
+                    expected_count = expected_counts.get(period, 1)
+                    result[i] = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
 
         return result
     

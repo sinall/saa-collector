@@ -274,7 +274,8 @@ const prepareMergedCells = (
 
     if (shouldMerge) {
       for (let i = 0; i < slicedValues.length; i += span) {
-        const value = slicedValues[i] ?? 0
+        const values = slicedValues.slice(i, i + span)
+        const value = values.find(v => v !== -1) ?? -1
         cells.push({
           xStart: i,
           xSpan: Math.min(span, slicedValues.length - i),
