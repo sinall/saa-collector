@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from saa_collector.permissions import IsAuthenticatedInProduction
 
 from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
@@ -1604,7 +1605,7 @@ class DataIntegrityReportRefreshView(APIView):
 
 
 class DataIntegrityReportHeatmapView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedInProduction]
 
     def get(self, request, pk):
         from saa_collector.services.completeness_service import CompletenessService
