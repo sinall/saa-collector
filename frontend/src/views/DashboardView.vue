@@ -55,34 +55,26 @@ import { ref, onMounted } from 'vue'
 import { WarningFilled } from '@element-plus/icons-vue'
 import { fetchDataStatus, type DataStatus } from '@/utils/api'
 import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
+import { useDataTypes } from '@/composables/useDataTypes'
 
-const EXPECTED_DATA_TYPES = [
-  { data_type: 'trade_days', data_type_display: '交易日' },
-  { data_type: 'stock_info', data_type_display: '股票基本信息', show_completeness: false },
-  { data_type: 'quote', data_type_display: '最新行情' },
-  { data_type: 'historical_quote', data_type_display: '历史行情' },
-  { data_type: 'balance_sheet', data_type_display: '资产负债表' },
-  { data_type: 'income', data_type_display: '利润表' },
-  { data_type: 'cash_flow', data_type_display: '现金流量表' },
-  { data_type: 'dividend', data_type_display: '分红数据' },
-  { data_type: 'main_business', data_type_display: '主营业务' },
-  { data_type: 'capital', data_type_display: '股本变动' },
-  { data_type: 'valuation_board', data_type_display: '板块估值' },
-  { data_type: 'valuation_industry', data_type_display: '行业估值' },
-]
+const { completenessTypes, loadDataTypes } = useDataTypes()
+const dataStatus = ref<DataStatus[]>([])
 
-const dataStatus = ref<DataStatus[]>(
-  EXPECTED_DATA_TYPES.map(item => ({
-    ...item,
+onMounted(async () => {
+  await loadDataTypes()
+  dataStatus.value = completenessTypes.value.map(dt => ({
+    data_type: dt.key,
+    data_type_display: dt.label,
     count: 0,
     earliest_date: null,
     latest_date: null,
-    frequency: null,
+    frequency: dt.frequency ?? null,
     completeness: null,
     loading: true,
     error: false,
   }))
-)
+  loadDataStatus()
+})
 
 const loadDataStatus = async () => {
   try {
@@ -146,10 +138,6 @@ const getCompletenessColor = (completeness: number): string => {
   if (completeness < 0.9) return '#409eff'
   return '#67c23a'
 }
-
-onMounted(() => {
-  loadDataStatus()
-})
 </script>
 
 <style scoped>

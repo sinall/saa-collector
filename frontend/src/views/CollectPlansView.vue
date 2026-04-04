@@ -85,10 +85,10 @@
         <el-form-item label="数据类型" required>
           <el-select v-model="instantForm.data_type" placeholder="请选择数据类型" style="width: 100%">
             <el-option
-              v-for="item in dataTypeOptions"
-              :key="item.value"
+              v-for="item in dataTypes"
+              :key="item.key"
               :label="item.label"
-              :value="item.value"
+              :value="item.key"
             />
           </el-select>
         </el-form-item>
@@ -132,6 +132,9 @@ import {
   deleteCollectPlan
 } from '@/utils/api'
 import type { CollectPlan } from '@/utils/api'
+import { useDataTypes } from '@/composables/useDataTypes'
+
+const { dataTypes, loadDataTypes, getLabel } = useDataTypes()
 
 const router = useRouter()
 const plans = ref<CollectPlan[]>([])
@@ -146,20 +149,6 @@ const instantForm = ref({
   symbols: [] as string[],
   dateRange: [] as Date[]
 })
-
-const dataTypeOptions = [
-  { value: 'trade_days', label: '交易日' },
-  { value: 'stock_info', label: '股票基本信息' },
-  { value: 'quote', label: '最新行情' },
-  { value: 'historical_quote', label: '历史行情' },
-  { value: 'balance_sheet', label: '资产负债表' },
-  { value: 'income', label: '利润表' },
-  { value: 'cash_flow', label: '现金流量表' },
-  { value: 'dividend', label: '分红数据' },
-  { value: 'main_business', label: '主营业务' },
-  { value: 'capital', label: '股本变动' },
-  { value: 'valuation', label: '估值数据' }
-]
 
 interface DisplayPlan {
   id: number
@@ -309,7 +298,7 @@ const createInstantPlan = async () => {
 
   creating.value = true
   try {
-    const dataTypeName = dataTypeOptions.find(d => d.value === instantForm.value.data_type)?.label || instantForm.value.data_type
+    const dataTypeName = getLabel(instantForm.value.data_type)
     const name = instantForm.value.name || `即时采集-${dataTypeName}-${new Date().toISOString().split('T')[0]}`
     
     console.log('Create instant plan:', {
@@ -333,6 +322,7 @@ const createInstantPlan = async () => {
 }
 
 onMounted(() => {
+  loadDataTypes()
   fetchPlans()
 })
 </script>
