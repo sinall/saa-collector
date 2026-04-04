@@ -8,25 +8,17 @@
       <template #header>
         <div class="filter-bar">
           <el-select v-model="selectedDataType" placeholder="选择数据类型" style="width: 200px" @change="onDataTypeChange">
-            <el-option-group label="基本信息">
-              <el-option label="基本信息" value="info" />
-            </el-option-group>
-            <el-option-group label="行情数据">
-              <el-option label="最新行情" value="quote" />
-              <el-option label="历史行情" value="historical_quote" />
-            </el-option-group>
-            <el-option-group label="财务报表">
-              <el-option label="资产负债表" value="balance_sheet" />
-              <el-option label="利润表" value="income" />
-              <el-option label="现金流量表" value="cash_flow" />
-            </el-option-group>
-            <el-option-group label="其他">
-              <el-option label="主营业务" value="main_business" />
-              <el-option label="股本变动" value="capital" />
-              <el-option label="分红数据" value="dividend" />
-            </el-option-group>
-            <el-option-group label="系统数据">
-              <el-option label="交易日" value="trade_days" />
+            <el-option-group
+              v-for="group in groups"
+              :key="group.key"
+              :label="group.label"
+            >
+              <el-option
+                v-for="dt in groupedDataTypes[group.key]"
+                :key="dt.key"
+                :label="dt.label"
+                :value="dt.key"
+              />
             </el-option-group>
           </el-select>
           
@@ -124,6 +116,9 @@ import {
   type DisplayFieldConfig,
   type DataTypeGroup,
 } from '@/utils/api'
+import { useDataTypes } from '@/composables/useDataTypes'
+
+const { dataTypes, groups, groupedDataTypes, loadDataTypes } = useDataTypes()
 
 interface EditableColDef extends ColDef {
   visible: boolean
@@ -639,6 +634,7 @@ const onPageChange = (val: number) => {
 }
 
 onMounted(async () => {
+  await loadDataTypes()
   await loadDisplayConfig()
   initEditableColumns()
   loadData()

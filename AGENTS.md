@@ -100,6 +100,108 @@ npm run test:e2e:report
 - **Data Grid**: AG Grid
 - **Build Tool**: Vite
 - **Testing**: Playwright
+- **State Management**: Composables (useDataTypes for global data type management)
+
+## Data Type Configuration Architecture
+
+### Overview
+
+The project uses a **configuration-driven architecture** for managing data types. This ensures a single source of truth and eliminates hardcoded data type definitions across the codebase.
+
+### Key Components
+
+#### 1. Backend Configuration (Single Source of Truth)
+**File**: `backend/saa_collector/constants.py`
+
+All data type configurations are defined in `DATA_TYPE_CONFIG`:
+```python
+DATA_TYPE_CONFIG = {
+    'trade_days': {
+        'table': 'saa_trade_days',
+        'label': '交易日',
+        'group': 'market',
+        'show_completeness': False,
+        'order': 1,
+        # ... more fields
+    },
+    # ... more data types
+}
+```
+
+#### 2. Backend API
+**Endpoint**: `GET /api/data-types/`
+
+Returns all data type configurations to the frontend:
+```json
+{
+  "data_types": [...],
+  "groups": [...]
+}
+```
+
+#### 3. Frontend Global State Management
+**File**: `frontend/src/composables/useDataTypes.ts`
+
+Provides centralized data type management:
+```typescript
+export function useDataTypes() {
+  const { dataTypes, loadDataTypes, getLabel } = useDataTypes()
+
+  // Load once on app startup
+  await loadDataTypes()
+}
+```
+
+#### 4. Frontend Initialization
+**File**: `frontend/src/App.vue`
+
+Preloads data type configuration on app mount:
+```typescript
+const { loadDataTypes } = useDataTypes()
+
+onMounted(async () => {
+  await loadDataTypes()
+})
+```
+
+### Usage Examples
+
+#### In Components
+```typescript
+import { useDataTypes } from '@/composables/useDataTypes'
+
+const { dataTypes, getLabel, completenessTypes } = useDataTypes()
+
+onMounted(async () => {
+  await loadDataTypes()
+  // Use dataTypes.value or completenessTypes.value
+})
+```
+
+### Benefits
+
+1. **Single Source of Truth**: All data type configurations come from one place
+2. **Zero Duplication**: No more hardcoded data type lists in multiple files
+3. **Type Safety**: TypeScript interfaces ensure consistency
+4. **Easy Maintenance**: Adding a new data type requires only one file change
+5. **Automatic Updates**: All components automatically reflect configuration changes
+
+### Adding a New Data Type
+
+To add a new data type, only modify `backend/saa_collector/constants.py`:
+
+```python
+'new_data_type': {
+    'table': 'saa_new_data',
+    'label': '新数据类型',
+    'group': 'other',
+    'show_completeness': True,
+    'order': 16,
+    # ... other required fields
+}
+```
+
+All frontend components will automatically display and handle the new data type without any code changes.
 
 ## Backend Architecture
 

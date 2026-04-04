@@ -21,10 +21,10 @@
         <el-form-item label="数据类型" prop="data_type">
           <el-select v-model="form.data_type" placeholder="请选择数据类型" style="width: 100%">
             <el-option
-              v-for="item in dataTypeOptions"
-              :key="item.value"
+              v-for="item in dataTypes"
+              :key="item.key"
               :label="item.label"
-              :value="item.value"
+              :value="item.key"
             />
           </el-select>
         </el-form-item>
@@ -94,6 +94,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { useDataTypes } from '@/composables/useDataTypes'
+
+const { dataTypes, loadDataTypes } = useDataTypes()
 
 const route = useRoute()
 const router = useRouter()
@@ -103,20 +106,6 @@ const submitting = ref(false)
 const isEdit = computed(() => !!route.params.id)
 
 const stockScope = ref<'all' | 'selected'>('all')
-
-const dataTypeOptions = [
-  { value: 'trade_days', label: '交易日' },
-  { value: 'stock_info', label: '股票基本信息' },
-  { value: 'quote', label: '最新行情' },
-  { value: 'historical_quote', label: '历史行情' },
-  { value: 'balance_sheet', label: '资产负债表' },
-  { value: 'income', label: '利润表' },
-  { value: 'cash_flow', label: '现金流量表' },
-  { value: 'dividend', label: '分红数据' },
-  { value: 'main_business', label: '主营业务' },
-  { value: 'capital', label: '股本变动' },
-  { value: 'valuation', label: '估值数据' }
-]
 
 const form = ref({
   name: '',
@@ -197,6 +186,7 @@ const handleSubmit = async () => {
 }
 
 onMounted(() => {
+  loadDataTypes()
   fetchSchedule()
 })
 </script>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useDataTypes } from '@/composables/useDataTypes'
 
 interface FilterParams {
   data_types: string[]
@@ -21,24 +22,12 @@ const emit = defineEmits<{
   query: [params: FilterParams]
 }>()
 
+const { dataTypes, loadDataTypes } = useDataTypes()
+
 const panelCollapsed = ref(false)
 const frequencyExpanded = ref(true)
 const stockExpanded = ref(true)
 const dateExpanded = ref(true)
-
-const dataTypes = [
-  { value: 'trade_days', label: '交易日' },
-  { value: 'quote', label: '最新行情' },
-  { value: 'historical_quote', label: '历史行情' },
-  { value: 'balance_sheet', label: '资产负债表' },
-  { value: 'income', label: '利润表' },
-  { value: 'cash_flow', label: '现金流量表' },
-  { value: 'dividend', label: '分红数据' },
-  { value: 'capital', label: '股本变动' },
-  { value: 'valuation_board', label: '板块估值' },
-  { value: 'valuation_industry', label: '行业估值' },
-  { value: 'main_business', label: '主营业务' },
-]
 
 const frequencies = [
   { value: 'daily', label: '日度' },
@@ -77,7 +66,7 @@ const toggleDataType = (type: string) => {
 }
 
 const selectAllDataTypes = () => {
-  selectedDataTypes.value = dataTypes.map(dt => dt.value)
+  selectedDataTypes.value = dataTypes.value.map(dt => dt.key)
 }
 
 const clearDataTypes = () => {
@@ -100,6 +89,10 @@ const handleQuery = () => {
 
   emit('query', params)
 }
+
+onMounted(() => {
+  loadDataTypes()
+})
 </script>
 
 <template>
@@ -117,13 +110,13 @@ const handleQuery = () => {
         <div class="checkbox-grid">
           <label
             v-for="dt in dataTypes"
-            :key="dt.value"
+            :key="dt.key"
             class="checkbox-item"
           >
             <input
               type="checkbox"
-              :checked="selectedDataTypes.includes(dt.value)"
-              @change="toggleDataType(dt.value)"
+              :checked="selectedDataTypes.includes(dt.key)"
+              @change="toggleDataType(dt.key)"
             />
             <span>{{ dt.label }}</span>
           </label>

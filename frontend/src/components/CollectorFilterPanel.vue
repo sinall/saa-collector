@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useDataTypes } from '@/composables/useDataTypes'
 
 interface FilterParams {
   data_type: string
@@ -29,24 +30,12 @@ const emit = defineEmits<{
   dataTypeChange: [dataType: string]
 }>()
 
+const { dataTypes, loadDataTypes } = useDataTypes()
+
 const panelCollapsed = ref(false)
 const stockExpanded = ref(true)
 const dateExpanded = ref(true)
 const dataTypeExpanded = ref(true)
-
-const dataTypes = [
-  { value: 'trade_days', label: '交易日', needDate: true },
-  { value: 'stock_info', label: '股票基本信息', needDate: false },
-  { value: 'quote', label: '最新行情', needDate: false },
-  { value: 'historical_quote', label: '历史行情', needDate: true },
-  { value: 'balance_sheet', label: '资产负债表', needDate: true },
-  { value: 'income', label: '利润表', needDate: true },
-  { value: 'cash_flow', label: '现金流量表', needDate: true },
-  { value: 'dividend', label: '分红数据', needDate: true },
-  { value: 'capital', label: '股本变动', needDate: true },
-  { value: 'valuation', label: '估值数据', needDate: false },
-  { value: 'main_business', label: '主营业务', needDate: true },
-]
 
 const stockMode = ref<'all' | 'manual' | 'index'>('all')
 const dateMode = ref<'single' | 'range'>('range')
@@ -86,7 +75,7 @@ const selectedStocks = computed(() => {
 })
 
 const currentDataType = computed(() => {
-  return dataTypes.find(dt => dt.value === selectedDataType.value)
+  return dataTypes.value.find(dt => dt.key === selectedDataType.value)
 })
 
 const needDateRange = computed(() => {
@@ -95,6 +84,10 @@ const needDateRange = computed(() => {
 
 const isStatementType = computed(() => {
   return ['balance_sheet', 'income', 'cash_flow', 'dividend'].includes(selectedDataType.value)
+})
+
+onMounted(() => {
+  loadDataTypes()
 })
 
 watch(selectedDataType, (newDataType) => {
@@ -173,7 +166,7 @@ defineExpose({
         </div>
         <div v-if="dataTypeExpanded" class="section-content">
           <select v-model="selectedDataType">
-            <option v-for="dt in dataTypes" :key="dt.value" :value="dt.value">
+            <option v-for="dt in dataTypes" :key="dt.key" :value="dt.key">
               {{ dt.label }}
             </option>
           </select>

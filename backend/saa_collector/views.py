@@ -92,20 +92,15 @@ class DataStatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from .constants import DATA_TYPE_CONFIG
+        
         data_types = [
-            ('trade_days', '交易日', 'saa_trade_days'),
-            ('stock_info', '股票基本信息', 'saa_stocks'),
-            ('quote', '最新行情', 'saa_latest_prices'),
-            ('historical_quote', '历史行情', 'saa_prices_ex'),
-            ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet'),
-            ('income', '利润表', 'saa_raw_income_statement'),
-            ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement'),
-            ('main_business', '主营业务', 'saa_raw_main_business'),
-            ('capital', '股本变动', 'saa_capitals'),
-            ('dividend', '分红数据', 'saa_dividends'),
-            ('valuation_board', '板块估值', 'saa_board_valuation_levels'),
-            ('valuation_industry', '行业估值', 'saa_industry_valuation_levels'),
+            (key, config['label'], config['table'])
+            for key, config in DATA_TYPE_CONFIG.items()
+            if config.get('show_completeness', True)
         ]
+        
+        data_types.sort(key=lambda x: DATA_TYPE_CONFIG[x[0]].get('order', 99))
 
         results = []
         with connection.cursor() as cursor:
@@ -2516,39 +2511,41 @@ class CollectPlanExecuteView(APIView):
 class DataCompletenessHeatmapView(APIView):
     permission_classes = [IsAuthenticated]
 
-    DATA_TYPE_CONFIG = [
-        ('trade_days', '交易日', 'saa_trade_days', 'date', 'daily'),
-        ('stock_info', '股票基本信息', 'saa_stocks', None, None),
-        ('quote', '最新行情', 'saa_latest_prices', 'date', None),
-        ('historical_quote', '历史行情', 'saa_prices_ex', 'date', 'daily'),
-        ('balance_sheet', '资产负债表', 'saa_raw_balance_sheet', 'date', 'quarterly'),
-        ('income', '利润表', 'saa_raw_income_statement', 'date', 'quarterly'),
-        ('cash_flow', '现金流量表', 'saa_raw_cash_flow_statement', 'date', 'quarterly'),
-        ('main_business', '主营业务', 'saa_raw_main_business', 'date', 'quarterly'),
-        ('capital', '股本变动', 'saa_capitals', 'date', 'yearly'),
-        ('dividend', '分红数据', 'saa_dividends', 'date', 'yearly'),
-        ('valuation_board', '板块估值', 'saa_board_valuation_level', 'report_date', 'daily'),
-        ('valuation_industry', '行业估值', 'saa_industry_valuation_levels', 'report_date', 'daily'),
-    ]
-
     def get(self, request):
+        from .constants import DATA_TYPE_CONFIG
+        
         frequency = request.query_params.get('frequency', 'monthly')
         
         periods = self._generate_periods(frequency)
         if not periods:
             return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
 
-        data_types = [{'key': key, 'label': label, 'frequency': data_freq} for key, label, _, _, data_freq in self.DATA_TYPE_CONFIG]
+        data_types = [
+            {
+                'key': key,
+                'label': config['label'],
+                'frequency': config.get('data_frequency')
+            }
+            for key, config in DATA_TYPE_CONFIG.items()
+        ]
         matrix = {}
 
         with connection.cursor() as cursor:
-            for key, label, table_name, date_column, data_frequency in self.DATA_TYPE_CONFIG:
+            for key, config in DATA_TYPE_CONFIG.items():
+                table_name = config['table']
+                date_column = config['date_column']
+                data_frequency = config.get('data_frequency')
+                stock_level = config.get('stock_level', True)
+                stock_column = config.get('stock_column', 'symbol')
+                
                 if date_column is None:
                     matrix[key] = [1.0] * len(periods)
                     continue
                 
                 if data_frequency is None:
-                    matrix[key] = self._calculate_point_completeness(cursor, table_name, date_column, len(periods))
+                    matrix[key] = self._calculate_point_completeness(
+                        cursor, table_name, date_column, len(periods), stock_level, stock_column
+                    )
                     continue
                 
                 try:
@@ -2609,15 +2606,22 @@ class DataCompletenessHeatmapView(APIView):
         
         return periods
 
-    def _calculate_point_completeness(self, cursor, table_name, date_column, num_periods):
-        cursor.execute(f"SELECT COUNT(DISTINCT symbol) FROM {table_name}")
-        quote_count = cursor.fetchone()[0] or 0
+    def _calculate_point_completeness(self, cursor, table_name, date_column, num_periods, stock_level, stock_column='symbol'):
+        if not stock_level:
+            return [1.0] * num_periods
         
-        cursor.execute("SELECT COUNT(*) FROM saa_stocks")
-        total_stocks = cursor.fetchone()[0] or 1
-        
-        ratio = round(quote_count / total_stocks, 2) if total_stocks > 0 else 0.0
-        return [ratio] * num_periods
+        try:
+            cursor.execute(f"SELECT COUNT(DISTINCT {stock_column}) FROM {table_name}")
+            data_count = cursor.fetchone()[0] or 0
+            
+            cursor.execute("SELECT COUNT(*) FROM saa_stocks")
+            total_stocks = cursor.fetchone()[0] or 1
+            
+            ratio = round(data_count / total_stocks, 2) if total_stocks > 0 else 0.0
+            return [ratio] * num_periods
+        except Exception as e:
+            logger.warning(f"Failed to calculate point completeness for {table_name}: {e}")
+            return [0.0] * num_periods
 
     def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency):
         if not periods:
@@ -2980,3 +2984,37 @@ class StockDataView(APIView):
             }
         })
 
+
+class DataTypesConfigView(APIView):
+    """
+    返回所有数据类型配置
+    
+    这是系统的单一数据源，前端应该从此API获取所有数据类型信息
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        from .constants import DATA_TYPE_CONFIG, DATA_TYPE_GROUPS
+        
+        data_types = []
+        for key, config in DATA_TYPE_CONFIG.items():
+            data_types.append({
+                'key': key,
+                'label': config['label'],
+                'table': config['table'],
+                'frequency': config.get('data_frequency'),
+                'stock_level': config.get('stock_level', True),
+                'group': config.get('group'),
+                'show_completeness': config.get('show_completeness', True),
+                'need_date': config.get('need_date', True),
+                'stock_column': config.get('stock_column'),
+                'supports_integrity_check': config.get('supports_integrity_check', True),
+                'order': config.get('order', 99),
+            })
+        
+        data_types.sort(key=lambda x: x['order'])
+        
+        return Response({
+            'data_types': data_types,
+            'groups': sorted(DATA_TYPE_GROUPS, key=lambda x: x['order']),
+        })

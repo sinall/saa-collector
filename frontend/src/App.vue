@@ -61,17 +61,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, DataLine, FolderOpened, DocumentChecked, Download } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { fetchStocks, type Stock } from '@/utils/api'
+import { useDataTypes } from '@/composables/useDataTypes'
 
 const route = useRoute()
 const router = useRouter()
 const activeMenu = computed(() => route.path)
 
 const stockSearchKeyword = ref('')
+
+const { loadDataTypes } = useDataTypes()
+
+onMounted(async () => {
+  try {
+    await loadDataTypes()
+  } catch (error) {
+    console.error('Failed to load data types config on app startup:', error)
+  }
+})
 
 const searchStocks = async (query: string, cb: (results: { value: string; label: string; stock: Stock }[]) => void) => {
   if (!query) {

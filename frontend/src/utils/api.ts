@@ -56,8 +56,36 @@ function getCsrfToken(): string | null {
 export interface ApiResponse<T> {
   success: boolean
   data?: T
-  error?: string
   message?: string
+  error?: string
+}
+
+export interface DataTypeConfig {
+  key: string
+  label: string
+  table: string
+  frequency?: string | null
+  stock_level: boolean
+  group?: string
+  show_completeness: boolean
+  need_date: boolean
+  stock_column?: string
+  supports_integrity_check: boolean
+  order: number
+}
+
+export interface DataTypeGroup {
+  key: string
+  label: string
+  order: number
+}
+
+export async function fetchDataTypesConfig(): Promise<{
+  data_types: DataTypeConfig[]
+  groups: DataTypeGroup[]
+}> {
+  const response = await api.get('/data-types/')
+  return response.data
 }
 
 export interface DataStatus {
@@ -223,7 +251,7 @@ export const checkDataCompleteness = async (params: {
 export interface HeatmapDataType {
   key: string
   label: string
-  frequency?: 'daily' | 'quarterly' | 'yearly' | null
+  frequency?: 'daily' | 'monthly' | 'quarterly' | 'yearly' | null
 }
 
 export interface HeatmapResponse {
@@ -251,6 +279,9 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
     { key: 'dividend', label: '分红数据', frequency: 'yearly' },
     { key: 'valuation_board', label: '板块估值', frequency: 'daily' },
     { key: 'valuation_industry', label: '行业估值', frequency: 'daily' },
+    { key: 'index_weights', label: '指数成分股权重', frequency: 'quarterly' },
+    { key: 'industries', label: '行业信息', frequency: null },
+    { key: 'industry_stocks', label: '行业股票关系', frequency: 'monthly' },
   ]
 
   let periods: string[] = []
@@ -564,6 +595,41 @@ function generateMockTypeBrowseData(dataType: string): TypeBrowseRow[] {
       rows.push({
         date: new Date(Date.now() - i * 24 * 3600000).toISOString().split('T')[0] ?? '',
         is_open: Math.random() > 0.3 ? 1 : 0,
+      })
+    }
+  } else if (dataType === 'index_weights') {
+    const indices = ['000300', '000905', '000852']
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        index: indices[Math.floor(Math.random() * 3)] ?? '',
+        date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        code: stock.code,
+        display_name: stock.name,
+        weight: Math.round((Math.random() * 0.1) * 10000) / 100,
+      })
+    }
+  } else if (dataType === 'industries') {
+    const categories = ['SW', 'ZX', 'ZJ']
+    for (let i = 0; i < count; i++) {
+      const category = categories[Math.floor(Math.random() * 3)] ?? ''
+      const indexNum = String(Math.floor(Math.random() * 100)).padStart(2, '0')
+      rows.push({
+        category,
+        index: category + indexNum,
+        name: ['银行', '房地产', '科技', '医药', '消费'][Math.floor(Math.random() * 5)] ?? '',
+        start_date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+      })
+    }
+  } else if (dataType === 'industry_stocks') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      const category = ['SW', 'ZX', 'ZJ'][Math.floor(Math.random() * 3)] ?? ''
+      const indexNum = String(Math.floor(Math.random() * 100)).padStart(2, '0')
+      rows.push({
+        industry_code: category + indexNum,
+        date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        code: stock.code,
       })
     }
   }
@@ -1363,6 +1429,7 @@ export interface DisplayTableConfig {
 export interface DataTypeGroup {
   key: string
   label: string
+  order: number
   items: {
     key: string
     label: string
@@ -1509,12 +1576,46 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
       ]
     }
   },
+  'saa_index_weights': {
+    table_label: '指数成分股权重',
+    config: {
+      fields: [
+        { name: 'index', label: '指数代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'code', label: '股票代码', visible: true, order: 3, width: 100 },
+        { name: 'display_name', label: '股票名称', visible: true, order: 4, width: 120 },
+        { name: 'weight', label: '权重', visible: true, order: 5, width: 100, format: 'percent' },
+      ]
+    }
+  },
+  'saa_industries': {
+    table_label: '行业信息',
+    config: {
+      fields: [
+        { name: 'category', label: '行业分类', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'index', label: '指数代码', visible: true, order: 2, width: 100 },
+        { name: 'name', label: '行业名称', visible: true, order: 3, width: 120 },
+        { name: 'start_date', label: '开始日期', visible: true, order: 4, width: 110, format: 'date' },
+      ]
+    }
+  },
+  'saa_industry_stocks': {
+    table_label: '行业股票关系',
+    config: {
+      fields: [
+        { name: 'industry_code', label: '行业代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'code', label: '股票代码', visible: true, order: 3, width: 100 },
+      ]
+    }
+  },
 }
 
 const DATA_TYPE_GROUPS: DataTypeGroup[] = [
   {
     key: 'basic',
     label: '基本信息',
+    order: 1,
     items: [
       { key: 'info', label: '基本信息', table: 'saa_stocks' },
     ]
@@ -1522,6 +1623,7 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
   {
     key: 'quote',
     label: '行情数据',
+    order: 2,
     items: [
       { key: 'quote', label: '最新行情', table: 'saa_latest_prices' },
       { key: 'historical_quote', label: '历史行情', table: 'saa_prices_ex' },
@@ -1530,6 +1632,7 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
   {
     key: 'statement',
     label: '财务报表',
+    order: 3,
     items: [
       { key: 'balance_sheet', label: '资产负债表', table: 'saa_raw_balance_sheet' },
       { key: 'income', label: '利润表', table: 'saa_raw_income_statement' },
@@ -1539,10 +1642,21 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
   {
     key: 'other',
     label: '其他数据',
+    order: 4,
     items: [
       { key: 'main_business', label: '主营业务', table: 'saa_raw_main_business' },
       { key: 'capital', label: '股本变动', table: 'saa_capitals' },
       { key: 'dividend', label: '分红数据', table: 'saa_dividends' },
+    ]
+  },
+  {
+    key: 'industry',
+    label: '行业相关',
+    order: 5,
+    items: [
+      { key: 'index_weights', label: '指数成分股权重', table: 'saa_index_weights' },
+      { key: 'industries', label: '行业信息', table: 'saa_industries' },
+      { key: 'industry_stocks', label: '行业股票关系', table: 'saa_industry_stocks' },
     ]
   },
 ]

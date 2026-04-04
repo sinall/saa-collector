@@ -55,23 +55,12 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
+import { useDataTypes } from '@/composables/useDataTypes'
+
+const { getLabel, loadDataTypes } = useDataTypes()
 
 const schedules = ref<any[]>([])
 const loading = ref(false)
-
-const dataTypeLabels: Record<string, string> = {
-  'trade_days': '交易日',
-  'stock_info': '股票基本信息',
-  'quote': '最新行情',
-  'historical_quote': '历史行情',
-  'balance_sheet': '资产负债表',
-  'income': '利润表',
-  'cash_flow': '现金流量表',
-  'dividend': '分红数据',
-  'main_business': '主营业务',
-  'capital': '股本变动',
-  'valuation': '估值数据'
-}
 
 const mockSchedules = [
   {
@@ -118,7 +107,7 @@ const fetchSchedules = async () => {
     await new Promise(resolve => setTimeout(resolve, 500))
     schedules.value = mockSchedules.map(s => ({
       ...s,
-      data_type_display: dataTypeLabels[s.data_type] || s.data_type
+      data_type_display: getLabel(s.data_type)
     }))
   } finally {
     loading.value = false
@@ -158,6 +147,7 @@ const deleteSchedule = async (row: any) => {
 }
 
 onMounted(() => {
+  loadDataTypes()
   fetchSchedules()
 })
 </script>
