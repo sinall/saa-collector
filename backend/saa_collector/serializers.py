@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan
+from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 class CollectJobSerializer(serializers.ModelSerializer):
     data_type_display = serializers.CharField(source='get_data_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -25,6 +25,22 @@ class CollectJobCreateSerializer(serializers.Serializer):
         required=False,
         default=list,
         help_text='报表类型列表 (balance_sheet, income, cash_flow, dividend)'
+    )
+class InstantCollectJobSerializer(serializers.Serializer):
+    data_type = serializers.CharField(max_length=50, help_text='Data type to collect')
+    symbols = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        default=list,
+        help_text='Stock codes list, empty for all stocks'
+    )
+    start_date = serializers.DateField(required=False, help_text='Start date')
+    end_date = serializers.DateField(required=False, help_text='End date')
+    report_types = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        default=list,
+        help_text='Report types (balance_sheet, income, cash_flow, dividend)'
     )
 class DataStatusSerializer(serializers.Serializer):
     data_type = serializers.CharField()
@@ -182,6 +198,69 @@ class CollectPlanCreateSerializer(serializers.Serializer):
         allow_null=True
     )
     execution_mode = serializers.ChoiceField(choices=['PARALLEL', 'SEQUENTIAL'], default='PARALLEL')
+    jobs = serializers.ListField(
+        child=InstantCollectJobSerializer(),
+        required=False,
+        allow_empty=True,
+        help_text='List of collection jobs to create'
+    )
+
+    def create(self, validated_data):
+        plan = CollectPlan.objects.create(
+            name=validated_data['name'],
+            source_report=validated_data.get('source_report'),
+            execution_mode=validated_data.get('execution_mode', 'PARALLEL')
+        )
+
+        jobs_data = validated_data.get('jobs', [])
+        for job_data in jobs_data:
+            CollectJob.objects.create(
+                plan=plan,
+                data_type=job_data['data_type'],
+                config={
+                    'symbols': job_data.get('symbols', []),
+                    'params': {
+                        'start_date': str(job_data['start_date']) if job_data.get('start_date') else None,
+                        'end_date': str(job_data['end_date']) if job_data.get('end_date') else None,
+                        'report_types': job_data.get('report_types', []),
+                    }
+                }
+            )
+
+        return plan
 class CollectPlanUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200, required=False)
     execution_mode = serializers.ChoiceField(choices=['PARALLEL', 'SEQUENTIAL'], required=False)
+
+
+class CollectScheduleSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    data_type_display = serializers.CharField(source='get_data_type_display', read_only=True)
+
+    class Meta:
+        model = CollectSchedule
+        fields = [
+            'id', 'name', 'data_type', 'data_type_display',
+            'symbols', 'params', 'cron_expression',
+            'status', 'status_display',
+            'last_triggered_at', 'next_trigger_at',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'last_triggered_at', 'next_trigger_at', 'created_at', 'updated_at']
+
+
+class CollectScheduleCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CollectSchedule
+        fields = ['name', 'data_type', 'symbols', 'params', 'cron_expression', 'status']
+        extra_kwargs = {
+            'status': {'default': 'ENABLED'},
+            'symbols': {'default': list},
+            'params': {'default': dict},
+        }
+
+
+class CollectScheduleUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CollectSchedule
+        fields = ['name', 'data_type', 'symbols', 'params', 'cron_expression', 'status']

@@ -20,7 +20,7 @@ from saa_collector.permissions import IsAuthenticatedInProduction
 from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 
-from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan
+from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 from .serializers import (
     CollectJobSerializer, CollectJobCreateSerializer,
     DataStatusSerializer, DataCompletenessSerializer,
@@ -29,6 +29,7 @@ from .serializers import (
     FlattenedIntegrityItemSerializer,
     CollectPlanSerializer, CollectPlanCreateSerializer, CollectPlanUpdateSerializer,
     CollectJobBriefSerializer,
+    CollectScheduleSerializer, CollectScheduleCreateSerializer, CollectScheduleUpdateSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -2761,3 +2762,197 @@ class DataTypesConfigView(APIView):
             'data_types': data_types,
             'groups': sorted(DATA_TYPE_GROUPS, key=lambda x: x['order']),
         })
+
+
+class CollectScheduleListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        schedules = CollectSchedule.objects.all().order_by('-created_at')
+        serializer = CollectScheduleSerializer(schedules, many=True)
+        return Response({'success': True, 'data': serializer.data})
+
+    def post(self, request):
+        from .scheduler_manager import add_schedule_job
+
+        serializer = CollectScheduleCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'error': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        schedule = serializer.save()
+
+        if schedule.status == 'ENABLED':
+            add_schedule_job(schedule)
+
+        return Response({
+            'success': True,
+            'data': CollectScheduleSerializer(schedule).data
+        }, status=status.HTTP_201_CREATED)
+
+
+class CollectScheduleDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            schedule = CollectSchedule.objects.get(pk=pk)
+        except CollectSchedule.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Schedule not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CollectScheduleSerializer(schedule)
+        return Response({'success': True, 'data': serializer.data})
+
+    def put(self, request, pk):
+        from .scheduler_manager import update_schedule_job
+
+        try:
+            schedule = CollectSchedule.objects.get(pk=pk)
+        except CollectSchedule.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Schedule not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CollectScheduleUpdateSerializer(schedule, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'error': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        schedule = serializer.save()
+        update_schedule_job(schedule)
+
+        return Response({
+            'success': True,
+            'data': CollectScheduleSerializer(schedule).data
+        })
+
+    def delete(self, request, pk):
+        from .scheduler_manager import remove_schedule_job
+
+        try:
+            schedule = CollectSchedule.objects.get(pk=pk)
+        except CollectSchedule.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Schedule not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        remove_schedule_job(schedule.id)
+        schedule.delete()
+
+        return Response({'success': True})
+
+
+class CollectScheduleTriggerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            schedule = CollectSchedule.objects.get(pk=pk)
+        except CollectSchedule.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Schedule not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        job = CollectJob.objects.create(
+            data_type=schedule.data_type,
+            config={
+                'symbols': schedule.symbols,
+                'params': schedule.params
+            }
+        )
+
+        thread = threading.Thread(target=self._execute_job, args=(job.id,))
+        thread.start()
+
+        schedule.last_triggered_at = timezone.now()
+        schedule.save()
+
+        return Response({
+            'success': True,
+            'data': {
+                'job_id': job.id,
+                'message': f'Triggered job for schedule: {schedule.name}'
+            }
+        })
+
+    def _execute_job(self, job_id):
+        from django import db
+        db.connections.close_all()
+
+        try:
+            job = CollectJob.objects.get(id=job_id)
+            job.start()
+
+            self._execute_collect(job)
+
+            job.complete(success=True, message='执行完成')
+        except Exception as e:
+            logger.exception(f"Job {job_id} failed: {e}")
+            try:
+                job = CollectJob.objects.get(id=job_id)
+                job.complete(success=False, message=str(e))
+            except:
+                pass
+
+    def _execute_collect(self, job):
+        from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
+
+        factory = CompoundServiceFactory()
+        data_type = job.data_type
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        params = job.config.get('params', {})
+        start_date = params.get('start_date')
+        end_date = params.get('end_date')
+
+        if start_date:
+            start_date = parse_period_to_date(start_date)
+        if end_date:
+            end_date = parse_period_to_date(end_date)
+
+        logger.info(f"[Job {job.id}] Triggered execution: data_type={data_type}, symbols={symbols}")
+
+        if data_type == 'trade_days':
+            service = factory.create_calendar_service()
+            service.collect(start_date, end_date)
+        elif data_type == 'stock_info':
+            service = factory.create_stock_info_service()
+            service.collect(symbols)
+        elif data_type == 'quote':
+            service = factory.create_quote_service()
+            service.collect(symbols)
+        elif data_type == 'historical_quote':
+            service = factory.create_quote_service()
+            service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
+            service = factory.create_statement_service()
+            report_types = params.get('report_types', [])
+            if data_type == 'balance_sheet' or 'balance_sheet' in report_types:
+                service.collect_balance_sheet(symbols, start_date)
+            if data_type == 'income' or 'income' in report_types:
+                service.collect_income(symbols, start_date)
+            if data_type == 'cash_flow' or 'cash_flow' in report_types:
+                service.collect_cash_flow(symbols, start_date)
+            if data_type == 'dividend' or 'dividend' in report_types:
+                service.collect_dividend(symbols, start_date)
+        elif data_type == 'capital':
+            service = factory.create_capital_service()
+            service.collect(symbols, start_date)
+        elif data_type == 'main_business':
+            service = factory.create_statement_service()
+            service.collect_main_business(symbols, start_date)
+        elif data_type == 'valuation':
+            from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
+            collect_job = ValuationCollectJob()
+            collect_job()
+        else:
+            logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")

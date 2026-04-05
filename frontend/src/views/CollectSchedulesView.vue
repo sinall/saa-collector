@@ -7,7 +7,7 @@
           <el-button type="primary" @click="$router.push('/collect-schedules/new')">新建</el-button>
         </div>
       </template>
-      
+
       <el-table :data="schedules" v-loading="loading">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="计划名称" min-width="150" />
@@ -56,59 +56,28 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
 import { useDataTypes } from '@/composables/useDataTypes'
+import {
+  fetchCollectSchedules,
+  updateCollectSchedule,
+  deleteCollectSchedule,
+  triggerCollectSchedule
+} from '@/utils/api'
 
 const { getLabel, loadDataTypes } = useDataTypes()
 
 const schedules = ref<any[]>([])
 const loading = ref(false)
 
-const mockSchedules = [
-  {
-    id: 1,
-    name: '每日行情采集',
-    data_type: 'historical_quote',
-    data_type_display: '历史行情',
-    symbols: [],
-    params: { date_start: 'today', date_end: 'today' },
-    cron_expression: '0 9 * * 1-5',
-    status: 'ENABLED',
-    last_triggered_at: '2026-03-17 09:00:00',
-    next_trigger_at: '2026-03-18 09:00:00'
-  },
-  {
-    id: 2,
-    name: '每周财务报表采集',
-    data_type: 'balance_sheet',
-    data_type_display: '资产负债表',
-    symbols: ['000001', '000002', '600000'],
-    params: {},
-    cron_expression: '0 10 * * 1',
-    status: 'ENABLED',
-    last_triggered_at: '2026-03-16 10:00:00',
-    next_trigger_at: '2026-03-23 10:00:00'
-  },
-  {
-    id: 3,
-    name: '每日估值数据',
-    data_type: 'valuation',
-    data_type_display: '估值数据',
-    symbols: [],
-    params: {},
-    cron_expression: '0 18 * * 1-5',
-    status: 'DISABLED',
-    last_triggered_at: null,
-    next_trigger_at: null
-  }
-]
-
 const fetchSchedules = async () => {
   loading.value = true
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
-    schedules.value = mockSchedules.map(s => ({
-      ...s,
-      data_type_display: getLabel(s.data_type)
-    }))
+    const response = await fetchCollectSchedules()
+    if (response.success && response.data) {
+      schedules.value = response.data.map(s => ({
+        ...s,
+        data_type_display: getLabel(s.data_type)
+      }))
+    }
   } finally {
     loading.value = false
   }
@@ -117,32 +86,41 @@ const fetchSchedules = async () => {
 const toggleStatus = async (row: any) => {
   const newStatus = row.status === 'ENABLED' ? 'DISABLED' : 'ENABLED'
   const action = newStatus === 'ENABLED' ? '启用' : '禁用'
-  
+
   try {
     await ElMessageBox.confirm(`确定要${action}该采集日程吗？`, '提示', { type: 'warning' })
+    await updateCollectSchedule(row.id, { status: newStatus })
     row.status = newStatus
     ElMessage.success(`${action}成功`)
-  } catch {
-    // cancelled
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Failed to toggle status:', error)
+    }
   }
 }
 
 const triggerNow = async (row: any) => {
   try {
     await ElMessageBox.confirm('确定要立即执行该采集日程吗？', '提示', { type: 'info' })
-    ElMessage.success(`已触发执行: ${row.name}`)
-  } catch {
-    // cancelled
+    const response = await triggerCollectSchedule(row.id)
+    ElMessage.success(response.data?.message || `已触发执行: ${row.name}`)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Failed to trigger schedule:', error)
+    }
   }
 }
 
 const deleteSchedule = async (row: any) => {
   try {
     await ElMessageBox.confirm('确定要删除该采集日程吗？', '提示', { type: 'warning' })
+    await deleteCollectSchedule(row.id)
     schedules.value = schedules.value.filter(s => s.id !== row.id)
     ElMessage.success('删除成功')
-  } catch {
-    // cancelled
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete schedule:', error)
+    }
   }
 }
 
