@@ -687,8 +687,8 @@ function generateMockStocks(keyword?: string): { results: Stock[], pagination: {
   let filtered = allStocks
   if (keyword) {
     const lowerKeyword = keyword.toLowerCase()
-    filtered = allStocks.filter(s => 
-      s.symbol.toLowerCase().includes(lowerKeyword) || 
+    filtered = allStocks.filter(s =>
+      s.symbol.toLowerCase().includes(lowerKeyword) ||
       s.name.toLowerCase().includes(lowerKeyword)
     )
   }
@@ -750,28 +750,19 @@ export interface CollectPlan {
 }
 
 export interface CollectSchedule {
-  id: number
-  name: string
-  data_type: string
-  data_type_display: string
-  cron_expression: string
-  symbols: string[]
-  params: {
-    date_start: string
-    date_end: string
-  }
-  enabled: boolean
-  created_at: string
-  updated_at: string
-  plans: {
     id: number
     name: string
-    status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+    data_type: string
+    data_type_display: string
+    cron_expression: string
+    symbols: string[]
+    params: Record<string, any>
+    status: 'ENABLED' | 'DISABLED'
     status_display: string
-    total_jobs: number
-    success_jobs: number
+    last_triggered_at?: string
+    next_trigger_at?: string
     created_at: string
-  }[]
+    updated_at: string
 }
 
 function generateMockCollectSchedules(): CollectSchedule[] {
@@ -818,10 +809,12 @@ function generateMockCollectSchedules(): CollectSchedule[] {
         date_start: '2009-01-01',
         date_end: date.toISOString().split('T')[0] ?? '',
       },
-      enabled: Math.random() > 0.5,
+      status: Math.random() > 0.5 ? 'ENABLED' : 'DISABLED',
+      status_display: Math.random() > 0.5 ? '已启用' : '已禁用',
+      last_triggered_at: date.toISOString(),
+      next_trigger_at: new Date().toISOString(),
       created_at: date.toISOString(),
       updated_at: new Date().toISOString(),
-      plans,
     })
   }
 
@@ -925,6 +918,13 @@ export const createCollectPlan = async (params: {
   name: string
   source_report?: number
   execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
+  jobs?: Array<{
+    data_type: string
+    symbols?: string[]
+    start_date?: string
+    end_date?: string
+    report_types?: string[]
+  }>
 }): Promise<ApiResponse<CollectPlan>> => {
   const response = await api.post('/collect-plans/', params)
   return response.data
@@ -1819,8 +1819,38 @@ export const fetchStockDataMock = async (
     data: {
       results,
       total: results.length,
-    }
+    },
   }
+}
+
+export const fetchCollectSchedules = async (): Promise<ApiResponse<CollectSchedule[]>> => {
+  const response = await api.get('/collect-schedules/')
+  return response.data
+}
+
+export const fetchCollectSchedule = async (id: number): Promise<ApiResponse<CollectSchedule>> => {
+  const response = await api.get(`/collect-schedules/${id}/`)
+  return response.data
+}
+
+export const createCollectSchedule = async (data: Partial<CollectSchedule>): Promise<ApiResponse<CollectSchedule>> => {
+  const response = await api.post('/collect-schedules/', data)
+  return response.data
+}
+
+export const updateCollectSchedule = async (id: number, data: Partial<CollectSchedule>): Promise<ApiResponse<CollectSchedule>> => {
+  const response = await api.put(`/collect-schedules/${id}/`, data)
+  return response.data
+}
+
+export const deleteCollectSchedule = async (id: number): Promise<ApiResponse<void>> => {
+  const response = await api.delete(`/collect-schedules/${id}/`)
+  return response.data
+}
+
+export const triggerCollectSchedule = async (id: number): Promise<ApiResponse<{ job_id: number; message: string }>> => {
+  const response = await api.post(`/collect-schedules/${id}/trigger/`)
+  return response.data
 }
 
 export default api

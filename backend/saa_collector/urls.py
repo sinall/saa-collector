@@ -23,6 +23,10 @@ urlpatterns = [
     path('collect-plans/<int:pk>/', views.CollectPlanDetailView.as_view(), name='collect-plan-detail'),
     path('collect-plans/<int:pk>/execute/', views.CollectPlanExecuteView.as_view(), name='collect-plan-execute'),
 
+    path('collect-schedules/', views.CollectScheduleListView.as_view(), name='collect-schedule-list'),
+    path('collect-schedules/<int:pk>/', views.CollectScheduleDetailView.as_view(), name='collect-schedule-detail'),
+    path('collect-schedules/<int:pk>/trigger/', views.CollectScheduleTriggerView.as_view(), name='collect-schedule-trigger'),
+
     path('collect/stock-info/', views.CollectStockInfoView.as_view(), name='collect-stock-info'),
     path('collect/quotes/', views.CollectQuotesView.as_view(), name='collect-quotes'),
     path('collect/historical-quotes/', views.CollectHistoricalQuotesView.as_view(), name='collect-historical-quotes'),
@@ -36,7 +40,7 @@ urlpatterns = [
 
     path('stocks/', views.StockListView.as_view(), name='stock-list'),
     path('stocks/<str:symbol>/', views.StockDetailView.as_view(), name='stock-detail'),
-    
+
     path('display-field-config/', views.DisplayFieldConfigView.as_view(), name='display-field-config'),
     path('stock-data/<str:symbol>/<str:table_name>/', views.StockDataView.as_view(), name='stock-data'),
     path('type-browse-data/<str:table_name>/', views.TypeBrowseDataView.as_view(), name='type-browse-data'),

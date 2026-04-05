@@ -15,7 +15,7 @@
           <el-button type="primary" @click="showInstantCollectDialog">即时采集</el-button>
         </div>
       </template>
-      
+
       <el-table :data="filteredPlans" v-loading="loading">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="计划名称" min-width="180" />
@@ -129,7 +129,8 @@ import { More } from '@element-plus/icons-vue'
 import {
   fetchCollectPlans,
   executeCollectPlan,
-  deleteCollectPlan
+  deleteCollectPlan,
+  createCollectPlan
 } from '@/utils/api'
 import type { CollectPlan } from '@/utils/api'
 import { useDataTypes } from '@/composables/useDataTypes'
@@ -300,22 +301,31 @@ const createInstantPlan = async () => {
   try {
     const dataTypeName = getLabel(instantForm.value.data_type)
     const name = instantForm.value.name || `即时采集-${dataTypeName}-${new Date().toISOString().split('T')[0]}`
-    
-    console.log('Create instant plan:', {
+
+    const params: any = {
       name,
-      source: 'MANUAL',
+      execution_mode: 'PARALLEL',
       jobs: [{
         data_type: instantForm.value.data_type,
         symbols: instantForm.value.symbols,
-        params: {
-          start_date: instantForm.value.dateRange[0]?.toISOString().split('T')[0],
-          end_date: instantForm.value.dateRange[1]?.toISOString().split('T')[0]
-        }
       }]
-    })
-    
-    ElMessage.info('即时采集功能需要后端支持，请使用采集页面进行即时采集')
-    instantCollectVisible.value = false
+    }
+
+    if (instantForm.value.dateRange && instantForm.value.dateRange.length === 2) {
+      params.jobs[0].start_date = instantForm.value.dateRange[0]?.toISOString().split('T')[0]
+      params.jobs[0].end_date = instantForm.value.dateRange[1]?.toISOString().split('T')[0]
+    }
+
+    const response = await createCollectPlan(params)
+    if (response.success) {
+      ElMessage.success('即时采集计划创建成功')
+      instantCollectVisible.value = false
+      fetchPlans()
+    } else {
+      ElMessage.error(response.error || '创建失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.error || '创建失败')
   } finally {
     creating.value = false
   }
