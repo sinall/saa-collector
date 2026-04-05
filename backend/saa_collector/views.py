@@ -64,7 +64,7 @@ def parse_period_to_date(period_str):
 def calculate_expected_periods(earliest_date, latest_date, frequency):
     if not earliest_date or not latest_date or not frequency:
         return 0
-    
+
     if frequency == 'daily':
         trading_days_per_year = 250
         days = (latest_date - earliest_date).days
@@ -93,13 +93,13 @@ class DataStatusView(APIView):
 
     def get(self, request):
         from .constants import DATA_TYPE_CONFIG
-        
+
         data_types = [
             (key, config['label'], config['table'])
             for key, config in DATA_TYPE_CONFIG.items()
             if config.get('show_completeness', True)
         ]
-        
+
         data_types.sort(key=lambda x: DATA_TYPE_CONFIG[x[0]].get('order', 99))
 
         results = []
@@ -112,7 +112,7 @@ class DataStatusView(APIView):
                     date_column = self._get_date_column(table_name)
                     frequency = DATA_TYPE_FREQUENCY.get(data_type)
                     completeness = None
-                    
+
                     if date_column:
                         cursor.execute(
                             f"SELECT MIN({date_column}), MAX({date_column}) FROM {table_name} WHERE {date_column} >= %s",
@@ -121,7 +121,7 @@ class DataStatusView(APIView):
                         row = cursor.fetchone()
                         earliest_date = row[0]
                         latest_date = row[1]
-                        
+
                         if count == 0:
                             completeness = 0.0
                         elif frequency and earliest_date and latest_date:
@@ -1266,11 +1266,14 @@ class DataIntegrityReportListView(APIView):
         if not table_name:
             return {}
 
+        from .constants import DATA_TYPE_CONFIG
+        stock_column = DATA_TYPE_CONFIG.get(data_type, {}).get('stock_column', 'symbol')
+
         result = {}
 
         for i in range(0, len(symbols), self.BATCH_SIZE):
             batch = symbols[i:i + self.BATCH_SIZE]
-            batch_result = self._query_periods_batch(batch, table_name, start_date, end_date, frequency)
+            batch_result = self._query_periods_batch(batch, table_name, start_date, end_date, frequency, stock_column)
 
             for symbol, periods in batch_result.items():
                 if symbol not in result:
@@ -1279,7 +1282,7 @@ class DataIntegrityReportListView(APIView):
 
         return result
 
-    def _query_periods_batch(self, symbols, table_name, start_date, end_date, frequency):
+    def _query_periods_batch(self, symbols, table_name, start_date, end_date, frequency, stock_column='symbol'):
         placeholders = ','.join(['%s'] * len(symbols))
 
         if frequency == 'yearly':
@@ -1295,9 +1298,9 @@ class DataIntegrityReportListView(APIView):
 
         with connection.cursor() as cursor:
             cursor.execute(f"""
-                SELECT DISTINCT symbol, {select_expr} as period
+                SELECT DISTINCT {stock_column}, {select_expr} as period
                 FROM {table_name}
-                WHERE symbol IN ({placeholders})
+                WHERE {stock_column} IN ({placeholders})
                   AND date BETWEEN %s AND %s
             """, list(symbols) + [start_date, end_date])
 
@@ -1603,7 +1606,7 @@ class DataIntegrityReportHeatmapView(APIView):
 
     def get(self, request, pk):
         from saa_collector.services.completeness_service import CompletenessService
-        
+
         report = get_object_or_404(DataIntegrityReport, pk=pk)
 
         if report.status != 'COMPLETED':
@@ -1629,9 +1632,9 @@ class DataIntegrityReportHeatmapView(APIView):
             stock_codes=stock_codes,
             date_end=date_end
         )
-        
+
         periods = service.generate_periods(report.frequency, date_start, date_end)
-        
+
         if not periods:
             return Response({
                 'success': True,
@@ -1646,7 +1649,7 @@ class DataIntegrityReportHeatmapView(APIView):
 
         data_types = report.data_types or []
         result = service.calculate_all(data_types, periods, report.frequency)
-        
+
         return Response({'success': True, 'data': result})
 
     def _calculate_trade_days_completeness(self, periods, start_date, end_date, frequency=None):
@@ -1670,19 +1673,19 @@ class DataIntegrityReportHeatmapView(APIView):
         if frequency is None:
             frequency = self.frequency if hasattr(self, 'frequency') else 'monthly'
         date_format = self._get_date_format(frequency)
-        
+
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT DATE_FORMAT(date, %s) as period
                 FROM saa_trade_days
                 WHERE date BETWEEN %s AND %s
             """, [date_format, start_date, end_date])
-            
+
             periods = set()
             for row in cursor.fetchall():
                 period = self._normalize_period(str(row[0]), frequency)
                 periods.add(period)
-            
+
             return periods
 
     def _calculate_quote_completeness(self, calculator, periods, date_end):
@@ -1690,12 +1693,12 @@ class DataIntegrityReportHeatmapView(APIView):
         latest_date = self._get_latest_trade_date(date_end)
         if not latest_date:
             return [-1] * len(periods)
-        
+
         frequency = self.frequency if hasattr(self, 'frequency') else 'monthly'
         latest_period = calculator._convert_date_to_period(latest_date, frequency)
-        
+
         total_stocks = calculator._get_total_stocks()
-        
+
         with connection.cursor() as cursor:
             if calculator.stock_codes:
                 cursor.execute("""
@@ -1704,22 +1707,22 @@ class DataIntegrityReportHeatmapView(APIView):
                 """, [calculator.stock_codes])
             else:
                 cursor.execute("SELECT COUNT(DISTINCT symbol) FROM saa_latest_prices")
-            
+
             data_count = cursor.fetchone()[0] or 0
-        
+
         if total_stocks > 0:
             completeness = round(data_count / total_stocks, 2)
             completeness = min(1.0, max(0.0, completeness))
         else:
             completeness = -1
-        
+
         result = []
         for period in periods:
             if period == latest_period:
                 result.append(completeness)
             else:
                 result.append(-1)
-        
+
         return result
 
     def _get_latest_trade_date(self, max_date):
@@ -1765,7 +1768,7 @@ class DataIntegrityReportHeatmapView(APIView):
     def _normalize_period(self, period_str, frequency):
         if not period_str:
             return period_str
-        
+
         if frequency == 'quarterly':
             try:
                 parts = period_str.split('-')
@@ -1776,7 +1779,7 @@ class DataIntegrityReportHeatmapView(APIView):
                     return f"{year}-Q{quarter}"
             except (ValueError, IndexError):
                 pass
-        
+
         return period_str
 
     def _generate_periods(self, start_date, end_date, frequency):
@@ -2512,284 +2515,24 @@ class DataCompletenessHeatmapView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from .services.completeness_service import CompletenessService
         from .constants import DATA_TYPE_CONFIG
-        
+
         frequency = request.query_params.get('frequency', 'monthly')
-        
-        periods = self._generate_periods(frequency)
+
+        service = CompletenessService()
+        periods = service.generate_periods(frequency)
+
         if not periods:
             return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
 
-        data_types = [
-            {
-                'key': key,
-                'label': config['label'],
-                'frequency': config.get('data_frequency')
-            }
-            for key, config in DATA_TYPE_CONFIG.items()
-        ]
-        matrix = {}
-
-        with connection.cursor() as cursor:
-            for key, config in DATA_TYPE_CONFIG.items():
-                table_name = config['table']
-                date_column = config['date_column']
-                data_frequency = config.get('data_frequency')
-                stock_level = config.get('stock_level', True)
-                stock_column = config.get('stock_column', 'symbol')
-                
-                if date_column is None:
-                    matrix[key] = [1.0] * len(periods)
-                    continue
-                
-                if data_frequency is None:
-                    matrix[key] = self._calculate_point_completeness(
-                        cursor, table_name, date_column, len(periods), stock_level, stock_column
-                    )
-                    continue
-                
-                try:
-                    matrix[key] = self._calculate_completeness(
-                        cursor, table_name, date_column, periods, frequency, data_frequency
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to calculate completeness for {key}: {e}")
-                    matrix[key] = [0.0] * len(periods)
-
-        start_date = periods[0] if periods else ''
-        end_date = periods[-1] if periods else ''
+        data_types = [key for key in DATA_TYPE_CONFIG.keys()]
+        result = service.calculate_all(data_types, periods, frequency)
 
         return Response({
             'success': True,
-            'data': {
-                'date_range': {'start': start_date, 'end': end_date},
-                'frequency': frequency,
-                'periods': periods,
-                'data_types': data_types,
-                'matrix': matrix,
-            }
+            'data': result
         })
-
-    def _generate_periods(self, frequency):
-        periods = []
-        today = date.today()
-        
-        if frequency == 'daily':
-            start = today - timedelta(days=365)
-            current = start
-            while current <= today:
-                periods.append(current.strftime('%Y-%m-%d'))
-                current += timedelta(days=1)
-        elif frequency == 'monthly':
-            year, month = EARLIEST_YEAR, 1
-            while date(year, month, 1) <= today:
-                periods.append(f"{year}-{month:02d}")
-                month += 1
-                if month > 12:
-                    month = 1
-                    year += 1
-        elif frequency == 'quarterly':
-            year, quarter = EARLIEST_YEAR, 1
-            while date(year, quarter * 3, 1) <= today:
-                periods.append(f"{year}-Q{quarter}")
-                quarter += 1
-                if quarter > 4:
-                    quarter = 1
-                    year += 1
-        elif frequency == 'yearly':
-            year = EARLIEST_YEAR
-            while year <= today.year:
-                periods.append(str(year))
-                year += 1
-        else:
-            return None
-        
-        return periods
-
-    def _calculate_point_completeness(self, cursor, table_name, date_column, num_periods, stock_level, stock_column='symbol'):
-        if not stock_level:
-            return [1.0] * num_periods
-        
-        try:
-            cursor.execute(f"SELECT COUNT(DISTINCT {stock_column}) FROM {table_name}")
-            data_count = cursor.fetchone()[0] or 0
-            
-            cursor.execute("SELECT COUNT(*) FROM saa_stocks")
-            total_stocks = cursor.fetchone()[0] or 1
-            
-            ratio = round(data_count / total_stocks, 2) if total_stocks > 0 else 0.0
-            return [ratio] * num_periods
-        except Exception as e:
-            logger.warning(f"Failed to calculate point completeness for {table_name}: {e}")
-            return [0.0] * num_periods
-
-    def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency):
-        if not periods:
-            return []
-        
-        need_aggregation = (
-            (data_frequency == 'yearly' and frequency in ('quarterly', 'monthly')) or
-            (data_frequency == 'quarterly' and frequency == 'monthly')
-        )
-        
-        if need_aggregation:
-            return self._calculate_completeness_aggregated(cursor, table_name, date_column, periods, frequency, data_frequency)
-        
-        result = []
-        for period in periods:
-            if not self._is_period_applicable(period, frequency, data_frequency):
-                result.append(-1)
-            else:
-                result.append(None)
-        
-        applicable_indices = [i for i, v in enumerate(result) if v is None]
-        if not applicable_indices:
-            return result
-        
-        applicable_periods = [periods[i] for i in applicable_indices]
-        start_date, end_date = self._get_period_range(applicable_periods[0], frequency)
-        _, end_date = self._get_period_range(applicable_periods[-1], frequency)
-        
-        date_format = self._get_date_format(frequency)
-        
-        cursor.execute(f"""
-            SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(*) as cnt
-            FROM {table_name}
-            WHERE {date_column} >= %s AND {date_column} <= %s
-            GROUP BY DATE_FORMAT({date_column}, %s)
-        """, [date_format, start_date, end_date, date_format])
-        
-        period_counts = {self._get_period_key(row[0], frequency): row[1] for row in cursor.fetchall()}
-        
-        max_count = max(period_counts.values()) if period_counts else 1
-        
-        for i in applicable_indices:
-            period = periods[i]
-            period_key = self._get_period_key(period, frequency)
-            count = period_counts.get(period_key, 0)
-            result[i] = round(count / max_count, 2)
-        
-        return result
-
-    def _calculate_completeness_aggregated(self, cursor, table_name, date_column, periods, frequency, data_frequency):
-        aggregate_keys = {}
-        for i, period in enumerate(periods):
-            agg_key = self._get_aggregate_key(period, data_frequency)
-            if agg_key not in aggregate_keys:
-                aggregate_keys[agg_key] = []
-            aggregate_keys[agg_key].append(i)
-        
-        start_date, end_date = self._get_period_range(periods[0], frequency)
-        _, end_date = self._get_period_range(periods[-1], frequency)
-        
-        if data_frequency == 'yearly':
-            cursor.execute(f"""
-                SELECT YEAR({date_column}) as year, COUNT(*) as cnt
-                FROM {table_name}
-                WHERE {date_column} >= %s AND {date_column} <= %s
-                GROUP BY YEAR({date_column})
-            """, [start_date, end_date])
-            raw_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
-        else:
-            cursor.execute(f"""
-                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(*) as cnt
-                FROM {table_name}
-                WHERE {date_column} >= %s AND {date_column} <= %s
-                GROUP BY DATE_FORMAT({date_column}, '%Y-%m')
-            """, [start_date, end_date])
-            raw_counts = {}
-            for row in cursor.fetchall():
-                month_str = row[0]
-                year = month_str[:4]
-                month = int(month_str[5:7])
-                quarter = (month - 1) // 3 + 1
-                quarter_key = f"{year}-Q{quarter}"
-                if quarter_key not in raw_counts:
-                    raw_counts[quarter_key] = 0
-                raw_counts[quarter_key] += row[1]
-        
-        max_count = max(raw_counts.values()) if raw_counts else 1
-        
-        result = [0.0] * len(periods)
-        for agg_key, indices in aggregate_keys.items():
-            count = raw_counts.get(agg_key, 0)
-            value = round(count / max_count, 2)
-            for i in indices:
-                result[i] = value
-        
-        return result
-
-    def _get_aggregate_key(self, period, data_frequency):
-        if data_frequency == 'yearly':
-            return period[:4]
-        elif data_frequency == 'quarterly':
-            year = period[:4]
-            month = int(period[5:7])
-            quarter = (month - 1) // 3 + 1
-            return f"{year}-Q{quarter}"
-        return period
-
-    def _get_period_key(self, period, frequency):
-        if frequency == 'quarterly':
-            if '-Q' in period:
-                year = period[:4]
-                quarter = int(period[6])
-                end_month = quarter * 3
-                return f"{year}-{end_month:02d}"
-            return period
-        return period
-
-    def _is_period_applicable(self, period, frequency, data_frequency):
-        if data_frequency is None or data_frequency == 'daily':
-            return True
-        
-        if data_frequency == 'quarterly':
-            if frequency == 'daily':
-                return False
-            if frequency == 'monthly':
-                month = int(period[5:7])
-                return month in (3, 6, 9, 12)
-            return True
-        
-        if data_frequency == 'yearly':
-            if frequency in ('daily', 'monthly'):
-                return False
-            if frequency == 'quarterly':
-                quarter = int(period[6])
-                return quarter == 4
-            return True
-        
-        return True
-
-    def _get_date_format(self, frequency):
-        formats = {
-            'daily': '%Y-%m-%d',
-            'monthly': '%Y-%m',
-            'quarterly': '%Y-%m',
-            'yearly': '%Y',
-        }
-        return formats.get(frequency, '%Y-%m')
-
-    def _get_period_range(self, period, frequency):
-        if frequency == 'daily':
-            return period, period
-        elif frequency == 'monthly':
-            year, month = int(period[:4]), int(period[5:7])
-            if month == 12:
-                end = date(year, 12, 31)
-            else:
-                end = date(year, month + 1, 1) - timedelta(days=1)
-            return f"{year}-{month:02d}-01", end.strftime('%Y-%m-%d')
-        elif frequency == 'quarterly':
-            year, quarter = int(period[:4]), int(period[6])
-            start_month = (quarter - 1) * 3 + 1
-            end_month = quarter * 3
-            end_day = 31 if end_month in [3, 12] else 30 if end_month in [4, 6, 9, 11] else 28
-            return f"{year}-{start_month:02d}-01", f"{year}-{end_month:02d}-{end_day}"
-        elif frequency == 'yearly':
-            year = int(period)
-            return f"{year}-01-01", f"{year}-12-31"
-        return period, period
 
 
 class DisplayFieldConfigView(APIView):
@@ -2845,7 +2588,7 @@ class DisplayFieldConfigView(APIView):
 
     def get(self, request):
         table_name = request.query_params.get('table')
-        
+
         with connection.cursor() as cursor:
             if table_name:
                 cursor.execute(
@@ -2882,10 +2625,10 @@ class DisplayFieldConfigView(APIView):
     def put(self, request):
         table_name = request.data.get('table_name')
         config = request.data.get('config')
-        
+
         if not table_name or not config:
             return Response({'success': False, 'error': 'Missing table_name or config'}, status=400)
-        
+
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE display_field_config SET config = %s WHERE table_name = %s",
@@ -2893,7 +2636,7 @@ class DisplayFieldConfigView(APIView):
             )
             if cursor.rowcount == 0:
                 return Response({'success': False, 'error': 'Table not found'}, status=404)
-        
+
         return Response({'success': True})
 
 
@@ -2988,14 +2731,14 @@ class StockDataView(APIView):
 class DataTypesConfigView(APIView):
     """
     返回所有数据类型配置
-    
+
     这是系统的单一数据源，前端应该从此API获取所有数据类型信息
     """
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         from .constants import DATA_TYPE_CONFIG, DATA_TYPE_GROUPS
-        
+
         data_types = []
         for key, config in DATA_TYPE_CONFIG.items():
             data_types.append({
@@ -3011,9 +2754,9 @@ class DataTypesConfigView(APIView):
                 'supports_integrity_check': config.get('supports_integrity_check', True),
                 'order': config.get('order', 99),
             })
-        
+
         data_types.sort(key=lambda x: x['order'])
-        
+
         return Response({
             'data_types': data_types,
             'groups': sorted(DATA_TYPE_GROUPS, key=lambda x: x['order']),

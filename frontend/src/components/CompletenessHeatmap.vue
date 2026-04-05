@@ -367,7 +367,7 @@ const renderChart = () => {
       top: 30,
       bottom: 50,
       left: 120,
-      right: 70,
+      right: 50,
     },
     xAxis: {
       type: 'category',
@@ -453,7 +453,7 @@ const renderChart = () => {
           const centerY = coord0[1] - singleHeight * yIndex
 
           const chartWidth = chartRef.value?.clientWidth ?? 600
-          const textX = chartWidth - 55
+          const textX = chartWidth - 38
 
           return {
             type: 'group',
@@ -461,9 +461,9 @@ const renderChart = () => {
               {
                 type: 'rect',
                 shape: {
-                  x: textX - 2,
+                  x: textX - 1,
                   y: centerY - singleHeight * 0.35,
-                  width: 44,
+                  width: 36,
                   height: singleHeight * 0.7
                 },
                 style: {
@@ -474,12 +474,12 @@ const renderChart = () => {
               {
                 type: 'text',
                 style: {
-                  x: textX + 20,
+                  x: textX + 34,
                   y: centerY,
                   text: `${Math.round(completeness * 100)}%`,
                   fill: getCompletenessColor(completeness),
                   font: 'bold 12px sans-serif',
-                  textAlign: 'center',
+                  textAlign: 'right',
                   textVerticalAlign: 'middle'
                 }
               }
@@ -515,7 +515,7 @@ const updateSliderAlignment = () => {
   const displayPeriods = allPeriods.value.slice(startIdx, endIdx + 1)
   if (displayPeriods.length === 0) return
 
-  const gridWidth = chartRef.value.clientWidth - 120 - 70
+  const gridWidth = chartRef.value.clientWidth - 120 - 50
   const cellWidth = gridWidth / displayPeriods.length
   const halfCell = cellWidth / 2
   const sliderContainer = document.querySelector('.slider-container') as HTMLElement | null
@@ -577,7 +577,7 @@ watch(() => props.viewFrequency, (newFreq) => {
 }
 
 .slider-container {
-  padding: 5px calc(70px + var(--half-cell, 0px)) 10px calc(120px + var(--half-cell, 0px));
+  padding: 5px calc(50px + var(--half-cell, 0px)) 10px calc(120px + var(--half-cell, 0px));
   margin-top: 0;
 }
 

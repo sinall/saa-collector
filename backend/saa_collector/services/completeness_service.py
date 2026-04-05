@@ -14,7 +14,7 @@ class CompletenessService:
     """完整度计算服务"""
 
     DATA_TYPE_CONFIG = [
-        (key, config['label'], config['table'], config['date_column'], config['data_frequency'])
+        (key, config['label'], config['table'], config['date_column'], config['data_frequency'], config.get('stock_column', 'symbol'), config.get('stock_level', True))
         for key, config in DATA_TYPE_CONFIG.items()
     ]
 
@@ -22,6 +22,7 @@ class CompletenessService:
         self.stock_codes = stock_codes
         self.date_end = date_end or date.today()
         self._stock_listing_times = None
+        self._non_stock_counts_cache = {}
 
     def _load_stock_listing_times(self, cursor):
         if self._stock_listing_times is not None:
@@ -91,16 +92,16 @@ class CompletenessService:
             result[period] = max(count, 1)
 
         return result
-    
+
     def calculate_all(self, data_types, periods, frequency):
         """
         批量计算多个数据类型的完整度
-        
+
         Args:
             data_types: 数据类型列表
             periods: 周期列表
             frequency: 显示频率
-            
+
         Returns:
             {
                 'date_range': {'start': str, 'end': str},
@@ -111,44 +112,48 @@ class CompletenessService:
             }
         """
         data_type_configs = self._get_data_type_configs(data_types)
-        
+
         matrix = {}
         with connection.cursor() as cursor:
-            for key, label, table_name, date_column, data_frequency in data_type_configs:
+            for key, label, table_name, date_column, data_frequency, stock_column, stock_level in data_type_configs:
                 if date_column is None:
                     matrix[key] = [1.0] * len(periods)
                     continue
-                
-                if data_frequency is None:
-                    matrix[key] = self._calculate_point_completeness(cursor, table_name, date_column, periods, frequency)
+
+                if not stock_level:
+                    matrix[key] = self._calculate_non_stock_completeness(cursor, table_name, date_column, periods, frequency)
                     continue
-                
+
+                if data_frequency is None:
+                    matrix[key] = self._calculate_point_completeness(cursor, table_name, date_column, periods, frequency, stock_column)
+                    continue
+
                 try:
                     matrix[key] = self._calculate_completeness(
-                        cursor, table_name, date_column, periods, frequency, data_frequency
+                        cursor, table_name, date_column, periods, frequency, data_frequency, stock_column
                     )
                 except Exception as e:
                     matrix[key] = [0.0] * len(periods)
-        
+
         start_date = periods[0] if periods else ''
         end_date = periods[-1] if periods else ''
-        
+
         return {
             'date_range': {'start': start_date, 'end': end_date},
             'frequency': frequency,
             'periods': periods,
             'data_types': [
                 {'key': key, 'label': label, 'frequency': data_freq}
-                for key, label, _, _, data_freq in data_type_configs
+                for key, label, _, _, data_freq, _, _ in data_type_configs
             ],
             'matrix': matrix,
         }
-    
+
     def generate_periods(self, frequency, start_date=None, end_date=None):
         """生成周期列表"""
         periods = []
         today = self.date_end
-        
+
         if frequency == 'daily':
             start = start_date or (today - timedelta(days=365))
             current = start
@@ -191,21 +196,74 @@ class CompletenessService:
                 year += 1
         else:
             return None
-        
+
         return periods
-    
+
     def _get_data_type_configs(self, data_types):
         """获取数据类型配置"""
-        config_dict = {key: (key, label, table, date_col, data_freq) 
-                       for key, label, table, date_col, data_freq in self.DATA_TYPE_CONFIG}
-        
+        config_dict = {key: (key, label, table, date_col, data_freq, stock_col, stock_level)
+                       for key, label, table, date_col, data_freq, stock_col, stock_level in self.DATA_TYPE_CONFIG}
+
         if data_types:
             return [config_dict[dt] for dt in data_types if dt in config_dict]
         return self.DATA_TYPE_CONFIG
-    
-    def _calculate_point_completeness(self, cursor, table_name, date_column, periods, frequency):
+
+    def _load_non_stock_counts_by_period(self, cursor, table_name, date_column, periods, frequency):
+        """一次性加载非股票级别数据的各周期计数"""
+        cache_key = f"{table_name}_{date_column}_{frequency}"
+        if cache_key in self._non_stock_counts_cache:
+            return self._non_stock_counts_cache[cache_key]
+
+        start_date, end_date = self._get_period_range(periods[0], frequency)
+        _, end_date = self._get_period_range(periods[-1], frequency)
+
+        date_format = self._get_date_format(frequency)
+
+        if frequency == 'yearly':
+            query = f"""
+                SELECT YEAR({date_column}) as period, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s
+                GROUP BY YEAR({date_column})
+            """
+            cursor.execute(query, [start_date, end_date])
+            result = {str(row[0]): row[1] for row in cursor.fetchall()}
+        elif frequency == 'quarterly':
+            query = f"""
+                SELECT CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column})) as period, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s
+                GROUP BY CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column}))
+            """
+            cursor.execute(query, [start_date, end_date])
+            result = {row[0]: row[1] for row in cursor.fetchall()}
+        else:
+            query = f"""
+                SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s
+                GROUP BY DATE_FORMAT({date_column}, %s)
+            """
+            cursor.execute(query, [date_format, start_date, end_date, date_format])
+            result = {row[0]: row[1] for row in cursor.fetchall()}
+
+        self._non_stock_counts_cache[cache_key] = result
+        return result
+
+    def _calculate_non_stock_completeness(self, cursor, table_name, date_column, periods, frequency):
+        """计算非股票级别数据的完整度（如行业信息、交易日）"""
+        counts_by_period = self._load_non_stock_counts_by_period(cursor, table_name, date_column, periods, frequency)
+
+        result = []
+        for period in periods:
+            count = counts_by_period.get(period, 0)
+            result.append(1.0 if count > 0 else 0.0)
+
+        return result
+
+    def _calculate_point_completeness(self, cursor, table_name, date_column, periods, frequency, stock_column='symbol'):
         """计算非周期性数据的完整度"""
-        cursor.execute(f"SELECT COUNT(DISTINCT symbol) FROM {table_name}")
+        cursor.execute(f"SELECT COUNT(DISTINCT {stock_column}) FROM {table_name}")
         actual_count = cursor.fetchone()[0] or 0
 
         expected_counts = self._get_expected_stock_counts(cursor, periods, frequency)
@@ -214,8 +272,8 @@ class CompletenessService:
 
         ratio = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
         return [ratio] * len(periods)
-    
-    def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency):
+
+    def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency, stock_column='symbol'):
         """计算完整度（支持聚合）"""
         if not periods:
             return []
@@ -226,7 +284,7 @@ class CompletenessService:
         )
 
         if need_aggregation:
-            return self._calculate_completeness_aggregated(cursor, table_name, date_column, periods, frequency, data_frequency)
+            return self._calculate_completeness_aggregated(cursor, table_name, date_column, periods, frequency, data_frequency, stock_column)
 
         expected_counts = self._get_expected_stock_counts(cursor, periods, frequency)
 
@@ -251,12 +309,12 @@ class CompletenessService:
         params = []
         if self.stock_codes:
             placeholders = ','.join(['%s'] * len(self.stock_codes))
-            stock_filter = f" AND symbol IN ({placeholders})"
+            stock_filter = f" AND {stock_column} IN ({placeholders})"
             params = self.stock_codes
 
         if data_frequency == 'yearly':
             query = f"""
-                SELECT YEAR({date_column}) as year, COUNT(DISTINCT symbol) as cnt
+                SELECT YEAR({date_column}) as year, COUNT(DISTINCT {stock_column}) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY YEAR({date_column})
@@ -266,7 +324,7 @@ class CompletenessService:
             period_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
         else:
             query = f"""
-                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(DISTINCT symbol) as cnt
+                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(DISTINCT {stock_column}) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY DATE_FORMAT({date_column}, '%Y-%m')
@@ -287,8 +345,8 @@ class CompletenessService:
                 result[i] = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
 
         return result
-    
-    def _calculate_completeness_aggregated(self, cursor, table_name, date_column, periods, frequency, data_frequency):
+
+    def _calculate_completeness_aggregated(self, cursor, table_name, date_column, periods, frequency, data_frequency, stock_column='symbol'):
         """聚合计算（季度数据在月度视图，或年度数据在季度/月度视图）"""
         expected_counts = self._get_expected_stock_counts(cursor, periods, frequency)
 
@@ -306,13 +364,13 @@ class CompletenessService:
         params = []
         if self.stock_codes:
             placeholders = ','.join(['%s'] * len(self.stock_codes))
-            stock_filter = f" AND symbol IN ({placeholders})"
+            stock_filter = f" AND {stock_column} IN ({placeholders})"
             params = self.stock_codes
 
-        
+
         if data_frequency == 'yearly':
             query = f"""
-                SELECT YEAR({date_column}) as year, COUNT(DISTINCT symbol) as cnt
+                SELECT YEAR({date_column}) as year, COUNT(DISTINCT {stock_column}) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY YEAR({date_column})
@@ -322,9 +380,9 @@ class CompletenessService:
             raw_counts = {str(row[0]): row[1] for row in cursor.fetchall()}
         elif data_frequency == 'quarterly':
             query = f"""
-                SELECT 
+                SELECT
                     CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column})) as quarter_key,
-                    COUNT(DISTINCT symbol) as cnt
+                    COUNT(DISTINCT {stock_column}) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column}))
@@ -334,7 +392,7 @@ class CompletenessService:
             raw_counts = {row[0]: row[1] for row in cursor.fetchall()}
         else:
             query = f"""
-                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(DISTINCT symbol) as cnt
+                SELECT DATE_FORMAT({date_column}, '%Y-%m') as month, COUNT(DISTINCT {stock_column}) as cnt
                 FROM {table_name}
                 WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
                 GROUP BY DATE_FORMAT({date_column}, '%Y-%m')
@@ -348,20 +406,19 @@ class CompletenessService:
             actual_count = raw_counts.get(agg_key, 0)
             for i in indices:
                 period = periods[i]
-                # 添加适用性检查
                 if not self._is_period_applicable(period, frequency, data_frequency):
-                    result[i] = -1  # 不适用
+                    result[i] = -1
                 else:
                     expected_count = expected_counts.get(period, 1)
                     result[i] = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
 
         return result
-    
+
     def _is_period_applicable(self, period, frequency, data_frequency):
         """判断 period 是否适用于该数据频率"""
         if data_frequency is None or data_frequency == 'daily':
             return True
-        
+
         if data_frequency == 'quarterly':
             if frequency == 'daily':
                 return False
@@ -369,17 +426,12 @@ class CompletenessService:
                 month = int(period[5:7])
                 return month in (3, 6, 9, 12)
             return True
-        
+
         if data_frequency == 'yearly':
-            if frequency in ('daily', 'monthly'):
-                return False
-            if frequency == 'quarterly':
-                quarter = int(period[6])
-                return quarter == 4
             return True
-        
+
         return True
-    
+
     def _get_aggregate_key(self, period, data_frequency):
         """获取聚合键"""
         if data_frequency == 'yearly':
@@ -390,7 +442,7 @@ class CompletenessService:
             quarter = (month - 1) // 3 + 1
             return f"{year}-Q{quarter}"
         return period
-    
+
     def _get_period_key(self, period, frequency):
         """获取周期键"""
         if frequency == 'quarterly':
@@ -401,7 +453,7 @@ class CompletenessService:
                 return f"{year}-{end_month:02d}"
             return period
         return period
-    
+
     def _get_date_format(self, frequency):
         """获取日期格式"""
         formats = {
@@ -411,7 +463,7 @@ class CompletenessService:
             'yearly': '%Y',
         }
         return formats.get(frequency, '%Y-%m')
-    
+
     def _get_period_range(self, period, frequency):
         """获取周期的日期范围"""
         if frequency == 'daily':
