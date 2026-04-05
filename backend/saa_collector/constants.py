@@ -107,7 +107,7 @@ DATA_TYPE_CONFIG = {
     'main_business': {
         'table': 'saa_raw_main_business',
         'date_column': 'date',
-        'data_frequency': 'yearly',
+        'data_frequency': 'quarterly',
         'stock_level': True,
         'label': '主营业务',
         'supports_integrity_check': True,
@@ -179,7 +179,7 @@ DATA_TYPE_CONFIG = {
     },
     'industries': {
         'table': 'saa_industries',
-        'date_column': 'start_date',
+        'date_column': None,
         'data_frequency': None,
         'stock_level': False,
         'label': '行业信息',
