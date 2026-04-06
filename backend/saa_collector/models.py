@@ -139,10 +139,16 @@ class CollectPlan(models.Model):
         ('SCHEDULE', '定时触发'),
     ]
 
+    TRIGGER_TYPE_CHOICES = [
+        ('AUTO', '自动触发'),
+        ('MANUAL', '手动触发'),
+    ]
+
     id = models.BigAutoField(primary_key=True)
     name = models.CharField('计划名称', max_length=200)
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
     source = models.CharField('来源', max_length=20, choices=SOURCE_CHOICES, default='MANUAL')
+    trigger_type = models.CharField('触发类型', max_length=20, choices=TRIGGER_TYPE_CHOICES, null=True, blank=True)
     source_report = models.ForeignKey(DataIntegrityReport, on_delete=models.SET_NULL, null=True, blank=True, related_name='plans')
     source_schedule_id = models.IntegerField('来源日程ID', null=True, blank=True)
     source_schedule_name = models.CharField('来源日程名称', max_length=200, null=True, blank=True)

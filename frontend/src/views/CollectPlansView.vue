@@ -34,7 +34,12 @@
               </el-link>
             </template>
             <template v-else-if="row.source === 'SCHEDULE'">
-              <span>{{ row.source_schedule_name }}</span>
+              <div>
+                <div>{{ row.source_schedule_name }}</div>
+                <el-tag v-if="row.trigger_type" size="small" style="margin-top: 4px">
+                  {{ row.trigger_type === 'MANUAL' ? '手动触发' : '自动触发' }}
+                </el-tag>
+              </div>
             </template>
             <template v-else>
               <span>-</span>
@@ -160,16 +165,12 @@ interface DisplayPlan {
   source_report_id: number | null
   source_schedule_id: number | null
   source_schedule_name: string | null
+  trigger_type?: 'AUTO' | 'MANUAL'
   execution_mode: string
   execution_mode_display: string
   total_jobs: number
   success_jobs: number
   created_at: string
-}
-
-const getPlanSource = (plan: CollectPlan): string => {
-  if (plan.source_report) return 'INTEGRITY'
-  return 'MANUAL'
 }
 
 const getSuccessJobs = (plan: CollectPlan): number => {
@@ -183,10 +184,11 @@ const displayPlans = computed<DisplayPlan[]>(() => {
     name: plan.name,
     status: plan.status,
     status_display: plan.status_display,
-    source: getPlanSource(plan),
+    source: plan.source,
     source_report_id: plan.source_report || null,
-    source_schedule_id: null,
-    source_schedule_name: null,
+    source_schedule_id: plan.source_schedule_id || null,
+    source_schedule_name: plan.source_schedule_name || null,
+    trigger_type: plan.trigger_type,
     execution_mode: plan.execution_mode || 'PARALLEL',
     execution_mode_display: plan.execution_mode_display,
     total_jobs: plan.jobs_count || (plan.jobs?.length || 0),

@@ -726,6 +726,8 @@ export interface CollectPlan {
   status_display: string
   source: 'MANUAL' | 'INTEGRITY' | 'SCHEDULE'
   source_display: string
+  trigger_type?: 'AUTO' | 'MANUAL'
+  trigger_type_display?: string
   source_report?: number
   source_report_name?: string
   source_schedule_id?: number

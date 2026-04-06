@@ -2870,6 +2870,7 @@ class CollectScheduleTriggerView(APIView):
         plan = CollectPlan.objects.create(
             name=f'{schedule.name} - {timezone.now().strftime("%Y-%m-%d %H:%M")}',
             source='SCHEDULE',
+            trigger_type='MANUAL',
             source_schedule_id=schedule.id,
             source_schedule_name=schedule.name,
             execution_mode='PARALLEL'
