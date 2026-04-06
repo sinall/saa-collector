@@ -179,11 +179,12 @@ class CollectPlanSerializer(serializers.ModelSerializer):
     source_display = serializers.CharField(source='get_source_display', read_only=True)
     source_schedule_id = serializers.IntegerField(source='source_schedule.id', read_only=True, allow_null=True)
     source_schedule_name = serializers.CharField(read_only=True)
+    trigger_type_display = serializers.CharField(source='get_trigger_type_display', read_only=True)
     class Meta:
         model = CollectPlan
         fields = [
             'id', 'name', 'status', 'status_display',
-            'source', 'source_display',
+            'source', 'source_display', 'trigger_type', 'trigger_type_display',
             'source_report', 'source_report_name',
             'source_schedule_id', 'source_schedule_name',
             'execution_mode', 'execution_mode_display',
