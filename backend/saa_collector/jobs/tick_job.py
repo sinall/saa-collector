@@ -10,4 +10,4 @@ class TickJob(BasicJob):
         self._logger = logging.getLogger()
 
     def __call__(self):
-        self._logger.debug("Tick!")
+        self._logger.info("Tick!")

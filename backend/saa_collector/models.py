@@ -133,10 +133,19 @@ class CollectPlan(models.Model):
         ('SEQUENTIAL', '顺序执行'),
     ]
 
+    SOURCE_CHOICES = [
+        ('MANUAL', '即时采集'),
+        ('INTEGRITY', '修复计划'),
+        ('SCHEDULE', '定时触发'),
+    ]
+
     id = models.BigAutoField(primary_key=True)
     name = models.CharField('计划名称', max_length=200)
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    source = models.CharField('来源', max_length=20, choices=SOURCE_CHOICES, default='MANUAL')
     source_report = models.ForeignKey(DataIntegrityReport, on_delete=models.SET_NULL, null=True, blank=True, related_name='plans')
+    source_schedule_id = models.IntegerField('来源日程ID', null=True, blank=True)
+    source_schedule_name = models.CharField('来源日程名称', max_length=200, null=True, blank=True)
     execution_mode = models.CharField('执行模式', max_length=20, choices=EXECUTION_MODE_CHOICES, default='PARALLEL')
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     started_at = models.DateTimeField('开始时间', null=True, blank=True)

@@ -176,11 +176,16 @@ class CollectPlanSerializer(serializers.ModelSerializer):
     jobs = CollectJobBriefSerializer(many=True, read_only=True)
     jobs_count = serializers.SerializerMethodField()
     source_report_name = serializers.CharField(source='source_report.name', read_only=True)
+    source_display = serializers.CharField(source='get_source_display', read_only=True)
+    source_schedule_id = serializers.IntegerField(source='source_schedule.id', read_only=True, allow_null=True)
+    source_schedule_name = serializers.CharField(read_only=True)
     class Meta:
         model = CollectPlan
         fields = [
             'id', 'name', 'status', 'status_display',
+            'source', 'source_display',
             'source_report', 'source_report_name',
+            'source_schedule_id', 'source_schedule_name',
             'execution_mode', 'execution_mode_display',
             'created_at', 'started_at', 'completed_at',
             'jobs', 'jobs_count'

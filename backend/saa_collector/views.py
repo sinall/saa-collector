@@ -2425,6 +2425,10 @@ class CollectPlanExecuteView(APIView):
             from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
             collect_job = ValuationCollectJob()
             collect_job()
+        elif data_type == 'tick':
+            from saa_collector.jobs.tick_job import TickJob
+            collect_job = TickJob()
+            collect_job()
         else:
             logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")
 
@@ -2863,7 +2867,16 @@ class CollectScheduleTriggerView(APIView):
                 'error': 'Schedule not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
+        plan = CollectPlan.objects.create(
+            name=f'{schedule.name} - {timezone.now().strftime("%Y-%m-%d %H:%M")}',
+            source='SCHEDULE',
+            source_schedule_id=schedule.id,
+            source_schedule_name=schedule.name,
+            execution_mode='PARALLEL'
+        )
+
         job = CollectJob.objects.create(
+            plan=plan,
             data_type=schedule.data_type,
             config={
                 'symbols': schedule.symbols,
@@ -2871,7 +2884,7 @@ class CollectScheduleTriggerView(APIView):
             }
         )
 
-        thread = threading.Thread(target=self._execute_job, args=(job.id,))
+        thread = threading.Thread(target=self._execute_plan, args=(plan.id,))
         thread.start()
 
         schedule.last_triggered_at = timezone.now()
@@ -2880,27 +2893,43 @@ class CollectScheduleTriggerView(APIView):
         return Response({
             'success': True,
             'data': {
-                'job_id': job.id,
-                'message': f'Triggered job for schedule: {schedule.name}'
+                'plan_id': plan.id,
+                'plan': CollectPlanSerializer(plan).data,
+                'message': f'已创建采集计划: {plan.name}'
             }
         })
 
-    def _execute_job(self, job_id):
+    def _execute_plan(self, plan_id):
         from django import db
         db.connections.close_all()
 
         try:
-            job = CollectJob.objects.get(id=job_id)
-            job.start()
+            plan = CollectPlan.objects.get(id=plan_id)
+            plan.status = 'RUNNING'
+            plan.started_at = timezone.now()
+            plan.save()
 
-            self._execute_collect(job)
+            all_success = True
+            for job in plan.jobs.all():
+                try:
+                    job.start()
+                    self._execute_collect(job)
+                    job.complete(success=True, message='执行完成')
+                except Exception as e:
+                    logger.exception(f"Job {job.id} failed: {e}")
+                    job.complete(success=False, message=str(e))
+                    all_success = False
 
-            job.complete(success=True, message='执行完成')
+            plan.status = 'COMPLETED' if all_success else 'FAILED'
+            plan.completed_at = timezone.now()
+            plan.save()
         except Exception as e:
-            logger.exception(f"Job {job_id} failed: {e}")
+            logger.exception(f"Plan {plan_id} failed: {e}")
             try:
-                job = CollectJob.objects.get(id=job_id)
-                job.complete(success=False, message=str(e))
+                plan = CollectPlan.objects.get(id=plan_id)
+                plan.status = 'FAILED'
+                plan.completed_at = timezone.now()
+                plan.save()
             except:
                 pass
 
@@ -2953,6 +2982,10 @@ class CollectScheduleTriggerView(APIView):
         elif data_type == 'valuation':
             from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
             collect_job = ValuationCollectJob()
+            collect_job()
+        elif data_type == 'tick':
+            from saa_collector.jobs.tick_job import TickJob
+            collect_job = TickJob()
             collect_job()
         else:
             logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")

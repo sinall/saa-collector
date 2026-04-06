@@ -53,6 +53,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
 import { useDataTypes } from '@/composables/useDataTypes'
@@ -64,6 +65,8 @@ import {
 } from '@/utils/api'
 
 const { getLabel, loadDataTypes } = useDataTypes()
+
+const router = useRouter()
 
 const schedules = ref<any[]>([])
 const loading = ref(false)
@@ -103,7 +106,20 @@ const triggerNow = async (row: any) => {
   try {
     await ElMessageBox.confirm('确定要立即执行该采集日程吗？', '提示', { type: 'info' })
     const response = await triggerCollectSchedule(row.id)
-    ElMessage.success(response.data?.message || `已触发执行: ${row.name}`)
+    if (response.success && response.data?.plan_id) {
+      ElMessageBox.confirm(
+        '采集计划已创建，是否跳转到采集计划详情页查看？',
+        '提示',
+        {
+          confirmButtonText: '查看计划',
+          cancelButtonText: '关闭',
+        }
+      )      .then(() => {
+        if (response.data) {
+          router.push(`/collect-plans/${response.data.plan_id}`)
+        }
+      }).catch(() => {})
+    }
   } catch (error: any) {
     if (error !== 'cancel') {
       console.error('Failed to trigger schedule:', error)

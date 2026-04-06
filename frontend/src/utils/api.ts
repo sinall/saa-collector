@@ -724,10 +724,14 @@ export interface CollectPlan {
   name: string
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
   status_display: string
-  execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
-  execution_mode_display: string
+  source: 'MANUAL' | 'INTEGRITY' | 'SCHEDULE'
+  source_display: string
   source_report?: number
   source_report_name?: string
+  source_schedule_id?: number
+  source_schedule_name?: string
+  execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
+  execution_mode_display: string
   created_at: string
   started_at?: string
   completed_at?: string
@@ -834,6 +838,9 @@ function generateMockCollectPlans(): CollectPlan[] {
     date.setDate(date.getDate() - (i - 1) * 5)
     const statusIndex = Math.min(i - 1, 3)
     const status = statuses[statusIndex] ?? 'PENDING'
+    const sources: Array<'MANUAL' | 'INTEGRITY' | 'SCHEDULE'> = ['MANUAL', 'INTEGRITY', 'SCHEDULE']
+    const sourceDisplays = ['即时采集', '修复计划', '定时触发']
+    const sourceIndex = (i - 1) % 3
 
     plans.push({
       id: i,
@@ -841,6 +848,8 @@ function generateMockCollectPlans(): CollectPlan[] {
       status,
       status_display: statusDisplays[statusIndex] ?? '待执行',
       execution_mode_display: '手动执行',
+      source: sources[sourceIndex] ?? 'MANUAL',
+      source_display: sourceDisplays[sourceIndex] ?? '即时采集',
       source_report_name: i > 2 ? `完整性检查报告 #${i - 2}` : undefined,
       created_at: date.toISOString(),
       started_at: status !== 'PENDING' ? new Date(date.getTime() + 60000).toISOString() : undefined,
@@ -952,6 +961,8 @@ export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<Coll
       status,
       status_display: statusDisplays[statusIdx] ?? '待执行',
       execution_mode_display: '并行执行',
+      source: 'SCHEDULE',
+      source_display: '定时触发',
       created_at: date.toISOString(),
       started_at: status !== 'PENDING' ? new Date(date.getTime() + 60000).toISOString() : undefined,
       completed_at: status === 'COMPLETED' || status === 'FAILED' ? new Date(date.getTime() + 3600000).toISOString() : undefined,
@@ -1848,7 +1859,7 @@ export const deleteCollectSchedule = async (id: number): Promise<ApiResponse<voi
   return response.data
 }
 
-export const triggerCollectSchedule = async (id: number): Promise<ApiResponse<{ job_id: number; message: string }>> => {
+export const triggerCollectSchedule = async (id: number): Promise<ApiResponse<{ plan_id: number; plan?: CollectPlan; message: string }>> => {
   const response = await api.post(`/collect-schedules/${id}/trigger/`)
   return response.data
 }
