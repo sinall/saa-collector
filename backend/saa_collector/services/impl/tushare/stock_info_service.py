@@ -5,7 +5,6 @@ import time
 import mysql.connector
 
 from saa_collector.services.abstract.stock_info_service import StockInfoService
-from saa_collector.third_party.cninfo_api_client import CninfoApiClient
 from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 
@@ -14,13 +13,9 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
     def __init__(self):
         super().__init__()
         self._logger = logging.getLogger()
-        api_config = self.config.get('saa_collector').get('cninfo_api')
-        self.client = CninfoApiClient(api_config['client_id'], api_config['client_secret'])
-        self.db_config = self.config.get('saa_collector').get('db')
 
     def collect(self, symbols):
         start_time = time.time()
-        self.client.login()
         symbols = self.build_symbols(symbols)
         records = self.get_stock_info_list(symbols)
         cnx = mysql.connector.connect(**self.db_config)
@@ -31,9 +26,8 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         if isinstance(symbols, str):
             symbols = [symbols]
         if not symbols:
-            plate_response = self.client.get_plate_stock_list('137001')
-            plate_stock_list = plate_response['records']
-            symbols = [v['SECCODE'] for v in plate_stock_list]
+            df = self.pro.query('stock_basic', fields='ts_code,symbol', list_status='L')
+            symbols = df['symbol'].tolist()
         return symbols
 
     def get_stock_info_list(self, scode_list):
