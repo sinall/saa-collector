@@ -15,8 +15,10 @@ def get_job_class(data_type):
     from saa_collector.jobs.statement_produce_job import StatementProduceJob
     from saa_collector.jobs.stock_info_collect_job import StockInfoCollectJob
     from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
+    from saa_collector.jobs.tick_job import TickJob
 
     job_mapping = {
+        'tick': TickJob,
         'stock_info': StockInfoCollectJob,
         'quote': LatestPriceCollectJob,
         'historical_quote': HistoricalPriceCollectJob,
