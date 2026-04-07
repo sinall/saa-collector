@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from django.conf import settings
+
 from saa_collector.services.common.valuation_service import ValuationServiceImpl
 from saa_collector.services.factory.service_factory import ServiceFactory
 from saa_collector.services.impl.akshare.service_factory import AkshareServiceFactoryImpl
@@ -11,7 +13,12 @@ class CompoundServiceFactory(ServiceFactory):
         self.akshare_impl = AkshareServiceFactoryImpl()
         self.cninfo_impl = CninfoServiceFactoryImpl()
         self.tushare_impl = TushareServiceFactoryImpl()
-        self.impl = self.akshare_impl
+
+        data_source = getattr(settings, 'DATA_SOURCE', 'akshare')
+        if data_source == 'akshare':
+            self.impl = self.akshare_impl
+        else:
+            self.impl = self.tushare_impl
 
     def create_calendar_service(self):
         return self.impl.create_calendar_service()

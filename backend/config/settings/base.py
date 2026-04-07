@@ -111,6 +111,9 @@ CSRF_TRUSTED_ORIGINS = [
 
 DEV_MODE_TOKEN = os.getenv('DEV_MODE_TOKEN', None)
 
+# 数据源配置: 'akshare' 或 'tushare'
+DATA_SOURCE = os.getenv('DATA_SOURCE', 'akshare')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
