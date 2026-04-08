@@ -17,8 +17,10 @@ class BasicStockService(BasicService):
         self._logger = logging.getLogger()
         self.config_service = ConfigService()
         self.config = self.config_service.get_config()
-        token = self.config.get('saa_collector').get('tushare_api')['token']
-        self.pro = TushareApiClient(token)
+        tushare_config = self.config.get('saa_collector').get('tushare_api')
+        token = tushare_config['token']
+        rate_limit = tushare_config.get('rate_limit')
+        self.pro = TushareApiClient(token, rate_limit=rate_limit)
         self.db_config = self.config_service.get_db_config()
 
     def query_records(self, sub_resource, symbols, **kwargs):

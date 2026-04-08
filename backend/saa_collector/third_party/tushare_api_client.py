@@ -12,13 +12,18 @@ class TushareApiException(Exception):
 
 
 class TushareApiClient:
-    REQUEST_PER_MINUTES = 80
+    DEFAULT_REQUEST_PER_MINUTES = 80
 
-    def __init__(self, token):
+    def __init__(self, token, rate_limit=None):
         self._logger = logging.getLogger()
         self.pro = ts.pro_api(token)
-        self.interval = float(Decimal(self.REQUEST_PER_MINUTES / 60).quantize(Decimal('.1'), rounding=ROUND_UP))
+        requests_per_minute = rate_limit or self.DEFAULT_REQUEST_PER_MINUTES
+        self.interval = float(Decimal(60 / requests_per_minute).quantize(Decimal('.1'), rounding=ROUND_UP))
         self.last_query_time = datetime.now()
+        self._logger.info(
+            'TushareApiClient initialized: rate_limit=%s, interval=%.1fs',
+            rate_limit, self.interval
+        )
 
     def query(self, sub_resource, fields='', **kwargs):
         elapsed_seconds = (datetime.now() - self.last_query_time).total_seconds()
