@@ -25,11 +25,28 @@ class BasicStockService(BasicService):
 
     def query_records(self, sub_resource, symbols, **kwargs):
         all_raw_records = []
+        failed_symbols = []
         if isinstance(symbols, str):
             symbols = [symbols]
-        for symbol in symbols:
-            raw_records = self.query_record(sub_resource, symbol, **kwargs)
-            all_raw_records += raw_records
+        symbols = sorted(symbols)
+        total = len(symbols)
+        for idx, symbol in enumerate(symbols, 1):
+            try:
+                self._logger.info(
+                    '[%d/%d] Querying %s for symbol %s', idx, total, sub_resource, symbol
+                )
+                raw_records = self.query_record(sub_resource, symbol, **kwargs)
+                all_raw_records += raw_records
+            except Exception as e:
+                self._logger.error(
+                    'Failed to query %s for symbol %s: %s', sub_resource, symbol, e
+                )
+                failed_symbols.append(symbol)
+        if failed_symbols:
+            self._logger.warning(
+                'Partial failure for %s: %d/%d symbols failed: %s',
+                sub_resource, len(failed_symbols), len(symbols), failed_symbols
+            )
         return all_raw_records
 
     def query_record(self, sub_resource, symbol, **kwargs):
