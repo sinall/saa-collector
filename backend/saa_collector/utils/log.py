@@ -14,7 +14,7 @@ class LoggingInitializer:
         else:
             path = '/var/log/saa_collector'
         logging.config.fileConfig(
-            "/etc/saa/collector/logging.conf",
+            "/etc/saa/collector/backend/logging.conf",
             defaults={
                 'log_file_name': os.path.join(path, 'saa_collector.log').replace('\\', '/')
             }

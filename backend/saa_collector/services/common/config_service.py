@@ -24,7 +24,7 @@ class ConfigService:
         return self.table_configs[table]
 
     def load_config(self):
-        with open('/etc/saa/collector/saa_collector.yml', 'r') as f:
+        with open('/etc/saa/collector/backend/saa_collector.yml', 'r') as f:
             content = f.read()
             if content is not None and len(content) > 0:
                 self.config = yaml.load(content, Loader=yaml.SafeLoader)

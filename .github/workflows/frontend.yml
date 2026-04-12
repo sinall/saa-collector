@@ -1,16 +1,16 @@
-name: SAA Collector Py CI
+name: SAA Collector Py Frontend CI
 
 on:
   push:
     branches: [ "main" ]
     paths:
       - '**'
-      - '.github/workflows/ci.yml'
+      - '.github/workflows/frontend.yml'
 
 env:
   REGISTRY: crpi-lj3q4y8fz3cwi92h.cn-hangzhou.personal.cr.aliyuncs.com
   NAMESPACE: sinall
-  IMAGE_NAME: saa-collector
+  IMAGE_NAME: saa-collector-frontend
 
 jobs:
   build:
@@ -30,10 +30,10 @@ jobs:
         username: ${{ secrets.ALIYUN_ACR_USERNAME }}
         password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
 
-    - name: Build and push
+    - name: Build and push frontend
       uses: docker/build-push-action@v5
       with:
-        context: .
+        context: ./frontend
         push: true
         tags: |
           ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ github.run_number }}

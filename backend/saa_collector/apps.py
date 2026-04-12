@@ -15,6 +15,11 @@ class SaaCollectorConfig(AppConfig):
             init_scheduler()
 
     def _cleanup_stale_running_status(self):
+        import sys
+
+        if 'collectstatic' in sys.argv:
+            return
+
         from django.utils import timezone
         from .models import CollectPlan, CollectJob
 
