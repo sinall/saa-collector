@@ -15,6 +15,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import User
 from saa_collector.permissions import IsAuthenticatedInProduction
 
 from django.db.models import Count, Prefetch
@@ -2990,3 +2992,63 @@ class CollectScheduleTriggerView(APIView):
             collect_job()
         else:
             logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")
+
+
+class LoginView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get('username', '').strip()
+        password = request.data.get('password', '')
+
+        if not username or not password:
+            return Response({'error': '请输入用户名和密码'}, status=400)
+
+        uc_api = getattr(settings, 'UC_API', '') or ''
+        uc_admin_users = getattr(settings, 'UC_ADMIN_USERS', [])
+
+        if not uc_api:
+            if username == 'admin' and password == 'admin':
+                user, _ = User.objects.get_or_create(
+                    username='admin',
+                    defaults={'is_staff': True, 'is_superuser': True}
+                )
+                token, _ = Token.objects.get_or_create(user=user)
+                return Response({'token': token.key, 'username': user.username, 'avatar_url': ''})
+            return Response({'error': '用户名或密码错误'}, status=401)
+
+        from ucenter import UCenterClient, UCenterError
+
+        try:
+            client = UCenterClient(
+                api_url=uc_api,
+                key=settings.UC_KEY,
+                appid=settings.UC_APPID,
+            )
+            result = client.login(username, password)
+        except UCenterError as e:
+            logger.error(f'UCenter login error: {e}')
+            return Response({'error': '认证服务暂时不可用'}, status=503)
+
+        uid = result.get('uid', -1)
+        if uid <= 0:
+            return Response({'error': '用户名或密码错误'}, status=401)
+
+        if username not in uc_admin_users:
+            return Response({'error': '无权访问此系统'}, status=403)
+
+        user, _ = User.objects.get_or_create(
+            username=username,
+            defaults={'email': result.get('email', '')}
+        )
+        token, _ = Token.objects.get_or_create(user=user)
+
+        avatar_url = f"{uc_api.rstrip('/')}/avatar.php?uid={uid}&size=middle"
+
+        logger.info(f'User {username} logged in via UCenter (uid={uid})')
+        return Response({
+            'token': token.key,
+            'username': user.username,
+            'avatar_url': avatar_url,
+        })

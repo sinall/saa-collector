@@ -157,7 +157,7 @@ server {
 | Backend | `runserver` (`:8000`) | Gunicorn (`:8004`) |
 | 数据库 | Aliyun RDS | Aliyun RDS |
 | 入口 | `backend/start.sh` (pyenv) | `docker-compose` |
-| Auth Token | `DEV_MODE_TOKEN` | Session/Token |
+| Auth Token | `DEV_MODE_TOKEN` | UCenter + DRF Token |
 | DEBUG | `True` | `False` |
 
 ### 开发环境启动
@@ -242,6 +242,17 @@ Browser: GET /admin/collector/static/admin/css/base.css
 | `DATA_SOURCE` | 否 | `tushare` | 数据源 (akshare/tushare) |
 | `DEBUG` | 否 | `False` | 调试模式 |
 
+### UCenter 认证环境变量
+
+| 变量 | 必需 | 默认值 | 说明 |
+|------|------|-------|------|
+| `UC_API` | 是 | `''` | UCenter 服务端 URL，如 `https://www.iguuu.com/discuz/uc_server` |
+| `UC_KEY` | 是 | `''` | UCenter 通信密钥，需与 UCenter 后台一致 |
+| `UC_APPID` | 是 | `''` | UCenter 后台分配的应用 ID |
+| `UC_ADMIN_USERS` | 是 | `''` | 允许登录的管理员用户名，逗号分隔，如 `admin,zhangsan` |
+
+不配置 `UC_API` 时，开发环境回退到 `admin/admin` 兜底登录。
+
 ## 镜像仓库
 
 - **Frontend**: `crpi-lj3q4y8fz3cwi92h.cn-hangzhou.personal.cr.aliyuncs.com/sinall/saa-collector-frontend:latest`
@@ -253,3 +264,127 @@ Browser: GET /admin/collector/static/admin/css/base.css
 2. **静态文件**：Django 使用 WhiteNoise 中间件直接服务静态文件，无需额外静态文件服务器
 3. **数据库**：使用阿里云 RDS MySQL，开发环境直连远程数据库
 4. **缓存**：宿主机 Nginx 对 `/admin/collector/static/` 设置 1 年缓存 + gzip 压缩
+
+## 认证系统 (UCenter 集成)
+
+### 架构
+
+```
+浏览器                    Backend (Django)                UCenter Server
+  │                           │                               │
+  │  POST /api/login/         │                               │
+  │  {username, password}     │                               │
+  │──────────────────────────►│                               │
+  │                           │  HTTP POST (AuthCode 加密)     │
+  │                           │  uc_user_login(user, pwd)     │
+  │                           │──────────────────────────────►│
+  │                           │                               │
+  │                           │  {uid, username, email}       │
+  │                           │◄──────────────────────────────│
+  │                           │                               │
+  │                           │  uid > 0 ?                    │
+  │                           │  username in UC_ADMIN_USERS ? │
+  │                           │                               │
+  │  {token, username}        │                               │
+  │◄──────────────────────────│                               │
+  │                           │                               │
+  │  后续请求                  │                               │
+  │  Authorization: Token xxx │                               │
+  │──────────────────────────►│  DRF Token 认证 ✓             │
+```
+
+### 认证流程
+
+1. 用户在登录页提交用户名/密码
+2. Backend 调用 UCenter API (`uc_user_login`) 验证凭据
+3. 验证通过后检查用户名是否在 `UC_ADMIN_USERS` 白名单中
+4. 白名单内用户自动创建/获取本地 Django User，签发 DRF Token
+5. 前端存储 Token，后续请求通过 `Authorization: Token xxx` 认证
+
+### 依赖
+
+UCenter 客户端作为独立包维护：[sinall/ucenter-python](https://github.com/sinall/ucenter-python)
+
+```txt
+# requirements.txt
+ucenter-python @ git+https://github.com/sinall/ucenter-python.git@v0.1.0
+```
+
+### 开发环境
+
+不配置 `UC_API` 时自动回退到开发模式：用户名 `admin`，密码 `admin`。
+
+## 生产环境部署清单
+
+### 1. Backend 环境变量
+
+添加到 docker-compose 或 .env：
+
+```yaml
+environment:
+  - UC_API=https://www.iguuu.com/discuz/uc_server
+  - UC_KEY=你的通信密钥
+  - UC_APPID=21
+  - UC_ADMIN_USERS=admin,sinall
+```
+
+### 2. 数据库初始化
+
+UCenter 集成登录需要两张表：`auth_user`（本地影子用户）和 `authtoken_token`（DRF Token）。
+
+方式一：migrate 自动建表（推荐）
+
+```bash
+docker exec saa-collector-backend python manage.py migrate
+```
+
+方式二：手动执行 SQL
+
+```sql
+-- 1. 本地用户表（UCenter 验证通过后创建影子记录）
+CREATE TABLE IF NOT EXISTS auth_user (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    password VARCHAR(128) NOT NULL,
+    last_login DATETIME(6) NULL,
+    is_superuser TINYINT(1) NOT NULL DEFAULT 0,
+    username VARCHAR(150) NOT NULL UNIQUE,
+    first_name VARCHAR(150) NOT NULL DEFAULT '',
+    last_name VARCHAR(150) NOT NULL DEFAULT '',
+    email VARCHAR(254) NOT NULL DEFAULT '',
+    is_staff TINYINT(1) NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    date_joined DATETIME(6) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 2. DRF Token 表（外键依赖 auth_user，必须后建）
+CREATE TABLE IF NOT EXISTS authtoken_token (
+    `key` VARCHAR(40) NOT NULL PRIMARY KEY,
+    created DATETIME(6) NOT NULL,
+    user_id BIGINT NOT NULL UNIQUE,
+    FOREIGN KEY (user_id) REFERENCES auth_user (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### 3. UCenter 后台配置
+
+1. 登录 UCenter 管理后台：`https://www.iguuu.com/discuz/uc_server`
+2. 应用管理 → 添加应用
+3. 填写：
+   - 应用类型：自定义
+   - 应用名称：SAA Collector
+   - 应用 URL：`https://www.iguuu.com/admin/collector/`
+   - 通信密钥：与 `UC_KEY` 一致
+4. 确认通信成功
+
+### 4. 重新构建并部署
+
+```bash
+docker-compose build
+docker-compose up -d
+```
+
+### 5. 验证
+
+- 访问 `https://www.iguuu.com/admin/collector/` → 应自动跳转到登录页
+- 用 UCenter 管理员账号登录 → 应成功进入系统
+- 用普通 Discuz 用户登录 → 应显示「无权访问此系统」

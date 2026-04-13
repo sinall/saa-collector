@@ -19,3 +19,4 @@ django-cors-headers>=4.3
 django-extensions>=3.2
 whitenoise>=6.6
 gunicorn>=21.0
+./third_party/ucenter-python

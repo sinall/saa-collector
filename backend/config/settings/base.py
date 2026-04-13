@@ -111,6 +111,11 @@ CSRF_TRUSTED_ORIGINS = [
 
 DEV_MODE_TOKEN = os.getenv('DEV_MODE_TOKEN', None)
 
+UC_API = os.getenv('UC_API', '')
+UC_KEY = os.getenv('UC_KEY', '')
+UC_APPID = os.getenv('UC_APPID', '')
+UC_ADMIN_USERS = [u.strip() for u in os.getenv('UC_ADMIN_USERS', '').split(',') if u.strip()]
+
 # 数据源配置: 'akshare' 或 'tushare'
 DATA_SOURCE = os.getenv('DATA_SOURCE', 'tushare')
 
