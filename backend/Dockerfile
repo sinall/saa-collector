@@ -13,6 +13,7 @@ RUN apt-get update \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+COPY third_party/ucenter-python ./third_party/ucenter-python
 COPY requirements.txt .
 
 RUN pip install --upgrade pip \

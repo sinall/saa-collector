@@ -2,7 +2,16 @@
   <el-config-provider :locale="zhCn">
     <el-container class="app-container">
       <el-aside width="200px" class="sidebar">
-        <div class="logo">
+        <div class="sidebar-user" v-if="username">
+          <el-avatar :size="36" :src="avatarUrl || undefined">
+            {{ username.charAt(0).toUpperCase() }}
+          </el-avatar>
+          <div class="sidebar-user-info">
+            <span class="sidebar-user-name">{{ username }}</span>
+            <span class="sidebar-user-logout" @click="handleLogout">退出</span>
+          </div>
+        </div>
+        <div class="logo" v-else>
           <h2>SAA Collector</h2>
         </div>
         <div class="stock-search">
@@ -61,16 +70,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, DataLine, FolderOpened, DocumentChecked, Download } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { fetchStocks, type Stock } from '@/utils/api'
 import { useDataTypes } from '@/composables/useDataTypes'
+import auth from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
 const activeMenu = computed(() => route.path)
+
+const username = ref(auth.getUsername())
+const avatarUrl = ref(auth.getAvatarUrl())
+
+// 登录后路由变化时刷新用户信息
+watch(() => route.path, () => {
+  username.value = auth.getUsername()
+  avatarUrl.value = auth.getAvatarUrl()
+})
+
+const handleLogout = () => {
+  auth.logout()
+  username.value = ''
+  avatarUrl.value = ''
+  router.push('/login')
+}
 
 const stockSearchKeyword = ref('')
 
@@ -139,6 +165,49 @@ html, body, #app {
 .logo h2 {
   margin: 0;
   font-size: 16px;
+}
+
+.sidebar-user {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 10px;
+  border-bottom: 1px solid #3a4a5b;
+}
+
+.sidebar-user .el-avatar {
+  flex-shrink: 0;
+  background-color: #409eff;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sidebar-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-user-name {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-user-logout {
+  color: #6b7a8a;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.sidebar-user-logout:hover {
+  color: #409eff;
 }
 
 .stock-search {

@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import router from '@/router'
 
 const api = axios.create({
   baseURL: import.meta.env.BASE_URL + 'api',
@@ -35,9 +36,12 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+    const isLoginRequest = error.config?.url?.includes('/login/')
+
+    if (!isLoginRequest && (status === 401 || status === 403)) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      router.push('/login')
     }
     const message = error.response?.data?.error || error.response?.data?.message || error.message || '请求失败'
     ElMessage.error(message)
@@ -58,6 +62,11 @@ export interface ApiResponse<T> {
   data?: T
   message?: string
   error?: string
+}
+
+export const login = async (username: string, password: string): Promise<{token: string; username: string; avatar_url: string}> => {
+  const response = await api.post('/login/', { username, password })
+  return response.data
 }
 
 export interface DataTypeConfig {
