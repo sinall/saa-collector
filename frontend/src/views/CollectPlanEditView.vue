@@ -26,17 +26,12 @@
               <el-col :span="8">
                 <el-form-item label="数据类型">
                   <el-select v-model="job.data_type">
-                    <el-option label="交易日" value="trade_days" />
-                    <el-option label="股票基本信息" value="stock_info" />
-                    <el-option label="最新行情" value="quote" />
-                    <el-option label="历史行情" value="historical_quote" />
-                    <el-option label="资产负债表" value="balance_sheet" />
-                    <el-option label="利润表" value="income" />
-                    <el-option label="现金流量表" value="cash_flow" />
-                    <el-option label="分红数据" value="dividend" />
-                    <el-option label="主营业务" value="main_business" />
-                    <el-option label="股本变动" value="capital" />
-                    <el-option label="估值数据" value="valuation" />
+                    <el-option
+                      v-for="item in dataTypes"
+                      :key="item.key"
+                      :label="item.label"
+                      :value="item.key"
+                    />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -74,8 +69,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { fetchCollectPlan } from '@/utils/api'
+import { fetchCollectPlan, createCollectPlan, updateCollectPlan } from '@/utils/api'
+import { useDataTypes } from '@/composables/useDataTypes'
 import { ElMessage } from 'element-plus'
+
+const { dataTypes, loadDataTypes } = useDataTypes()
 
 const router = useRouter()
 const route = useRoute()
@@ -133,23 +131,48 @@ const savePlan = async () => {
     ElMessage.warning('请输入计划名称')
     return
   }
-  
+
   saving.value = true
   try {
-    await new Promise(resolve => setTimeout(resolve, 300))
     if (isEdit.value) {
+      await updateCollectPlan(Number(route.params.id), {
+        name: form.value.name,
+        execution_mode: form.value.execution_mode as 'PARALLEL' | 'SEQUENTIAL'
+      })
       ElMessage.success('保存成功')
       router.push(`/collect-plans/${route.params.id}`)
     } else {
-      ElMessage.success('创建成功')
-      router.push('/collect-plans')
+      const jobs = form.value.jobs.map((job: any) => ({
+        data_type: job.data_type,
+        symbols: job.symbols_input
+          ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
+          : [],
+        start_date: job.date_start || undefined,
+        end_date: job.date_end || undefined
+      }))
+
+      const response = await createCollectPlan({
+        name: form.value.name,
+        execution_mode: form.value.execution_mode as 'PARALLEL' | 'SEQUENTIAL',
+        jobs
+      })
+
+      if (response.success && response.data) {
+        ElMessage.success('创建成功')
+        router.push(`/collect-plans/${response.data.id}`)
+      } else {
+        ElMessage.error(response.error || '创建失败')
+      }
     }
+  } catch (error: any) {
+    ElMessage.error(error.message || '操作失败')
   } finally {
     saving.value = false
   }
 }
 
 onMounted(() => {
+  loadDataTypes()
   if (isEdit.value) {
     fetchPlan()
   } else {

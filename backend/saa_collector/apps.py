@@ -11,8 +11,11 @@ class SaaCollectorConfig(AppConfig):
         self._cleanup_stale_running_status()
 
         if os.environ.get('RUN_SCHEDULER') == 'true':
-            from .scheduler_manager import init_scheduler
-            init_scheduler()
+            import sys
+            # 避免在 runserver 的 auto-reloader 子进程中重复启动 scheduler
+            if os.environ.get('RUN_MAIN') == 'true' or 'runserver' not in sys.argv:
+                from .scheduler_manager import init_scheduler
+                init_scheduler()
 
     def _cleanup_stale_running_status(self):
         import sys

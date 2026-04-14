@@ -5,8 +5,8 @@ from .basic_stock_collect_job import BasicStockCollectJob
 
 
 class ValuationCollectJob(BasicStockCollectJob):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, symbols=None):
+        super().__init__(symbols)
         self.valuation_service = self.service_factory.create_valuation_service()
 
     def __call__(self):

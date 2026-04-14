@@ -38,7 +38,7 @@ def init_scheduler():
         logger.warning('Scheduler already initialized')
         return
 
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(job_defaults={'misfire_grace_time': 10})
 
     from .models import CollectSchedule
     schedules = CollectSchedule.objects.filter(status='ENABLED')

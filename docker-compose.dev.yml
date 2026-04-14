@@ -13,6 +13,7 @@ services:
       - SECRET_KEY=dev-secret-key-for-development
       - DEBUG=True
       - SERVICE=runserver
+      - RUN_SCHEDULER=true
       - DEV_MODE_TOKEN=dev-token-for-ai-collab
     volumes:
       - ./backend:/app

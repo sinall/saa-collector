@@ -5,7 +5,7 @@ from saa_collector.jobs.basic_job import BasicJob
 
 
 class TickJob(BasicJob):
-    def __init__(self):
+    def __init__(self, symbols=None):
         super().__init__()
         self._logger = logging.getLogger()
 
