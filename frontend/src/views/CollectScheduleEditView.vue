@@ -1,6 +1,6 @@
 <template>
   <div class="collect-schedule-edit">
-    <el-card>
+    <el-card v-loading="loading">
       <template #header>
         <div class="card-header">
           <span>{{ isEdit ? '编辑采集日程' : '新建采集日程' }}</span>
@@ -95,6 +95,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useDataTypes } from '@/composables/useDataTypes'
+import {
+  fetchCollectSchedule,
+  createCollectSchedule,
+  updateCollectSchedule
+} from '@/utils/api'
 
 const { dataTypes, loadDataTypes } = useDataTypes()
 
@@ -102,6 +107,7 @@ const route = useRoute()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
+const loading = ref(false)
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -132,29 +138,33 @@ const setCron = (cron: string) => {
 const fetchSchedule = async () => {
   if (!isEdit.value) return
 
-  // Mock data for editing
-  await new Promise(resolve => setTimeout(resolve, 300))
-  
-  if (route.params.id === '1') {
-    form.value = {
-      name: '每日行情采集',
-      data_type: 'historical_quote',
-      symbols: [],
-      cron_expression: '0 9 * * 1-5',
-      params: { date_start: 'today', date_end: 'today' },
-      enabled: true
+  loading.value = true
+  try {
+    const id = parseInt(route.params.id as string)
+    const response = await fetchCollectSchedule(id)
+    if (response.success && response.data) {
+      const schedule = response.data
+      form.value = {
+        name: schedule.name,
+        data_type: schedule.data_type,
+        symbols: schedule.symbols || [],
+        cron_expression: schedule.cron_expression,
+        params: {
+          date_start: (schedule.params as Record<string, any>)?.date_start || 'today',
+          date_end: (schedule.params as Record<string, any>)?.date_end || 'today'
+        },
+        enabled: schedule.status === 'ENABLED'
+      }
+      stockScope.value = (schedule.symbols && schedule.symbols.length > 0) ? 'selected' : 'all'
+    } else {
+      ElMessage.error(response.error || '获取采集日程失败')
+      router.push('/collect-schedules')
     }
-    stockScope.value = 'all'
-  } else if (route.params.id === '2') {
-    form.value = {
-      name: '每周财务报表采集',
-      data_type: 'balance_sheet',
-      symbols: ['000001', '000002', '600000'],
-      cron_expression: '0 10 * * 1',
-      params: { date_start: '', date_end: '' },
-      enabled: true
-    }
-    stockScope.value = 'selected'
+  } catch (error: any) {
+    ElMessage.error(error.message || '获取采集日程失败')
+    router.push('/collect-schedules')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -166,15 +176,22 @@ const handleSubmit = async () => {
 
     submitting.value = true
     try {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const data = {
-        ...form.value,
+      const payload = {
+        name: form.value.name,
+        data_type: form.value.data_type,
         symbols: stockScope.value === 'all' ? [] : form.value.symbols,
-        status: form.value.enabled ? 'ENABLED' : 'DISABLED'
+        cron_expression: form.value.cron_expression,
+        params: form.value.params,
+        status: form.value.enabled ? 'ENABLED' as const : 'DISABLED' as const
       }
-      
-      console.log('Submit data:', data)
+
+      if (isEdit.value) {
+        const id = parseInt(route.params.id as string)
+        await updateCollectSchedule(id, payload)
+      } else {
+        await createCollectSchedule(payload)
+      }
+
       ElMessage.success(isEdit.value ? '保存成功' : '创建成功')
       router.push('/collect-schedules')
     } catch (error: any) {

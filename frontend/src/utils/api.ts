@@ -934,6 +934,11 @@ export const deleteCollectPlan = async (id: number): Promise<ApiResponse<null>> 
   return response.data
 }
 
+export const updateCollectPlan = async (id: number, data: { name?: string; execution_mode?: 'PARALLEL' | 'SEQUENTIAL' }): Promise<ApiResponse<CollectPlan>> => {
+  const response = await api.patch(`/collect-plans/${id}/`, data)
+  return response.data
+}
+
 export const createCollectPlan = async (params: {
   name: string
   source_report?: number

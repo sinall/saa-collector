@@ -19,6 +19,18 @@
 """
 
 DATA_TYPE_CONFIG = {
+    'tick': {
+        'table': None,
+        'date_column': None,
+        'data_frequency': None,
+        'stock_level': False,
+        'label': '定时心跳',
+        'supports_integrity_check': False,
+        'group': 'other',
+        'show_completeness': False,
+        'need_date': False,
+        'order': 0,
+    },
     'trade_days': {
         'table': 'saa_trade_days',
         'date_column': 'date',
