@@ -8,7 +8,7 @@ import mysql.connector
 from saa_collector.services.common.config_service import ConfigService
 from saa_collector.third_party.cninfo_api_client import CninfoApiClient
 from saa_collector.third_party.cninfo_api_client import CninfoApiException
-from saa_collector.third_party.tushare_api_client import TushareApiClient
+from saa_collector.third_party.tushare_api_client import get_tushare_client
 from saa_collector.utils.db import DB
 from .basic_service import BasicService
 
@@ -21,7 +21,7 @@ class BasicStockService(BasicService):
         api_config = self.config.get('saa_collector').get('cninfo_api')
         self.client = CninfoApiClient(api_config['client_id'], api_config['client_secret'])
         token = self.config.get('saa_collector').get('tushare_api')['token']
-        self.pro = TushareApiClient(token)
+        self.pro = get_tushare_client(token)
         self.db_config = self.config_service.get_db_config()
 
     def query_records(self, symbols, sub_resource, **kwargs):

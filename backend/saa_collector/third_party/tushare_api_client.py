@@ -72,5 +72,17 @@ class TushareApiClient:
         ) from last_error
 
 
+_client = None
+
+
+def get_tushare_client(token=None, rate_limit=None):
+    global _client
+    if _client is None:
+        if token is None:
+            raise ValueError("token is required for first initialization")
+        _client = TushareApiClient(token, rate_limit=rate_limit)
+    return _client
+
+
 if __name__ == "__main__":
     pass

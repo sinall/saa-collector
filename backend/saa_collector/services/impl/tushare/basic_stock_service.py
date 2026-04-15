@@ -6,7 +6,7 @@ import math
 import mysql.connector
 
 from saa_collector.services.common.config_service import ConfigService
-from saa_collector.third_party.tushare_api_client import TushareApiClient
+from saa_collector.third_party.tushare_api_client import get_tushare_client
 from saa_collector.utils.db import DB
 from .basic_service import BasicService
 
@@ -20,7 +20,7 @@ class BasicStockService(BasicService):
         tushare_config = self.config.get('saa_collector').get('tushare_api')
         token = tushare_config['token']
         rate_limit = tushare_config.get('rate_limit')
-        self.pro = TushareApiClient(token, rate_limit=rate_limit)
+        self.pro = get_tushare_client(token, rate_limit=rate_limit)
         self.db_config = self.config_service.get_db_config()
 
     def query_records(self, sub_resource, symbols, **kwargs):
