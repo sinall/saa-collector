@@ -1,11 +1,7 @@
 name: SAA Collector Py Frontend CI
 
 on:
-  push:
-    branches: [ "main" ]
-    paths:
-      - '**'
-      - '.github/workflows/frontend.yml'
+  workflow_dispatch:
 
 env:
   REGISTRY: crpi-lj3q4y8fz3cwi92h.cn-hangzhou.personal.cr.aliyuncs.com
