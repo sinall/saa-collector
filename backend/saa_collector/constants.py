@@ -80,6 +80,20 @@ DATA_TYPE_CONFIG = {
         'need_date': True,
         'order': 4,
     },
+    'financial_statements': {
+        'table': None,
+        'date_column': None,
+        'data_frequency': 'quarterly',
+        'stock_level': False,
+        'label': '财务报表(三表+分红)',
+        'composite': True,
+        'sub_types': ['balance_sheet', 'income', 'cash_flow', 'dividend'],
+        'supports_integrity_check': False,
+        'group': 'statement',
+        'show_completeness': False,
+        'need_date': True,
+        'order': 5,
+    },
     'balance_sheet': {
         'table': 'saa_raw_balance_sheet',
         'date_column': 'date',
@@ -90,7 +104,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': True,
         'need_date': True,
-        'order': 5,
+        'order': 6,
     },
     'income': {
         'table': 'saa_raw_income_statement',
@@ -102,7 +116,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': True,
         'need_date': True,
-        'order': 6,
+        'order': 7,
     },
     'cash_flow': {
         'table': 'saa_raw_cash_flow_statement',
@@ -114,7 +128,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': True,
         'need_date': True,
-        'order': 7,
+        'order': 8,
     },
     'main_business': {
         'table': 'saa_raw_main_business',
@@ -126,7 +140,7 @@ DATA_TYPE_CONFIG = {
         'group': 'other',
         'show_completeness': True,
         'need_date': True,
-        'order': 8,
+        'order': 9,
     },
     'capital': {
         'table': 'saa_capitals',
@@ -138,7 +152,7 @@ DATA_TYPE_CONFIG = {
         'group': 'other',
         'show_completeness': True,
         'need_date': True,
-        'order': 9,
+        'order': 10,
     },
     'dividend': {
         'table': 'saa_dividends',
@@ -150,7 +164,7 @@ DATA_TYPE_CONFIG = {
         'group': 'other',
         'show_completeness': True,
         'need_date': True,
-        'order': 10,
+        'order': 11,
     },
     'valuation_board': {
         'table': 'saa_board_valuation_levels',
@@ -162,7 +176,7 @@ DATA_TYPE_CONFIG = {
         'group': 'valuation',
         'show_completeness': True,
         'need_date': True,
-        'order': 11,
+        'order': 12,
     },
     'valuation_industry': {
         'table': 'saa_industry_valuation_levels',
@@ -174,7 +188,7 @@ DATA_TYPE_CONFIG = {
         'group': 'valuation',
         'show_completeness': True,
         'need_date': True,
-        'order': 12,
+        'order': 13,
     },
     'index_weights': {
         'table': 'saa_index_weights',
@@ -187,7 +201,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': True,
         'need_date': True,
-        'order': 13,
+        'order': 14,
     },
     'industries': {
         'table': 'saa_industries',
@@ -199,7 +213,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': False,
         'need_date': False,
-        'order': 14,
+        'order': 15,
     },
     'industry_stocks': {
         'table': 'saa_industry_stocks',
@@ -212,7 +226,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': True,
         'need_date': True,
-        'order': 15,
+        'order': 16,
     },
 }
 

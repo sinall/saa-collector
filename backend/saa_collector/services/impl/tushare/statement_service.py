@@ -15,8 +15,10 @@ class StatementServiceImpl(StatementService, BasicStockService):
 
     def produce(self, symbols, start_date=None):
         symbols = self.build_symbols(symbols)
-        for symbol in symbols:
+        total = len(symbols)
+        for idx, symbol in enumerate(symbols, 1):
             try:
+                self._logger.info('[%d/%d] Producing statement for %s', idx, total, symbol)
                 self._produce_one(symbol, start_date)
             except:
                 self._logger.exception('Failed to produce statement for %s', symbol)
@@ -27,8 +29,10 @@ class StatementServiceImpl(StatementService, BasicStockService):
 
     def collect(self, symbols, start_date=None):
         symbols = self.build_symbols(symbols)
-        for symbol in symbols:
+        total = len(symbols)
+        for idx, symbol in enumerate(symbols, 1):
             try:
+                self._logger.info('[%d/%d] Collecting statement for %s', idx, total, symbol)
                 self._collect_one(symbol, start_date)
             except:
                 self._logger.exception('Failed to collect statement for %s', symbol)

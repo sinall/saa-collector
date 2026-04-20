@@ -2406,6 +2406,9 @@ class CollectPlanExecuteView(APIView):
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type == 'financial_statements':
+            service = factory.create_statement_service()
+            service.produce(symbols, start_date)
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
             report_types = params.get('report_types', [])
@@ -2965,6 +2968,9 @@ class CollectScheduleTriggerView(APIView):
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type == 'financial_statements':
+            service = factory.create_statement_service()
+            service.produce(symbols, start_date)
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
             report_types = params.get('report_types', [])

@@ -22,6 +22,7 @@ def get_job_class(data_type):
         'stock_info': StockInfoCollectJob,
         'quote': LatestPriceCollectJob,
         'historical_quote': HistoricalPriceCollectJob,
+        'financial_statements': StatementProduceJob,
         'balance_sheet': StatementProduceJob,
         'capital': CapitalCollectJob,
         'main_business': MainBusinessCollectJob,
