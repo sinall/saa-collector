@@ -71,6 +71,10 @@ class TushareApiClient:
             f'{sub_resource} failed after {self.MAX_RETRIES} retries: {last_error}'
         ) from last_error
 
+    def __getattr__(self, name):
+        """Delegate undefined attribute access to the underlying tushare DataApi."""
+        return getattr(self.pro, name)
+
 
 _client = None
 
