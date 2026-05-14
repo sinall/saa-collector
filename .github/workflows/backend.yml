@@ -1,6 +1,13 @@
 name: SAA Collector Py Backend CI
 
 on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
   workflow_dispatch:
 
 env:
