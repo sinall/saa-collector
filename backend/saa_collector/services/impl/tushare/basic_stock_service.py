@@ -12,6 +12,8 @@ from .basic_service import BasicService
 
 
 class BasicStockService(BasicService):
+    DEFAULT_SAVE_BATCH_SYMBOLS = 50
+
     def __init__(self):
         super().__init__()
         self._logger = logging.getLogger()
@@ -32,9 +34,12 @@ class BasicStockService(BasicService):
         total = len(symbols)
         for idx, symbol in enumerate(symbols, 1):
             try:
-                self._logger.info(
-                    '[%d/%d] Querying %s for symbol %s', idx, total, sub_resource, symbol
-                )
+                if total > 1:
+                    self._logger.info(
+                        '[%d/%d] Querying %s for symbol %s', idx, total, sub_resource, symbol
+                    )
+                else:
+                    self._logger.info('Querying %s for symbol %s', sub_resource, symbol)
                 raw_records = self.query_record(sub_resource, symbol, **kwargs)
                 all_raw_records += raw_records
             except Exception as e:
@@ -49,8 +54,29 @@ class BasicStockService(BasicService):
             )
         return all_raw_records
 
+    def iter_symbol_records(self, sub_resource, symbols, **kwargs):
+        if isinstance(symbols, str):
+            symbols = [symbols]
+        symbols = sorted(symbols)
+        total = len(symbols)
+        for idx, symbol in enumerate(symbols, 1):
+            try:
+                if total > 1:
+                    self._logger.info(
+                        '[%d/%d] Querying %s for symbol %s', idx, total, sub_resource, symbol
+                    )
+                else:
+                    self._logger.info('Querying %s for symbol %s', sub_resource, symbol)
+                yield symbol, self.query_record(sub_resource, symbol, **kwargs)
+            except Exception as e:
+                self._logger.error(
+                    'Failed to query %s for symbol %s: %s', sub_resource, symbol, e
+                )
+                yield symbol, []
+
     def query_record(self, sub_resource, symbol, **kwargs):
         df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
+        df = df.loc[:, ~df.columns.duplicated()].copy()
         raw_records = df.to_dict('records')
         return raw_records
 
@@ -74,9 +100,22 @@ class BasicStockService(BasicService):
         records = [x for x in records if x['date'] >= start_date]
         return records
 
-    def save_records(self, records, table, primary_keys):
-        cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, table, primary_keys)
+    def get_save_batch_symbols(self):
+        tushare_config = self.config.get('saa_collector', {}).get('tushare_api', {})
+        return int(tushare_config.get('save_batch_symbols', self.DEFAULT_SAVE_BATCH_SYMBOLS))
+
+    def save_records(self, records, table, primary_keys, cnx=None):
+        if not records:
+            return
+
+        should_close = cnx is None
+        if should_close:
+            cnx = mysql.connector.connect(**self.db_config)
+        try:
+            DB().to_sql(records, cnx, table, primary_keys)
+        finally:
+            if should_close:
+                cnx.close()
 
     def build_symbols(self, symbols):
         if isinstance(symbols, str):

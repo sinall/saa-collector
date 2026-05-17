@@ -5,6 +5,7 @@ import time
 import mysql.connector
 
 from saa_collector.services.abstract.stock_info_service import StockInfoService
+from saa_collector.services.common.progress import ProgressLogger
 from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 
@@ -34,6 +35,11 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         symbols = self.build_symbols(symbols)
         total = len(symbols)
         self._logger.info('Start collecting stock info for %d symbols', total)
+        progress = ProgressLogger.for_symbols(
+            self._logger,
+            symbols,
+            profile='stock_info',
+        )
 
         save_interval = self._get_save_interval()
         table_config_df = self.config_service.get_table_config('saa_stocks')
@@ -43,18 +49,17 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         last_save_time = time.time()
 
         try:
-            for idx, symbol in enumerate(symbols, 1):
+            for symbol in symbols:
                 try:
-                    self._logger.info(
-                        '[%d/%d] Processing symbol %s', idx, total, symbol
-                    )
                     record = self._get_stock_info_for_symbol(symbol, table_config_df)
                     if record:
                         accumulated_records.append(record)
+                    progress.finished('Finished collecting stock info', symbol)
                 except Exception as e:
                     self._logger.error(
                         'Failed to process symbol %s: %s', symbol, e
                     )
+                    progress.failed('Failed collecting stock info', symbol)
 
                 elapsed = time.time() - last_save_time
                 if elapsed >= save_interval and accumulated_records:
