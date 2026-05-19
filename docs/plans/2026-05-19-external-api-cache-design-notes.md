@@ -15,6 +15,26 @@
 
 ## 关键设计点
 
+### 0. 先量化 API 调用与限流等待
+
+缓存上线前需要先能回答两个问题：
+
+- 真实外部 API 调用本身花了多久。
+- 因速率限制主动 sleep 花了多久。
+
+`TushareApiClient` 的日志应区分：
+
+- `api_elapsed_seconds`：真实 `pro.query(...)` 调用耗时。
+- `rate_limit_wait_seconds`：本次调用前因限流累计等待的时间。
+- `limiter=local|global`：使用进程内限流还是 Redis 全局限流。
+- `lock_wait_seconds`：Redis 全局限流中等待锁的时间。
+
+这样缓存上线后可以直接对比：
+
+- cache hit 节省了多少真实 API 调用耗时。
+- cache hit 是否也绕过了原本会产生的限流等待。
+- 大任务总耗时中，外部 API、主动限流、数据转换、DB 写入各占多少。
+
 ### 1. 缓存时间
 
 缓存 TTL 应按数据类型区分，而不是全局固定：

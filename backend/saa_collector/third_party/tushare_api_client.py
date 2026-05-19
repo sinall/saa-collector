@@ -40,7 +40,7 @@ class TushareApiClient:
         )
 
     def query(self, sub_resource, fields='', **kwargs):
-        self._wait_for_rate_limit()
+        rate_limit_wait_seconds = self._wait_for_rate_limit()
         last_error = None
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -50,10 +50,13 @@ class TushareApiClient:
                     ', '.join(['{}={!r}'.format(k, v) for k, v in kwargs.items()]),
                     f' (retry {attempt}/{self.MAX_RETRIES})' if attempt > 0 else ''
                 )
+                call_started_at = time.monotonic()
                 result = self.pro.query(sub_resource, fields, **kwargs)
+                call_elapsed_seconds = time.monotonic() - call_started_at
                 self._logger.info(
-                    'End up calling pro.query(%s, ..., ...) with %d records return',
-                    sub_resource, len(result.index)
+                    'End up calling pro.query(%s, ..., ...) with %d records return; '
+                    'api_elapsed_seconds=%.3f rate_limit_wait_seconds=%.3f',
+                    sub_resource, len(result.index), call_elapsed_seconds, rate_limit_wait_seconds
                 )
                 return result
             except (requests.exceptions.ConnectionError,
@@ -147,31 +150,56 @@ class TushareApiClient:
     def _wait_for_rate_limit(self):
         if self.redis_client:
             try:
-                self._wait_for_global_rate_limit()
-                return
+                return self._wait_for_global_rate_limit()
             except Exception as e:
                 self._logger.warning('Redis rate limiter failed, fallback to process-local limiter: %s', e)
 
         elapsed_seconds = (datetime.now() - self.last_query_time).total_seconds()
         if elapsed_seconds < self.interval:
-            time.sleep(self.interval - elapsed_seconds)
+            wait_seconds = self.interval - elapsed_seconds
+            self._logger.info(
+                'Tushare rate limit wait: limiter=local wait_seconds=%.3f '
+                'elapsed_seconds=%.3f interval_seconds=%.3f',
+                wait_seconds, elapsed_seconds, self.interval
+            )
+            time.sleep(wait_seconds)
+            return wait_seconds
+        return 0.0
 
     def _wait_for_global_rate_limit(self):
         lock_token = str(uuid.uuid4())
+        lock_wait_seconds = 0.0
         while not self.redis_client.set(self.rate_limit_lock_key, lock_token, nx=True, px=30000):
+            lock_wait_seconds += 0.1
             time.sleep(0.1)
 
         try:
+            rate_wait_seconds = 0.0
+            elapsed_seconds = None
             now = time.time()
             raw_last_query_at = self.redis_client.get(self.rate_limit_key)
             if raw_last_query_at:
                 elapsed_seconds = now - float(raw_last_query_at)
                 if elapsed_seconds < self.interval:
-                    wait_seconds = self.interval - elapsed_seconds
-                    self._logger.debug('Tushare global rate limit sleep %.2fs', wait_seconds)
-                    time.sleep(wait_seconds)
+                    rate_wait_seconds = self.interval - elapsed_seconds
+                    self._logger.info(
+                        'Tushare rate limit wait: limiter=global wait_seconds=%.3f '
+                        'elapsed_seconds=%.3f interval_seconds=%.3f lock_wait_seconds=%.3f',
+                        rate_wait_seconds, elapsed_seconds, self.interval, lock_wait_seconds
+                    )
+                    time.sleep(rate_wait_seconds)
+
+            if lock_wait_seconds and not rate_wait_seconds:
+                self._logger.info(
+                    'Tushare rate limit wait: limiter=global wait_seconds=0.000 '
+                    'elapsed_seconds=%s interval_seconds=%.3f lock_wait_seconds=%.3f',
+                    'none' if elapsed_seconds is None else f'{elapsed_seconds:.3f}',
+                    self.interval,
+                    lock_wait_seconds
+                )
 
             self.redis_client.set(self.rate_limit_key, str(time.time()), ex=3600)
+            return lock_wait_seconds + rate_wait_seconds
         finally:
             current_token = self.redis_client.get(self.rate_limit_lock_key)
             if current_token and current_token.decode() == lock_token:
