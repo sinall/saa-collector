@@ -28,11 +28,14 @@ class StatementMaintainService:
         else:
             args = ()
         cnx = mysql.connector.connect(**self.db_config)
+        cursor = None
         try:
             cursor = cnx.cursor()
             cursor.callproc('saa_refresh_integrated_reports_cache', args)
             cnx.commit()
         finally:
+            if cursor:
+                cursor.close()
             cnx.close()
 
     def refresh_ttm_report_cache(self, symbols):
@@ -55,6 +58,7 @@ class StatementMaintainService:
                   "WHERE date >= DATE_SUB(CURDATE(), INTERVAL 4 YEAR)"
             params = ()
         cnx = mysql.connector.connect(**self.db_config)
+        cursor = None
         try:
             cursor = cnx.cursor(dictionary=True)
             cursor.execute(sql, params)
@@ -69,6 +73,8 @@ class StatementMaintainService:
 
             DB().to_sql(integrated_reports, cnx, "saa_ttm_reports_interface", "symbol")
         finally:
+            if cursor:
+                cursor.close()
             cnx.close()
 
     def gen_ttm_report(self, statements, non_balance_sheet_fields):

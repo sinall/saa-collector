@@ -27,15 +27,18 @@ class DB(object):
             table, ", ".join(fields), ", ".join(["%s"] * len(fields)), update_statement
         )
         cursor = con.cursor(prepared=True)
-        for stock_info in rows:
-            try:
-                values = stock_info.values()
-                values = [None if pd.isna(v) else str(v) for v in values]
-                cursor.execute(sql, tuple(values))
-            except:
-                self._logger.info("Failed to save %s", stock_info)
-                raise
-        con.commit()
+        try:
+            for stock_info in rows:
+                try:
+                    values = stock_info.values()
+                    values = [None if pd.isna(v) else str(v) for v in values]
+                    cursor.execute(sql, tuple(values))
+                except:
+                    self._logger.info("Failed to save %s", stock_info)
+                    raise
+            con.commit()
+        finally:
+            cursor.close()
 
     def to_value(self, value):
         if value is None:

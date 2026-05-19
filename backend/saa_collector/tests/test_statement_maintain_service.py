@@ -15,21 +15,25 @@ class StatementMaintainServiceTest(unittest.TestCase):
     def test_refresh_financial_report_cache_closes_connection(self):
         service = self.build_service()
         connection = MagicMock()
+        cursor = connection.cursor.return_value
 
         with patch.object(module.mysql.connector, 'connect', return_value=connection):
             service.refresh_financial_report_cache('000001')
 
+        cursor.close.assert_called_once()
         connection.close.assert_called_once()
 
     def test_refresh_ttm_report_cache_closes_connection(self):
         service = self.build_service()
         service.get_fields = MagicMock(return_value=[])
         connection = MagicMock()
-        connection.cursor.return_value.fetchall.return_value = []
+        cursor = connection.cursor.return_value
+        cursor.fetchall.return_value = []
 
         with patch.object(module.mysql.connector, 'connect', return_value=connection):
             service.refresh_ttm_report_cache('000001')
 
+        cursor.close.assert_called_once()
         connection.close.assert_called_once()
 
 

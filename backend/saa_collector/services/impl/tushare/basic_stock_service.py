@@ -127,11 +127,17 @@ class BasicStockService(BasicService):
     def get_symbols_from_db(self):
         query = "SELECT symbol FROM saa_stocks WHERE type = 'STOCK' AND market = 'A'"
         cnx = mysql.connector.connect(**self.db_config)
-        cursor = cnx.cursor()
-        cursor.execute(query)
-        symbols = [i[0] for i in cursor.fetchall()]
-        symbols.sort()
-        return symbols
+        cursor = None
+        try:
+            cursor = cnx.cursor()
+            cursor.execute(query)
+            symbols = [i[0] for i in cursor.fetchall()]
+            symbols.sort()
+            return symbols
+        finally:
+            if cursor:
+                cursor.close()
+            cnx.close()
 
     def build_code_param(self, symbols):
         if not symbols:
@@ -192,12 +198,15 @@ class BasicStockService(BasicService):
             table, ", ".join(fields), ", ".join(["%s"] * len(fields)), update_statement
         )
         cursor = cnx.cursor(prepared=True)
-        for stock_info in rows:
-            try:
-                values = stock_info.values()
-                values = [None if v is None else str(v) for v in values]
-                cursor.execute(sql, tuple(values))
-            except:
-                self._logger.error('Failed to execute sql for %s', stock_info)
-                raise
-        cnx.commit()
+        try:
+            for stock_info in rows:
+                try:
+                    values = stock_info.values()
+                    values = [None if v is None else str(v) for v in values]
+                    cursor.execute(sql, tuple(values))
+                except:
+                    self._logger.error('Failed to execute sql for %s', stock_info)
+                    raise
+            cnx.commit()
+        finally:
+            cursor.close()

@@ -195,6 +195,7 @@ def load_listing_times(symbols):
 
     config_service = ConfigService()
     cnx = mysql.connector.connect(**config_service.get_db_config())
+    cursor = None
     try:
         placeholders = ','.join(['%s'] * len(symbols))
         query = (
@@ -208,6 +209,8 @@ def load_listing_times(symbols):
             for symbol, listing_time in cursor.fetchall()
         }
     finally:
+        if cursor:
+            cursor.close()
         cnx.close()
 
 
