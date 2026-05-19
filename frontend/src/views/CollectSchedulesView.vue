@@ -106,7 +106,10 @@ const triggerNow = async (row: any) => {
   try {
     await ElMessageBox.confirm('确定要立即执行该采集日程吗？', '提示', { type: 'info' })
     const response = await triggerCollectSchedule(row.id)
-    if (response.success && response.data?.plan_id) {
+    const plan = response.data?.plan
+    const planId = plan?.id || response.data?.plan_id
+    if (response.success && planId) {
+      await fetchSchedules()
       ElMessageBox.confirm(
         '采集计划已创建，是否跳转到采集计划详情页查看？',
         '提示',
@@ -114,10 +117,8 @@ const triggerNow = async (row: any) => {
           confirmButtonText: '查看计划',
           cancelButtonText: '关闭',
         }
-      )      .then(() => {
-        if (response.data) {
-          router.push(`/collect-plans/${response.data.plan_id}`)
-        }
+      ).then(() => {
+        router.push(`/collect-plans/${planId}`)
       }).catch(() => {})
     }
   } catch (error: any) {

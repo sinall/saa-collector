@@ -177,7 +177,7 @@ class CollectPlanSerializer(serializers.ModelSerializer):
     jobs_count = serializers.SerializerMethodField()
     source_report_name = serializers.CharField(source='source_report.name', read_only=True)
     source_display = serializers.CharField(source='get_source_display', read_only=True)
-    source_schedule_id = serializers.IntegerField(source='source_schedule.id', read_only=True, allow_null=True)
+    source_schedule_id = serializers.IntegerField(read_only=True, allow_null=True)
     source_schedule_name = serializers.CharField(read_only=True)
     trigger_type_display = serializers.CharField(source='get_trigger_type_display', read_only=True)
     class Meta:
