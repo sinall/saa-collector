@@ -12,9 +12,28 @@ def main():
             "python", "manage.py", "runserver",
             f"0.0.0.0:{os.getenv('PORT', '8000')}"
         ]
-    elif service == "scheduler":
-        from saa_collector.scheduler import Scheduler
-        Scheduler().start()
+    elif service == "celery-worker":
+        cmd = [
+            "celery",
+            "-A", "config",
+            "worker",
+            "--loglevel", os.getenv("CELERY_LOG_LEVEL", "INFO"),
+            "--concurrency", os.getenv("CELERY_WORKER_CONCURRENCY", "1"),
+            "--queues", os.getenv("COLLECTOR_CELERY_QUEUE", "collector"),
+        ]
+        max_tasks_per_child = os.getenv("CELERY_WORKER_MAX_TASKS_PER_CHILD")
+        if max_tasks_per_child:
+            cmd.extend(["--max-tasks-per-child", max_tasks_per_child])
+        max_memory_per_child = os.getenv("CELERY_WORKER_MAX_MEMORY_PER_CHILD")
+        if max_memory_per_child:
+            cmd.extend(["--max-memory-per-child", max_memory_per_child])
+    elif service == "celery-beat":
+        cmd = [
+            "celery",
+            "-A", "config",
+            "beat",
+            "--loglevel", os.getenv("CELERY_LOG_LEVEL", "INFO"),
+        ]
     else:
         cmd = [
             "gunicorn",

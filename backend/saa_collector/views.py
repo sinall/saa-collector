@@ -23,6 +23,7 @@ from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
+from .task_dispatcher import create_plan_from_schedule, dispatch_plan, reset_plan_for_dispatch
 from .serializers import (
     CollectJobSerializer, CollectJobCreateSerializer,
     DataStatusSerializer, DataCompletenessSerializer,
@@ -2295,16 +2296,7 @@ class CollectPlanExecuteView(APIView):
     def post(self, request, pk):
         plan = get_object_or_404(CollectPlan, pk=pk)
 
-        if plan.status in ('COMPLETED', 'FAILED'):
-            plan.status = 'PENDING'
-            plan.started_at = None
-            plan.completed_at = None
-            plan.jobs.update(
-                status='PENDING',
-                start_time=None,
-                end_time=None,
-                message=None
-            )
+        reset_plan_for_dispatch(plan)
 
         if plan.status != 'PENDING':
             return Response({
@@ -2312,12 +2304,8 @@ class CollectPlanExecuteView(APIView):
                 'error': '计划状态不正确'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        plan.status = 'RUNNING'
-        plan.started_at = timezone.now()
-        plan.save()
-
-        thread = threading.Thread(target=self._execute_plan, args=(plan.id,))
-        thread.start()
+        dispatch_plan(plan)
+        plan.refresh_from_db()
 
         return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
 
@@ -2782,8 +2770,6 @@ class CollectScheduleListView(APIView):
         return Response({'success': True, 'data': serializer.data})
 
     def post(self, request):
-        from .scheduler_manager import add_schedule_job
-
         serializer = CollectScheduleCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({
@@ -2794,7 +2780,9 @@ class CollectScheduleListView(APIView):
         schedule = serializer.save()
 
         if schedule.status == 'ENABLED':
-            add_schedule_job(schedule)
+            from .tasks import get_next_schedule_fire_time
+            schedule.next_trigger_at = get_next_schedule_fire_time(schedule, timezone.now())
+            schedule.save(update_fields=['next_trigger_at'])
 
         return Response({
             'success': True,
@@ -2818,8 +2806,6 @@ class CollectScheduleDetailView(APIView):
         return Response({'success': True, 'data': serializer.data})
 
     def put(self, request, pk):
-        from .scheduler_manager import update_schedule_job
-
         try:
             schedule = CollectSchedule.objects.get(pk=pk)
         except CollectSchedule.DoesNotExist:
@@ -2836,7 +2822,12 @@ class CollectScheduleDetailView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         schedule = serializer.save()
-        update_schedule_job(schedule)
+        if schedule.status == 'ENABLED':
+            from .tasks import get_next_schedule_fire_time
+            schedule.next_trigger_at = get_next_schedule_fire_time(schedule, timezone.now())
+        else:
+            schedule.next_trigger_at = None
+        schedule.save(update_fields=['next_trigger_at'])
 
         return Response({
             'success': True,
@@ -2844,8 +2835,6 @@ class CollectScheduleDetailView(APIView):
         })
 
     def delete(self, request, pk):
-        from .scheduler_manager import remove_schedule_job
-
         try:
             schedule = CollectSchedule.objects.get(pk=pk)
         except CollectSchedule.DoesNotExist:
@@ -2854,7 +2843,6 @@ class CollectScheduleDetailView(APIView):
                 'error': 'Schedule not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        remove_schedule_job(schedule.id)
         schedule.delete()
 
         return Response({'success': True})
@@ -2872,29 +2860,11 @@ class CollectScheduleTriggerView(APIView):
                 'error': 'Schedule not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        plan = CollectPlan.objects.create(
-            name=f'{schedule.name} - {timezone.now().strftime("%Y-%m-%d %H:%M")}',
-            source='SCHEDULE',
-            trigger_type='MANUAL',
-            source_schedule_id=schedule.id,
-            source_schedule_name=schedule.name,
-            execution_mode='PARALLEL'
-        )
-
-        job = CollectJob.objects.create(
-            plan=plan,
-            data_type=schedule.data_type,
-            config={
-                'symbols': schedule.symbols,
-                'params': schedule.params
-            }
-        )
-
-        thread = threading.Thread(target=self._execute_plan, args=(plan.id,))
-        thread.start()
-
         schedule.last_triggered_at = timezone.now()
         schedule.save()
+        plan = create_plan_from_schedule(schedule, trigger_type='MANUAL')
+        dispatch_plan(plan)
+        plan.refresh_from_db()
 
         return Response({
             'success': True,

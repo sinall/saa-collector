@@ -6,6 +6,7 @@ from .constants import DATA_TYPE_CHOICES
 
 class CollectJob(models.Model):
     STATUS_CHOICES = [
+        ('QUEUED', '排队中'),
         ('PENDING', '待执行'),
         ('RUNNING', '执行中'),
         ('SUCCESS', '成功'),
@@ -122,6 +123,7 @@ class DataIntegrityItem(models.Model):
 
 class CollectPlan(models.Model):
     STATUS_CHOICES = [
+        ('QUEUED', '排队中'),
         ('PENDING', '待执行'),
         ('RUNNING', '执行中'),
         ('COMPLETED', '已完成'),
@@ -154,6 +156,8 @@ class CollectPlan(models.Model):
     source_schedule_name = models.CharField('来源日程名称', max_length=200, null=True, blank=True)
     execution_mode = models.CharField('执行模式', max_length=20, choices=EXECUTION_MODE_CHOICES, default='PARALLEL')
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    queued_at = models.DateTimeField('入队时间', null=True, blank=True)
+    queue_task_id = models.CharField('队列任务ID', max_length=100, null=True, blank=True)
     started_at = models.DateTimeField('开始时间', null=True, blank=True)
     completed_at = models.DateTimeField('完成时间', null=True, blank=True)
 

@@ -30,6 +30,10 @@ saa_collector:
 
   tushare_api:
     token:
+    # Shared Tushare account request limit. Used by the global Redis limiter.
+    # rate_limit: 80
+    # Number of symbols processed before flushing high-volume collectors to DB.
+    # save_batch_symbols: 50
 
   db:
     host: iguuu.com

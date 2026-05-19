@@ -28,9 +28,12 @@ class StatementMaintainService:
         else:
             args = ()
         cnx = mysql.connector.connect(**self.db_config)
-        cursor = cnx.cursor()
-        cursor.callproc('saa_refresh_integrated_reports_cache', args)
-        cnx.commit()
+        try:
+            cursor = cnx.cursor()
+            cursor.callproc('saa_refresh_integrated_reports_cache', args)
+            cnx.commit()
+        finally:
+            cnx.close()
 
     def refresh_ttm_report_cache(self, symbols):
         income_fields = self.get_fields("saa_raw_income_statement")
@@ -52,18 +55,21 @@ class StatementMaintainService:
                   "WHERE date >= DATE_SUB(CURDATE(), INTERVAL 4 YEAR)"
             params = ()
         cnx = mysql.connector.connect(**self.db_config)
-        cursor = cnx.cursor(dictionary=True)
-        cursor.execute(sql, params)
-        all_statements = cursor.fetchall()
-        symbol_to_statements = itertools.groupby(all_statements, lambda s: s['symbol'])
-        integrated_reports = []
-        for symbol, statements in symbol_to_statements:
-            integrated_report = self.gen_ttm_report(statements, non_balance_sheet_fields)
-            if not integrated_report:
-                continue
-            integrated_reports.append(integrated_report)
+        try:
+            cursor = cnx.cursor(dictionary=True)
+            cursor.execute(sql, params)
+            all_statements = cursor.fetchall()
+            symbol_to_statements = itertools.groupby(all_statements, lambda s: s['symbol'])
+            integrated_reports = []
+            for symbol, statements in symbol_to_statements:
+                integrated_report = self.gen_ttm_report(statements, non_balance_sheet_fields)
+                if not integrated_report:
+                    continue
+                integrated_reports.append(integrated_report)
 
-        DB().to_sql(integrated_reports, cnx, "saa_ttm_reports_interface", "symbol")
+            DB().to_sql(integrated_reports, cnx, "saa_ttm_reports_interface", "symbol")
+        finally:
+            cnx.close()
 
     def gen_ttm_report(self, statements, non_balance_sheet_fields):
         statements = sorted(statements, key=lambda i: i['date'], reverse=True)

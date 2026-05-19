@@ -5,6 +5,11 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 from saa_collector.services.common import progress as progress_module
+from saa_collector.logging_filters import CollectExecutionContextFilter
+from saa_collector.services.collect_execution_context import (
+    reset_collect_execution_context,
+    set_collect_execution_context,
+)
 from saa_collector.services.common.progress import (
     HistoricalSpanEstimator,
     ProgressLogger,
@@ -92,6 +97,44 @@ class ProgressLoggerTest(unittest.TestCase):
             'SELECT symbol, listing_time FROM saa_stocks WHERE symbol IN (%s,%s)',
             ('000001', '000002'),
         )
+
+    def test_progress_log_includes_unit(self):
+        logger = MagicMock()
+        progress = ProgressLogger.for_symbols(logger, ['000001'])
+        progress.finished('Finished producing statement', '000001')
+
+        log_template = logger.info.call_args.args[0]
+        log_args = logger.info.call_args.args[1:]
+        rendered = log_template % log_args
+        self.assertIn('unit=symbol', rendered)
+
+    def test_logging_filter_includes_collect_execution_context(self):
+        record = logging.LogRecord(
+            name='test',
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='message',
+            args=(),
+            exc_info=None,
+        )
+        token = set_collect_execution_context(
+            task_id='celery-task-1',
+            plan_id=12,
+            job_id=34,
+            data_type='financial_statements',
+            unit='symbol',
+        )
+        try:
+            CollectExecutionContextFilter().filter(record)
+        finally:
+            reset_collect_execution_context(token)
+
+        self.assertIn('task_id=celery-task-1', record.collect_context)
+        self.assertIn('plan_id=12', record.collect_context)
+        self.assertIn('job_id=34', record.collect_context)
+        self.assertIn('data_type=financial_statements', record.collect_context)
+        self.assertIn('unit=symbol', record.collect_context)
 
 
 if __name__ == '__main__':

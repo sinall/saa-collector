@@ -13,10 +13,13 @@ services:
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
       - DEBUG=${DEBUG:-False}
       - SERVICE=gunicorn
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
     volumes:
       - ./backend:/app
     depends_on:
       - db
+      - redis
 
   frontend:
     build: ./frontend
@@ -33,11 +36,52 @@ services:
       - DATABASE_USER=${DATABASE_USER:-root}
       - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
-      - SERVICE=scheduler
+      - SERVICE=celery-worker
+      - COLLECTOR_CELERY_QUEUE=${COLLECTOR_SCHEDULER_QUEUE:-scheduler}
+      - COLLECTOR_EXECUTION_QUEUE=${COLLECTOR_EXECUTION_QUEUE:-collector}
+      - COLLECTOR_SCHEDULER_QUEUE=${COLLECTOR_SCHEDULER_QUEUE:-scheduler}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-1}
     volumes:
       - ./backend:/app
     depends_on:
       - db
+      - redis
+
+  worker:
+    build: ./backend
+    environment:
+      - DATABASE_HOST=${DATABASE_HOST:-db}
+      - DATABASE_NAME=${DATABASE_NAME:-saa_collector}
+      - DATABASE_USER=${DATABASE_USER:-root}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
+      - SERVICE=celery-worker
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-1}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+
+  beat:
+    build: ./backend
+    environment:
+      - DATABASE_HOST=${DATABASE_HOST:-db}
+      - DATABASE_NAME=${DATABASE_NAME:-saa_collector}
+      - DATABASE_USER=${DATABASE_USER:-root}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
+      - SERVICE=celery-beat
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
 
   db:
     image: mysql:8.0
@@ -49,5 +93,13 @@ services:
     ports:
       - "3306:3306"
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
 volumes:
   mysql_data:
+  redis_data:

@@ -188,10 +188,10 @@ class CollectPlanSerializer(serializers.ModelSerializer):
             'source_report', 'source_report_name',
             'source_schedule_id', 'source_schedule_name',
             'execution_mode', 'execution_mode_display',
-            'created_at', 'started_at', 'completed_at',
+            'created_at', 'queued_at', 'queue_task_id', 'started_at', 'completed_at',
             'jobs', 'jobs_count'
         ]
-        read_only_fields = ['id', 'status', 'created_at', 'started_at', 'completed_at']
+        read_only_fields = ['id', 'status', 'created_at', 'queued_at', 'queue_task_id', 'started_at', 'completed_at']
     def get_jobs_count(self, obj):
         if hasattr(obj, 'jobs_count'):
             return obj.jobs_count

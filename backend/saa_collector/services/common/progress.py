@@ -109,9 +109,10 @@ class ProgressLogger(object):
     def finished(self, message, item):
         self._advance(item)
         self.logger.info(
-            '[%d/%d] %s for %s; elapsed=%s, avg=%s/%s, remaining=%s, eta=%s',
+            '[%d/%d unit=%s] %s for %s; elapsed=%s, avg=%s/%s, remaining=%s, eta=%s',
             self.completed_items,
             self.total_items,
+            self.unit,
             message,
             item,
             format_seconds(self.elapsed_seconds),
@@ -124,9 +125,10 @@ class ProgressLogger(object):
     def failed(self, message, item):
         self._advance(item)
         self.logger.warning(
-            '[%d/%d] %s for %s; elapsed=%s, avg=%s/%s, remaining=%s, eta=%s',
+            '[%d/%d unit=%s] %s for %s; elapsed=%s, avg=%s/%s, remaining=%s, eta=%s',
             self.completed_items,
             self.total_items,
+            self.unit,
             message,
             item,
             format_seconds(self.elapsed_seconds),

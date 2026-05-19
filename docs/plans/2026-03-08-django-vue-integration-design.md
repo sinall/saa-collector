@@ -9,7 +9,7 @@
 2. **定制抓取范围** - 手动触发采集任务，选择股票范围、时间范围、数据类型
 
 ### 技术决策
-- **Django + APScheduler 集成** - Django 启动时同时启动 apscheduler
+- **Django + Celery 集成** - Celery beat 触发周期扫描，独立 worker 消费调度与采集队列
 - **前后端分离** - Vue 独立 build，Django 提供 API
 - **认证方式** - DRF SessionAuthentication + TokenAuthentication + DevTokenMiddleware
 
@@ -300,7 +300,8 @@ django-cors-headers>=4.3
 django-extensions>=3.2
 whitenoise>=6.6
 mysqlclient>=2.2
-APScheduler>=3.10
+celery[redis]>=5.3
+croniter>=2.0
 
 # 现有依赖
 cement>=3.0.10
@@ -413,9 +414,9 @@ export default defineConfig({
    - 创建 collector/ app
    - 配置 settings (数据库、认证、日志)
    
-3. **集成 APScheduler**
-   - 在 Django 启动时初始化 scheduler
-   - 保留现有定时任务配置
+3. **集成 Celery**
+   - 使用 Celery beat 周期扫描启用的采集计划
+   - 使用独立 scheduler 队列触发计划创建
 
 ### Phase 2: 后端 API 开发 (预计 3-4 小时)
 
@@ -471,7 +472,7 @@ export default defineConfig({
 
 1. **数据库兼容** - 现有数据表不需要迁移，Django 使用相同的 MySQL 数据库
 2. **CLI 保留** - cement CLI 功能保留，可继续使用命令行采集
-3. **调度器集成** - APScheduler 需要在 Django 启动时正确初始化
+3. **调度器集成** - Celery beat 与 scheduler worker 需要使用同一 broker，并正确隔离 scheduler/collector 队列
 4. **并发安全** - 采集任务执行时需要考虑并发控制，避免重复执行
 
 ---
@@ -670,7 +671,8 @@ services:
       - DATABASE_USER=${DATABASE_USER:-root}
       - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key}
-      - SERVICE=scheduler
+      - SERVICE=celery-worker
+      - COLLECTOR_CELERY_QUEUE=scheduler
     volumes:
       - ./backend:/app
     depends_on:

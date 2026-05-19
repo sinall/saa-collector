@@ -747,9 +747,9 @@ GET /api/data-browse/trade-days/?page=1&page_size=100
 ### Schedule 定时触发
 
 ```
-APScheduler 定时检查
+Celery beat 定时投递扫描任务
     │
-    ├── 遍历所有 enabled 的 CollectSchedule
+    ├── scheduler worker 遍历所有 enabled 的 CollectSchedule
     │
     └── 到达触发时间
             │
@@ -860,7 +860,7 @@ POST /api/collect-plans/{id}/execute/
 
 | 现有组件 | 新设计中的角色 |
 |---------|--------------|
-| APScheduler + jobs/*.py | 保持不变，周期任务继续使用 |
+| Celery beat + scheduler worker | 周期扫描 CollectSchedule，并将到期计划派发到采集队列 |
 | views.py 中的 Collect*View | 保持不变，兼容现有手动触发 |
 | CompoundServiceFactory | 被 CollectJobExecutor 复用 |
 | CollectJob 模型 | 扩展 plan 外键，向后兼容 |

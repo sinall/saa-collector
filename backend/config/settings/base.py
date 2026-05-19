@@ -119,17 +119,59 @@ UC_ADMIN_USERS = [u.strip() for u in os.getenv('UC_ADMIN_USERS', '').split(',') 
 # 数据源配置: 'akshare' 或 'tushare'
 DATA_SOURCE = os.getenv('DATA_SOURCE', 'tushare')
 
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def env_optional_int(name, default=None):
+    value = os.getenv(name)
+    if value is None or value == '':
+        return default
+    return int(value)
+
+COLLECTOR_CELERY_QUEUE = os.getenv('COLLECTOR_CELERY_QUEUE', 'collector')
+COLLECTOR_EXECUTION_QUEUE = os.getenv('COLLECTOR_EXECUTION_QUEUE', 'collector')
+COLLECTOR_SCHEDULER_QUEUE = os.getenv('COLLECTOR_SCHEDULER_QUEUE', 'scheduler')
+
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_TASK_DEFAULT_QUEUE = COLLECTOR_CELERY_QUEUE
+CELERY_TASK_ROUTES = {
+    'saa_collector.execute_collect_plan': {'queue': COLLECTOR_EXECUTION_QUEUE},
+    'saa_collector.scan_due_collect_schedules': {'queue': COLLECTOR_SCHEDULER_QUEUE},
+}
+CELERY_TASK_ACKS_LATE = env_bool('CELERY_TASK_ACKS_LATE', False)
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv('CELERY_WORKER_PREFETCH_MULTIPLIER', '1'))
+CELERY_TASK_TIME_LIMIT = env_optional_int('CELERY_TASK_TIME_LIMIT')
+CELERY_TASK_SOFT_TIME_LIMIT = env_optional_int('CELERY_TASK_SOFT_TIME_LIMIT')
+CELERY_BEAT_SCHEDULE = {
+    'scan-due-collect-schedules': {
+        'task': 'saa_collector.scan_due_collect_schedules',
+        'schedule': float(os.getenv('COLLECTOR_SCHEDULE_SCAN_SECONDS', '60')),
+        'options': {'queue': COLLECTOR_SCHEDULER_QUEUE},
+    },
+}
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {collect_context}{message}',
             'style': '{',
         },
         'simple': {
-            'format': '{asctime} - {levelname} - {message}',
+            'format': '{asctime} - {levelname} - {collect_context}{message}',
             'style': '{',
+        },
+    },
+    'filters': {
+        'collect_execution_context': {
+            '()': 'saa_collector.logging_filters.CollectExecutionContextFilter',
         },
     },
     'handlers': {
@@ -137,6 +179,7 @@ LOGGING = {
             'level': 'DEBUG',
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
+            'filters': ['collect_execution_context'],
         },
     },
     'root': {
