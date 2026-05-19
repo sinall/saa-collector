@@ -2227,6 +2227,15 @@ class CollectPlanListView(APIView):
         ).prefetch_related(
             Prefetch('jobs', queryset=CollectJob.objects.all().order_by('-created_at'))
         ).order_by('-created_at')
+        source = request.query_params.get('source')
+        if source:
+            plans = plans.filter(source=source)
+        plan_status = request.query_params.get('status')
+        if plan_status:
+            plans = plans.filter(status=plan_status)
+        trigger_type = request.query_params.get('trigger_type')
+        if trigger_type:
+            plans = plans.filter(trigger_type=trigger_type)
         paginator = StandardPagination()
         page = paginator.paginate_queryset(plans, request, view=self)
         serializer = CollectPlanSerializer(page, many=True)

@@ -731,7 +731,7 @@ export const fetchStocksMock = async (params?: {
 export interface CollectPlan {
   id: number
   name: string
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  status: 'QUEUED' | 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
   status_display: string
   source: 'MANUAL' | 'INTEGRITY' | 'SCHEDULE'
   source_display: string
@@ -906,6 +906,9 @@ export const fetchCollectScheduleMock = async (id: number): Promise<ApiResponse<
 }
 
 export const fetchCollectPlans = async (params?: {
+  source?: string
+  status?: string
+  trigger_type?: string
   page?: number
   page_size?: number
 }): Promise<ApiResponse<{ results: CollectPlan[], pagination: { total: number } }>> => {

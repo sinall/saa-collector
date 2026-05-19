@@ -5,7 +5,7 @@
         <div class="card-header">
           <div class="header-left">
             <span>采集计划</span>
-            <el-radio-group v-model="sourceFilter" size="small" style="margin-left: 20px">
+            <el-radio-group v-model="sourceFilter" size="small" style="margin-left: 20px" @change="handleSourceFilterChange">
               <el-radio-button value="">全部</el-radio-button>
               <el-radio-button value="MANUAL">即时采集</el-radio-button>
               <el-radio-button value="INTEGRITY">修复计划</el-radio-button>
@@ -16,7 +16,7 @@
         </div>
       </template>
 
-      <el-table :data="filteredPlans" v-loading="loading">
+      <el-table :data="displayPlans" v-loading="loading">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="计划名称" min-width="180" />
         <el-table-column label="来源" width="100">
@@ -76,6 +76,18 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="pagination-container" v-if="totalPlans > 0">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[20, 50, 100]"
+          :total="totalPlans"
+          layout="total, sizes, prev, pager, next"
+          @current-change="fetchPlans"
+          @size-change="handlePageSizeChange"
+        />
+      </div>
     </el-card>
 
     <el-dialog
@@ -146,6 +158,9 @@ const router = useRouter()
 const plans = ref<CollectPlan[]>([])
 const loading = ref(false)
 const sourceFilter = ref('')
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalPlans = ref(0)
 
 const instantCollectVisible = ref(false)
 const creating = ref(false)
@@ -197,17 +212,17 @@ const displayPlans = computed<DisplayPlan[]>(() => {
   }))
 })
 
-const filteredPlans = computed(() => {
-  if (!sourceFilter.value) return displayPlans.value
-  return displayPlans.value.filter(p => p.source === sourceFilter.value)
-})
-
 const fetchPlans = async () => {
   loading.value = true
   try {
-    const response = await fetchCollectPlans({ page_size: 100 })
+    const response = await fetchCollectPlans({
+      source: sourceFilter.value || undefined,
+      page: currentPage.value,
+      page_size: pageSize.value
+    })
     if (response.success && response.data) {
       plans.value = response.data.results
+      totalPlans.value = response.data.pagination.total
     }
   } catch (error) {
     console.error('Failed to fetch plans:', error)
@@ -215,6 +230,16 @@ const fetchPlans = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handleSourceFilterChange = () => {
+  currentPage.value = 1
+  fetchPlans()
+}
+
+const handlePageSizeChange = () => {
+  currentPage.value = 1
+  fetchPlans()
 }
 
 const getSourceType = (source: string) => {
@@ -237,6 +262,7 @@ const getSourceLabel = (source: string) => {
 
 const getStatusType = (status: string) => {
   const types: Record<string, string> = {
+    'QUEUED': 'info',
     'PENDING': 'info',
     'RUNNING': 'warning',
     'COMPLETED': 'success',
@@ -351,5 +377,10 @@ onMounted(() => {
 .header-left {
   display: flex;
   align-items: center;
+}
+.pagination-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 </style>
