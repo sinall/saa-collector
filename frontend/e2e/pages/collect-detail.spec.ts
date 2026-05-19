@@ -97,6 +97,65 @@ test.describe('Collect Plan Edit Page - Browser Navigation', () => {
 })
 
 test.describe('Collect Plan Detail Page', () => {
+  test('should reload plan detail when navigating to another plan id', async ({ page }) => {
+    await page.route('**/api/data-types/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data_types: [], groups: [] }),
+      })
+    })
+
+    await page.route('**/api/collect-plans/*/', async route => {
+      const match = route.request().url().match(/\/collect-plans\/(\d+)\//)
+      const id = Number(match?.[1])
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            id,
+            name: `采集计划 ${id}`,
+            status: 'PENDING',
+            status_display: '待执行',
+            execution_mode: 'SEQUENTIAL',
+            execution_mode_display: '顺序执行',
+            jobs_count: 1,
+            created_at: '2026-05-20 10:00:00',
+            started_at: null,
+            completed_at: null,
+            jobs: [
+              {
+                id,
+                data_type: 'tick',
+                data_type_display: `任务 ${id}`,
+                config: { symbols: [] },
+                status: 'PENDING',
+                status_display: '待执行',
+                start_time: null,
+                end_time: null,
+                message: '',
+              },
+            ],
+          },
+        }),
+      })
+    })
+
+    await page.goto('/admin/collector/collect-plans/1249')
+    await expect(page.locator('.collect-plan-detail')).toContainText('采集计划 1249')
+
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/admin/collector/collect-plans/1250')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+
+    await expect(page.locator('.collect-plan-detail')).toContainText('采集计划 1250')
+    await expect(page.locator('.collect-plan-detail')).not.toContainText('采集计划 1249')
+  })
+
   test('should load plan detail without errors', async ({ page }) => {
     const errors: string[] = []
     const failedRequests: string[] = []

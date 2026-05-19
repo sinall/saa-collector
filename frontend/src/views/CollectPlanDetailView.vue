@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { fetchCollectPlan, fetchIntegrityReportSummary } from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -119,13 +119,29 @@ const loading = ref(true)
 const executing = ref(false)
 let pollTimer: number | null = null
 
+const clearPollTimer = () => {
+  if (pollTimer) {
+    clearTimeout(pollTimer)
+    pollTimer = null
+  }
+}
+
 const fetchPlan = async () => {
+  const requestedId = props.id
   try {
-    const response = await fetchCollectPlan(parseInt(props.id))
+    const response = await fetchCollectPlan(parseInt(requestedId))
+    if (requestedId !== props.id) {
+      return null
+    }
+
     if (response.success && response.data) {
       plan.value = response.data
+      reportSummary.value = null
       if (response.data.source_report) {
         const summaryResponse = await fetchIntegrityReportSummary(response.data.source_report)
+        if (requestedId !== props.id) {
+          return null
+        }
         if (summaryResponse.success && summaryResponse.data) {
           reportSummary.value = summaryResponse.data
         }
@@ -145,6 +161,20 @@ const fetchPlan = async () => {
 const pollPlan = async () => {
   loading.value = false
   const status = await fetchPlan()
+  if (status === 'RUNNING') {
+    clearPollTimer()
+    pollTimer = window.setTimeout(pollPlan, 3000)
+  }
+}
+
+const loadCurrentPlan = async () => {
+  clearPollTimer()
+  plan.value = null
+  reportSummary.value = null
+  loading.value = true
+
+  const status = await fetchPlan()
+  loading.value = false
   if (status === 'RUNNING') {
     pollTimer = window.setTimeout(pollPlan, 3000)
   }
@@ -227,16 +257,17 @@ const goToReport = () => {
   }
 }
 
-onMounted(() => {
-  fetchPlan().then(() => {
-    loading.value = false
-  })
-})
+onMounted(loadCurrentPlan)
+
+watch(
+  () => props.id,
+  () => {
+    loadCurrentPlan()
+  }
+)
 
 onUnmounted(() => {
-  if (pollTimer) {
-    clearTimeout(pollTimer)
-  }
+  clearPollTimer()
 })
 </script>
 
