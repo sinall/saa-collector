@@ -1,6 +1,6 @@
 <template>
   <div class="collect-plan-detail">
-    <el-card v-loading="loading">
+    <el-card v-loading="loading && !plan">
       <template #header>
         <div class="card-header">
           <div>
@@ -143,11 +143,10 @@ const fetchPlan = async () => {
 }
 
 const pollPlan = async () => {
+  loading.value = false
   const status = await fetchPlan()
   if (status === 'RUNNING') {
     pollTimer = window.setTimeout(pollPlan, 3000)
-  } else {
-    loading.value = false
   }
 }
 
@@ -156,7 +155,7 @@ const executePlan = async () => {
   try {
     await api.post(`/collect-plans/${props.id}/execute/`)
     ElMessage.success('计划开始执行')
-    loading.value = true
+    loading.value = false
     pollPlan()
   } catch (error: any) {
     ElMessage.error(error.response?.data?.error || '执行失败')
@@ -179,7 +178,7 @@ const reExecutePlan = async () => {
     executing.value = true
     await api.post(`/collect-plans/${props.id}/execute/`)
     ElMessage.success('计划开始重新执行')
-    loading.value = true
+    loading.value = false
     pollPlan()
   } catch (error: any) {
     if (error !== 'cancel') {
