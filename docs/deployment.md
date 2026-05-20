@@ -1,48 +1,57 @@
 # SAA Collector 部署架构
 
+> 当前运维参考。生产 Docker Compose、Nginx 配置、内存限制和 env_file 路径以父工作区 `saa-conf/ansible/roles/nginx/files/` 为准；本文件只记录 collector 自身需要理解的路由、镜像和认证行为。当前规范见 `../openspec/specs/collector-deployment-auth/spec.md`。
+
 ## 架构总览
 
 ```
 Internet
     │
     ▼
-┌─────────────────────────┐
-│   Nginx (Host)          │
-│   saa.conf              │
-│                         │
-│   /admin/collector/api/ ────► Backend (Docker) :8004
-│   /admin/collector/static/─► Backend (Docker) :8004
-│   /admin/collector/     ────► Frontend (Docker) :8003
-└─────────────────────────┘
+┌─────────────────────────────────────────────┐
+│   nginx container (saa-conf managed)        │
+│   /etc/nginx/conf.d/saa.conf                │
+│                                             │
+│   /admin/collector/api/    ─► backend:8000  │
+│   /admin/collector/static/ ─► backend:8000  │
+│   /admin/collector/        ─► frontend:80   │
+└─────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────┐
 │   Docker Compose (Production)               │
 │                                             │
-│   saa-collector-frontend  :80 → :8003      │
-│   saa-collector-backend   :8000 → :8004     │
-│   saa-collector-scheduler (no port)         │
+│   saa-collector-frontend  :80               │
+│   saa-collector-backend   :8000             │
+│   saa-collector-worker                       │
+│   saa-collector-scheduler                   │
+│   saa-collector-beat                        │
+│   network: saa-net                          │
 └─────────────────────────────────────────────┘
 ```
 
-## 端口映射
+## 生产服务
 
-| 服务 | 容器端口 | 宿主机端口 | 说明 |
-|------|---------|-----------|------|
-| Frontend (Nginx) | 80 | 8003 | Vue 3 SPA 静态文件 |
-| Backend (Gunicorn) | 8000 | 8004 | Django REST API |
-| Scheduler | - | - | 定时任务，无 HTTP 端口 |
+| 服务 | 端口 | SERVICE | 说明 |
+|------|------|---------|------|
+| `saa-collector-frontend` | 80 | - | Vue 3 SPA 静态文件 |
+| `saa-collector-backend` | 8000 | `gunicorn` | Django REST API |
+| `saa-collector-worker` | - | `celery-worker` | collector 队列业务采集 |
+| `saa-collector-scheduler` | - | `celery-worker` | scheduler 队列扫描到期日程 |
+| `saa-collector-beat` | - | `celery-beat` | 周期性唤醒 scheduler 扫描 |
+
+生产环境这些服务不直接暴露宿主机业务端口，统一接入 `saa-net`，由 nginx 容器通过服务名反代。
 
 ## Nginx 路由规则
 
-宿主机 Nginx (`/etc/nginx/conf.d/saa.conf`) 负责将外部请求分发到对应的 Docker 服务。
+生产 Nginx 配置由 `saa-conf` 部署到 nginx 容器内的 `/etc/nginx/conf.d/saa.conf`，负责将外部请求分发到对应的 Docker 服务。
 
 ### 路由表
 
 | 外部路径 | 目标 | 说明 |
 |---------|------|------|
-| `/admin/collector/api/*` | `http://127.0.0.1:8004/api/*` | API 请求 → Backend |
-| `/admin/collector/static/*` | `http://127.0.0.1:8004/admin/collector/static/*` | Django 静态资源 (CSS/JS/admin) |
-| `/admin/collector/*` | `http://127.0.0.1:8003/*` | 前端页面 → Frontend |
+| `/admin/collector/api/*` | `http://saa-collector-backend:8000/api/*` | API 请求 → Backend |
+| `/admin/collector/static/*` | `http://saa-collector-backend:8000/admin/collector/static/*` | Django 静态资源 (CSS/JS/admin) |
+| `/admin/collector/*` | `http://saa-collector-frontend:80/*` | 前端页面 → Frontend |
 
 ### 路径重写规则
 
@@ -58,8 +67,8 @@ Internet
 saa-collector-frontend:
   image: crpi-lj3q4y8fz3cwi92h.cn-hangzhou.personal.cr.aliyuncs.com/sinall/saa-collector-frontend:latest
   container_name: saa-collector-frontend
-  ports:
-    - "8003:80"
+  networks:
+    - saa-net
   restart: unless-stopped
 ```
 
@@ -86,7 +95,7 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # API 代理 (仅 Docker 内部网络使用，生产环境由宿主机 Nginx 处理)
+    # API 代理 (仅 Docker 内部网络使用，生产环境由 saa-conf 管理的 nginx 处理)
     location /api {
         proxy_pass http://saa-collector-backend:8000;
     }
@@ -116,7 +125,8 @@ server {
 |------------|------|
 | `gunicorn` (默认) | `gunicorn --bind 0.0.0.0:8000 --workers 1 --threads 4` |
 | `runserver` | `python manage.py runserver 0.0.0.0:8000` |
-| `scheduler` | 启动 `saa_collector.scheduler.Scheduler` |
+| `celery-worker` | 启动 Celery worker，队列由 `COLLECTOR_CELERY_QUEUE` 指定 |
+| `celery-beat` | 启动 Celery beat |
 
 ### Django Settings
 
@@ -153,8 +163,8 @@ server {
 
 | 项目 | 开发 | 生产 |
 |------|------|------|
-| Frontend | Vite dev server (`:3000`) | Docker Nginx (`:8003`) |
-| Backend | `runserver` (`:8000`) | Gunicorn (`:8004`) |
+| Frontend | Vite dev server (`:3000`) | Docker Nginx (`saa-collector-frontend:80`) |
+| Backend | `runserver` (`:8000`) | Gunicorn (`saa-collector-backend:8000`) |
 | 数据库 | Aliyun RDS | Aliyun RDS |
 | 入口 | `backend/start.sh` (pyenv) | `docker-compose` |
 | Auth Token | `DEV_MODE_TOKEN` | UCenter + DRF Token |
@@ -194,7 +204,7 @@ proxy: {
 
 ```
 Browser: GET /admin/collector/
-    → Host Nginx: proxy_pass http://127.0.0.1:8003/
+    → nginx: proxy_pass http://saa-collector-frontend:80/
     → Frontend Container Nginx: try_files → /index.html
     → 返回 Vue SPA
 ```
@@ -203,7 +213,7 @@ Browser: GET /admin/collector/
 
 ```
 Browser: GET /admin/collector/api/data-types/
-    → Host Nginx: proxy_pass http://127.0.0.1:8004/api/data-types/
+    → nginx: proxy_pass http://saa-collector-backend:8000/api/data-types/
     → Backend Gunicorn: Django URL /api/data-types/
     → 返回 JSON
 ```
@@ -212,7 +222,7 @@ Browser: GET /admin/collector/api/data-types/
 
 ```
 Browser: GET /admin/collector/assets/index-abc123.js
-    → Host Nginx: proxy_pass http://127.0.0.1:8003/assets/index-abc123.js
+    → nginx: proxy_pass http://saa-collector-frontend:80/assets/index-abc123.js
     → Frontend Container Nginx: 返回 /usr/share/nginx/html/assets/index-abc123.js
 ```
 
@@ -220,7 +230,7 @@ Browser: GET /admin/collector/assets/index-abc123.js
 
 ```
 Browser: GET /admin/collector/static/admin/css/base.css
-    → Host Nginx: proxy_pass http://127.0.0.1:8004/admin/collector/static/admin/css/base.css
+    → nginx: proxy_pass http://saa-collector-backend:8000/admin/collector/static/admin/css/base.css
     → Backend Gunicorn: WhiteNoise 返回 staticfiles/admin/css/base.css
 ```
 
@@ -256,14 +266,14 @@ Browser: GET /admin/collector/static/admin/css/base.css
 ## 镜像仓库
 
 - **Frontend**: `crpi-lj3q4y8fz3cwi92h.cn-hangzhou.personal.cr.aliyuncs.com/sinall/saa-collector-frontend:latest`
-- **Backend**: (待确认，参考 docker-compose.yml 中的 build 配置)
+- **Backend/Worker/Scheduler/Beat**: `crpi-lj3q4y8fz3cwi92h.cn-hangzhou.personal.cr.aliyuncs.com/sinall/saa-collector-backend:latest`
 
 ## 注意事项
 
 1. **路径前缀**：前端通过 `vite.config.ts` 的 `base: '/admin/collector/'` 确保所有资源引用带有正确前缀
 2. **静态文件**：Django 使用 WhiteNoise 中间件直接服务静态文件，无需额外静态文件服务器
 3. **数据库**：使用阿里云 RDS MySQL，开发环境直连远程数据库
-4. **缓存**：宿主机 Nginx 对 `/admin/collector/static/` 设置 1 年缓存 + gzip 压缩
+4. **缓存**：生产 nginx 对 `/admin/collector/static/` 设置 1 年缓存 + gzip 压缩
 
 ## 认证系统 (UCenter 集成)
 
@@ -379,8 +389,8 @@ CREATE TABLE IF NOT EXISTS authtoken_token (
 ### 4. 重新构建并部署
 
 ```bash
-docker-compose build
-docker-compose up -d
+# 生产配置变更通过 saa-conf/ansible 部署。
+# 镜像更新后，在 Portainer 或 Ansible 流程中 recreate 对应 collector 容器。
 ```
 
 ### 5. 验证

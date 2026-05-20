@@ -1,5 +1,7 @@
 # Collection Progress ETA Design
 
+> 历史设计与生产观察文档。当前任务执行、续跑、进度日志和 chunk 暂缓规则见 `../../openspec/specs/collector-task-execution/spec.md`；外部 API 观测规则见 `../../openspec/specs/collector-external-api/spec.md`。
+
 ## 背景
 
 采集任务现在希望在多 symbol 任务中输出完成进度和 ETA，例如：

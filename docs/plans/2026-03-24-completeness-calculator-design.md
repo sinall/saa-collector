@@ -1,5 +1,7 @@
 # 数据完整度计算模块设计文档
 
+> 历史设计文档。当前数据类型配置与完整度计算规则见 `../../openspec/specs/collector-data-configuration/spec.md`。
+
 ## 1. 背景
 
 当前系统中存在两个热力图功能需要计算数据完整度：

@@ -1,5 +1,7 @@
 # UCenter 登录集成计划
 
+> 历史实现计划。本文保留 UCenter 集成背景和部署注意事项；当前认证与部署规范见 `../../openspec/specs/collector-deployment-auth/spec.md`。
+
 > 日期: 2026-04-13
 > 目标: 集成 Discuz X5.0 UCenter 2.0 实现管理员登录认证
 

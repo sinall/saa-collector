@@ -1,5 +1,7 @@
 # External API Cache Design Notes
 
+> 未来增强设计笔记。外部 API 缓存尚未实现；当前已生效的是 Tushare 全局限流和 API/限流耗时日志。当前规范见 `../../openspec/specs/collector-external-api/spec.md`。
+
 ## 背景
 
 当前长时间采集的主要耗时来自 Tushare 等外部 API。即使已经支持 `financial_statements` 按 `remaining_symbols` 续跑，重试失败 symbol 或重新执行计划时，仍可能重复请求相同的外部接口。
@@ -12,6 +14,57 @@
 - 降低外部 API 限流影响。
 - 支持失败重试、任务续跑、开发调试时复用已有响应。
 - 缓存作为采集层优化，不改变最终业务表结构。
+
+## 与 DB preflight skip 的关系
+
+针对 `财务报表采集(5月)` 这类 schedule，如果每次触发都按全市场全量采集，主要浪费不只是外部 API 请求本身，还包括限流等待、DataFrame 转换、DB upsert、cache refresh 和长任务运行时间。这里有两个方向：
+
+1. **API call cache**：保持采集结构不变，在 `TushareApiClient` 层复用同一 API + 参数的历史响应。
+2. **DB preflight skip**：采集前先检查本地业务表，若某个 symbol 对应数据已经满足要求，则跳过该 symbol 的 API call、转换和写库。
+
+推荐顺序是 **DB preflight skip 优先，API call cache 作为补充**。
+
+原因：
+
+- API cache 只能避免重复外部请求；缓存 miss、过期、文件丢失或参数变化时仍会走完整全量流程。
+- DB preflight skip 直接减少待处理 symbol 数，能同时减少 API 调用、限流等待、转换、写库和后续 cache refresh。
+- 对定时任务而言，“本地业务表已经满足本次采集目标”比“外部 API 响应在缓存里”更接近最终业务正确性。
+
+因此外部 API cache 不应替代业务表级的跳过逻辑。更合理的执行顺序是：
+
+```text
+financial_statements schedule
+  -> build symbols
+  -> DB preflight coverage scan
+       -> complete enough: skip symbol
+       -> missing/stale: collect symbol
+            -> optional API cache lookup
+            -> Tushare call on miss
+            -> save business tables
+            -> refresh report caches
+```
+
+### DB preflight skip 的判定边界
+
+不能简单用“表里有任意记录”作为跳过条件。财务报表存在修订、补发和分红缺失等情况，第一版应保守定义 `complete enough`：
+
+- 只先作用于组合任务 `financial_statements`。
+- 对三张核心财报表 `saa_raw_balance_sheet`、`saa_raw_income_statement`、`saa_raw_cash_flow_statement`，按 symbol 检查最近应覆盖报告期是否存在数据。
+- `saa_dividends` 不宜作为强制完整条件，因为很多股票某些年份本来没有分红；第一版可只在有明确报告期/日期要求时检查。
+- 如果任一核心表缺最近应覆盖报告期，则该 symbol 仍进入采集。
+- 跳过时必须打日志，例如 `Skip financial statements for 002803: local data complete`，并计入最终进度。
+
+### 待决策：补齐缺失还是强制刷新修订
+
+`财务报表采集(5月)` 的业务语义需要先明确：
+
+| 语义 | 行为 |
+| --- | --- |
+| 补齐缺失数据 | 优先 DB preflight skip；本地满足覆盖条件的 symbol 不再请求 API |
+| 强制刷新最新修订 | 不能简单跳过；应刷新最近 N 个报告期，或使用较短 TTL 的 API cache |
+| 两者兼顾 | schedule/job 参数中显式区分，例如 `skip_existing=true`、`refresh_recent_periods=4` 或 `force_refresh=false` |
+
+在语义未确认前，不建议直接让所有财报 schedule 默认跳过历史数据。建议先把 `财务报表采集(5月)` 定义为“补齐缺失 + 可配置刷新最近 N 期”，再实现 DB preflight skip。
 
 ## 关键设计点
 
@@ -108,8 +161,8 @@
 
 - provider：例如 `tushare`
 - api name：例如 `balancesheet`
-- canonical params：排序后的参数 JSON，例如 `{"fields":"...", "start_date":null, "ts_code":"000001.SZ"}`
-- client/schema version：当字段解析逻辑变化时可整体失效
+- semantic params：排序后的业务参数 JSON，例如 `{"start_date":null, "ts_code":"000001.SZ"}`
+- raw response schema version：当外部原始响应结构或缓存格式变化时可整体失效
 
 可生成：
 
@@ -117,7 +170,9 @@
 sha256(provider + api_name + canonical_json(params) + version)
 ```
 
-注意 `fields` 参数必须参与 key，否则不同字段集合会错误命中。
+注意：**`fields` 不应参与 cache key**。本缓存的目标是保存外部 API 的完整 raw response，而不是保存某次业务调用裁剪后的字段集合。这样后续代码重构、补解析字段或修复 transform 逻辑时，可以复用旧 raw response 重新生成业务表数据。
+
+这也带来一个约束：写入 cache 时必须尽量保存完整 raw response，或保存该 API 的 canonical full-fields 响应。不能让第一次只请求少数字段的调用污染同一个 cache entry，否则后续多解析字段时仍然拿不到新字段。
 
 ### API 调用字符串化
 
@@ -130,7 +185,6 @@ Tushare、Akshare 这类外部数据源本质上都是“调用某个 API 名称
   "provider": "tushare",
   "api": "balancesheet",
   "params": {
-    "fields": "ts_code,end_date,total_assets",
     "start_date": null,
     "ts_code": "000001.SZ"
   },
@@ -140,11 +194,12 @@ Tushare、Akshare 这类外部数据源本质上都是“调用某个 API 名称
 
 然后做规范化：
 
-- 参数按 key 排序，避免 `ts_code=...&fields=...` 和 `fields=...&ts_code=...` 生成不同 key。
+- 参数按 key 排序，避免同义参数顺序生成不同 key。
 - 去掉不影响返回结果的运行时参数，例如 logger、timeout、retry、rate_limit、request_id。
-- 保留所有会影响返回结果的参数，例如 `fields`、`ts_code`、`start_date`、`end_date`、`trade_date`、`period`、`type`。
+- 保留所有会影响业务语义的参数，例如 `ts_code`、`start_date`、`end_date`、`trade_date`、`period`、`type`。
+- 排除 `fields`，因为它只表示本次业务代码想读取哪些列；cache value 应保存完整 raw response。
 - `None`、空字符串、空列表要有明确规则。建议保留 `None`，但把空字符串统一成 `None`，避免同义调用拆成两个缓存。
-- list/tuple 参数要排序还是保序，需要按 API 语义决定。股票列表如果只是集合，排序；字段列表如果返回列顺序有意义，保留原顺序。
+- list/tuple 参数要排序还是保序，需要按 API 语义决定。股票列表如果只是集合，排序。
 - 日期、datetime 统一格式化为字符串，例如 `YYYYMMDD` 或 `YYYY-MM-DD`，同一个 API 内必须一致。
 - 数字、布尔值使用 JSON 原生类型，不要混用 `"1"` 和 `1`。
 
@@ -158,13 +213,13 @@ cache_key = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 例如：
 
 ```text
-tushare.query("balancesheet", ts_code="000001.SZ", fields="ts_code,end_date", start_date=None)
+tushare.query("balancesheet", ts_code="000001.SZ", fields="<caller requested fields>", start_date=None)
 ```
 
 可以规范化为：
 
 ```json
-{"api":"balancesheet","params":{"fields":"ts_code,end_date","start_date":null,"ts_code":"000001.SZ"},"provider":"tushare","version":"v1"}
+{"api":"balancesheet","params":{"start_date":null,"ts_code":"000001.SZ"},"provider":"tushare","version":"raw-v1"}
 ```
 
 Akshare 的函数式调用也可以用同样方式表达：
@@ -183,11 +238,12 @@ ak.stock_zygc_em(symbol="SZ000001")
 
 ## 响应格式
 
-缓存内容建议保存外部 API 返回的原始 records，而不是 pandas DataFrame：
+缓存内容应保存外部 API 返回的完整原始 records，而不是 pandas DataFrame 或业务表 records：
 
 - JSON records 可跨版本读取。
 - 避免 pickle 带来的兼容和安全问题。
 - 命中后再转换为 DataFrame 或直接进入当前 `to_dict('records')` 后的处理流程。
+- 代码重构、补字段解析、transform 修复时，可以从同一份 raw response 重新生成业务表。
 
 需要记录：
 
@@ -196,6 +252,7 @@ ak.stock_zygc_em(symbol="SZ000001")
 - `cache_key`
 - `params_json`
 - `response_json`
+- `raw_response_schema_version`
 - `created_at`
 - `expires_at`
 - `hit_count`
@@ -216,9 +273,9 @@ third_party/tushare_api_client.py
 ```text
 collector -> TushareApiClient.query(api_name, **params)
           -> cache lookup
-          -> miss/expired: call real API
-          -> save response
-          -> return records/DataFrame-compatible result
+          -> miss/expired: call real API with canonical full-fields policy where possible
+          -> save complete raw response
+          -> return records/DataFrame-compatible result, applying caller field expectations after cache read
 ```
 
 这样 balance sheet、income、cashflow、dividend 等都能复用同一缓存逻辑。
@@ -230,9 +287,13 @@ collector -> TushareApiClient.query(api_name, **params)
 - 需要提供开关，例如 `EXTERNAL_API_CACHE_ENABLED=false`，避免排查数据问题时被缓存干扰。
 - 需要支持强制绕过缓存，例如 collect job 参数或环境变量。
 - 缓存命中的是外部 API 原始响应，不代表最终业务表已经写入成功；续跑逻辑仍然要以 job 进度和业务表写入为准。
+- cache key 不包含 `fields` 的前提是 cache value 保存完整 raw response；如果某个 API 无法获取完整字段，必须为该 API 单独定义 canonical field set 或禁用该 API 的缓存。
 
 ## 待决策
 
+- `财务报表采集(5月)` 的默认语义是补齐缺失，还是强制刷新最新修订。
+- DB preflight skip 的完整性边界：最近 1 期、最近 N 期，还是从 `start_date` 到当前所有应有报告期。
+- 是否在 schedule/job 参数中加入 `skip_existing`、`force_refresh` 或 `refresh_recent_periods`。
 - 首版是否只支持 Tushare。
 - SQLite cache 文件路径和 compose volume 挂载位置。
 - 默认 TTL 配置放在环境变量、`saa_collector.yml`，还是按 data type 写入常量配置。

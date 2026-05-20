@@ -1,5 +1,7 @@
 # 完整性检查与采集计划实现计划
 
+> 历史实现计划。本文中的任务清单反映当时的实施步骤，不代表当前待办；当前完整性检查和修复计划规范见 `../../openspec/specs/collector-integrity-repair/spec.md`。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 建立完整性检查 → 任务生成的完整工作流，包括 DataIntegrityReport、CollectPlan 数据模型及前后端实现。

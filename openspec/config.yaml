@@ -1,0 +1,25 @@
+schema: spec-driven
+
+context: |
+  SAA Collector is an independent repository in the SAA repo-managed workspace.
+  It owns the collector Django backend, Vue frontend, Celery task execution,
+  data-source integrations, and collector-facing documentation.
+
+  Production Compose, Nginx, memory limits, environment file paths, and service
+  container names are deployed from the sibling saa-conf repository. When a
+  collector behavior depends on production container roles or mounts, specs may
+  reference saa-conf as the production source of truth, but collector application
+  behavior belongs in this local OpenSpec tree.
+
+  Historical design notes and implementation plans remain under docs/. OpenSpec
+  specs capture current durable behavior and future accepted requirements, not
+  raw investigation timelines or obsolete task checklists.
+
+rules:
+  specs:
+    - Keep collector application rules in this repository.
+    - Link to docs/ for historical context instead of copying long design notes.
+    - State whether future enhancements are active requirements or deferred candidates.
+  tasks:
+    - Follow TDD for collector code changes as required by AGENTS.md.
+    - Keep backend, frontend, and production-config repository ownership explicit.

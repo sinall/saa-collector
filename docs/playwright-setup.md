@@ -1,5 +1,7 @@
 # Playwright 快速启动指南
 
+> 当前测试规范见 `../openspec/specs/collector-testing/spec.md`，完整测试用法见 `testing.md`。
+
 ## 安装系统依赖
 
 在运行测试之前，需要先安装 Playwright 所需的系统依赖库。

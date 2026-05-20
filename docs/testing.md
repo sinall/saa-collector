@@ -1,5 +1,7 @@
 # E2E 测试指南
 
+> 当前测试规范见 `../openspec/specs/collector-testing/spec.md`。本文保留 Playwright 操作指南和本地调试细节。
+
 本项目使用 **Playwright** 进行端到端测试，用于验证页面展示是否合理、是否有错误。
 
 ## 快速开始
@@ -66,21 +68,17 @@ npm run test:e2e:report
 
 测试运行后会自动生成 HTML 报告。
 
-## 通过 opencode 运行
+## package.json 命令
 
-```bash
-# UI 模式
-npm run test:ui
+当前 `frontend/package.json` 提供以下测试脚本：
 
-# 调试模式
-npm run test:debug
-
-# 查看报告
-npm run test:report
-
-# 快速测试（仅 Chromium）
-npm run test:quick
-```
+| 命令 | 说明 |
+| --- | --- |
+| `npm run test:e2e` | 运行全部 Playwright 测试 |
+| `npm run test:e2e:chromium` | 只运行 Chromium 项目 |
+| `npm run test:e2e:ui` | 打开 Playwright UI |
+| `npm run test:e2e:debug` | 调试模式 |
+| `npm run test:e2e:report` | 查看 HTML 报告 |
 
 ## 测试覆盖范围
 
@@ -117,10 +115,18 @@ npm run test:quick
 - ✅ **采集计划** (`/collect-plans`)
   - 页面加载
   - 无错误
+  - 服务端筛选和分页
+  - 详情页轮询不显示整页加载蒙层
+  - 详情页之间路由切换重新加载
 
 - ✅ **采集调度** (`/collect-schedules`)
   - 页面加载
   - 无错误
+  - 手动触发后跳转到后端返回的计划详情
+
+- ✅ **即时采集**
+  - 创建采集计划
+  - 可选立即执行
 
 ## 测试重点
 
@@ -142,7 +148,10 @@ frontend/
 │   │   ├── integrity-reports.spec.ts
 │   │   ├── integrity-report-detail.spec.ts
 │   │   ├── data-browse.spec.ts
-│   │   └── collect.spec.ts
+│   │   ├── collect.spec.ts
+│   │   ├── collect-detail.spec.ts
+│   │   ├── collect-schedules.spec.ts
+│   │   └── instant-collect.spec.ts
 │   ├── utils/              # 工具函数
 │   │   └── helpers.ts
 │   └── global-setup.ts     # 全局设置

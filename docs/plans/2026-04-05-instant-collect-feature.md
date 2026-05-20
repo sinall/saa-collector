@@ -1,5 +1,7 @@
 # Instant Collect Feature Implementation Plan
 
+> 历史实现计划。本文记录即时采集功能的实施步骤；当前即时采集和 schedule-triggered plan 规范见 `../../openspec/specs/collector-schedules/spec.md`。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Implement "即时采集" (Instant Collect) feature that allows users to create a collection plan with tasks in a single API call from the frontend dialog.

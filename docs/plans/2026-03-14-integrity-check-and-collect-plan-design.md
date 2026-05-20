@@ -1,5 +1,7 @@
 # 数据完整性检查与采集计划设计
 
+> 历史设计文档。本文保留完整性检查、采集计划、调度和长任务恢复的原始设计背景；当前有效规则已提炼到 `../../openspec/specs/collector-integrity-repair/spec.md`、`../../openspec/specs/collector-schedules/spec.md` 和 `../../openspec/specs/collector-task-execution/spec.md`。
+
 ## 概述
 
 建立数据完整性检查与采集管理的完整工作流，支持两种采集模式：

@@ -1,8 +1,10 @@
 # 数据类型配置架构重构方案
 
-**创建日期**: 2026-04-03  
-**状态**: 待实施  
-**优先级**: 高  
+> 历史设计文档。本文中的“待实施”清单已过期；当前代码已经具备 `DATA_TYPE_CONFIG`、`DataTypesConfigView` 和 `useDataTypes()` 架构。当前规范见 `../../openspec/specs/collector-data-configuration/spec.md`。
+
+**创建日期**: 2026-04-03
+**状态**: 历史方案，已由当前实现和 OpenSpec 取代
+**优先级**: 高
 
 ---
 

@@ -1,5 +1,7 @@
 # SAA Collector Django + Vue 集成设计
 
+> 历史设计文档。本文记录 2026-03-08 的初始 Django + Vue 集成方案，部分 Docker Compose、端口和实现步骤已被当前生产架构替代。当前规范见 `../../openspec/specs/collector-deployment-auth/spec.md`、`../../openspec/specs/collector-testing/spec.md` 和 `../deployment.md`。
+
 ## 1. 项目概述
 
 将 saa-collector 从 cement CLI 架构改造为 Django + Vue 前后端分离架构，保留现有采集能力，增加 Web 管理界面。
