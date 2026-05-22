@@ -9,6 +9,37 @@ from saa_collector.services.collect_plan_executor import execute_collect
 class FinancialStatementResumeTest(TestCase):
     @patch('saa_collector.services.collect_plan_executor.release_process_memory')
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
+    def test_financial_statements_filters_explicit_symbols_to_a_stocks(
+            self, factory_class, release_process_memory):
+        job = CollectJob.objects.create(
+            data_type='financial_statements',
+            config={
+                'symbols': ['000001', '510300', '000002'],
+                'params': {},
+            },
+        )
+        service = factory_class.return_value.create_statement_service.return_value
+        service.filter_a_stock_symbols.return_value = ['000001', '000002']
+
+        def produce(symbols, start_date=None, on_symbol_success=None,
+                    on_symbol_failure=None, after_symbol=None, **kwargs):
+            self.assertEqual(symbols, ['000001', '000002'])
+            on_symbol_success('000001')
+            after_symbol('000001')
+            on_symbol_success('000002')
+            after_symbol('000002')
+
+        service.produce.side_effect = produce
+
+        execute_collect(job)
+
+        service.filter_a_stock_symbols.assert_called_once_with(['000001', '000002', '510300'])
+        job.refresh_from_db()
+        self.assertNotIn('remaining_symbols', job.config)
+        self.assertEqual(release_process_memory.call_count, 2)
+
+    @patch('saa_collector.services.collect_plan_executor.release_process_memory')
+    @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     def test_financial_statements_resume_initializes_remaining_symbols_on_first_run(
             self, factory_class, release_process_memory):
         job = CollectJob.objects.create(
@@ -19,6 +50,7 @@ class FinancialStatementResumeTest(TestCase):
             },
         )
         service = factory_class.return_value.create_statement_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         def produce(symbols, start_date=None, on_symbol_success=None,
                     on_symbol_failure=None, after_symbol=None, **kwargs):
@@ -52,6 +84,7 @@ class FinancialStatementResumeTest(TestCase):
             },
         )
         service = factory_class.return_value.create_statement_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         def produce(symbols, start_date=None, on_symbol_success=None,
                     on_symbol_failure=None, after_symbol=None, **kwargs):
@@ -88,6 +121,7 @@ class FinancialStatementResumeTest(TestCase):
             },
         )
         service = factory_class.return_value.create_statement_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         def produce(symbols, start_date=None, on_symbol_success=None,
                     on_symbol_failure=None, after_symbol=None, **kwargs):
@@ -115,12 +149,13 @@ class FinancialStatementResumeTest(TestCase):
                 'params': {},
             },
         )
+        service = factory_class.return_value.create_statement_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         execute_collect(job)
 
         job.refresh_from_db()
         self.assertNotIn('remaining_symbols', job.config)
-        service = factory_class.return_value.create_statement_service.return_value
         service.produce.assert_not_called()
 
 
@@ -137,6 +172,7 @@ class SymbolLoopResumeTest(TestCase):
             },
         )
         service = factory_class.return_value.create_capital_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         def collect(symbols, start_date=None, progress_enabled=True):
             self.assertFalse(progress_enabled)
@@ -169,6 +205,7 @@ class SymbolLoopResumeTest(TestCase):
             },
         )
         service = factory_class.return_value.create_capital_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         execute_collect(job)
 
@@ -192,6 +229,7 @@ class SymbolLoopResumeTest(TestCase):
             },
         )
         service = factory_class.return_value.create_capital_service.return_value
+        service.filter_a_stock_symbols.side_effect = lambda symbols: sorted(symbols)
 
         execute_collect(job)
 

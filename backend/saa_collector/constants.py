@@ -15,6 +15,7 @@
 - group: 所属分组（market/statement/other/valuation/industry）
 - show_completeness: 是否在仪表盘显示完整性
 - need_date: 采集时是否需要日期参数
+- security_scope: 证券范围约束（如 'a_stock' 表示仅 A 股股票）
 - order: 排序序号（越小越靠前）
 """
 
@@ -92,6 +93,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': False,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 5,
     },
     'balance_sheet': {
@@ -104,6 +106,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': True,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 6,
     },
     'income': {
@@ -116,6 +119,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': True,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 7,
     },
     'cash_flow': {
@@ -128,6 +132,7 @@ DATA_TYPE_CONFIG = {
         'group': 'statement',
         'show_completeness': True,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 8,
     },
     'main_business': {
@@ -140,6 +145,7 @@ DATA_TYPE_CONFIG = {
         'group': 'other',
         'show_completeness': True,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 9,
     },
     'capital': {
@@ -152,6 +158,7 @@ DATA_TYPE_CONFIG = {
         'group': 'other',
         'show_completeness': True,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 10,
     },
     'dividend': {
@@ -164,6 +171,7 @@ DATA_TYPE_CONFIG = {
         'group': 'other',
         'show_completeness': True,
         'need_date': True,
+        'security_scope': 'a_stock',
         'order': 11,
     },
     'valuation_board': {

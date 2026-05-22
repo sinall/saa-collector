@@ -72,6 +72,7 @@ def execute_plan(plan_id, task_id=None):
             for job in jobs:
                 execute_job(job.id, task_id, plan_id)
 
+        refresh_django_db_connections('before plan finalization')
         plan.refresh_from_db()
         if plan.jobs.filter(status='FAILED').exists():
             plan.status = 'FAILED'
@@ -84,6 +85,7 @@ def execute_plan(plan_id, task_id=None):
     except Exception as e:
         logger.exception('Collect plan execution failed: %s', e)
         try:
+            refresh_django_db_connections('before marking plan failed')
             plan = CollectPlan.objects.get(id=plan_id)
             plan.status = 'FAILED'
             plan.completed_at = timezone.now()
@@ -113,11 +115,13 @@ def execute_job(job_id, task_id=None, plan_id=None):
         job.start()
         logger.info('Starting collect job')
         execute_collect(job)
+        refresh_django_db_connections('before marking job success')
         job.complete(success=True, message='执行完成')
         logger.info('Finished collect job: status=SUCCESS')
     except Exception as e:
         logger.exception('Collect job execution failed: %s', e)
         try:
+            refresh_django_db_connections('before marking job failed')
             job = CollectJob.objects.get(id=job_id)
             job.complete(success=False, message=str(e))
         except Exception:
@@ -125,6 +129,11 @@ def execute_job(job_id, task_id=None, plan_id=None):
     finally:
         if 'context_token' in locals():
             reset_collect_execution_context(context_token)
+
+
+def refresh_django_db_connections(reason):
+    logger.debug('Refreshing Django database connections: %s', reason)
+    db.connections.close_all()
 
 
 def execute_collect(job):
@@ -175,7 +184,7 @@ def execute_collect(job):
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
-            symbols = build_financial_statement_symbols(service, symbols)
+            symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             remaining_symbols = initialize_symbol_progress(job.id, symbols)
             if not remaining_symbols:
                 logger.info('Skipping financial statements collect: all %d symbols completed', len(symbols))
@@ -208,8 +217,8 @@ def execute_collect(job):
                 )
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
+            symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             report_types = params.get('report_types', [])
-            symbols = build_symbols_for_service(service, symbols)
             if report_types:
                 logger.info(
                     'Running multi-report statement job without generic symbol resume: report_types=%s',
@@ -249,7 +258,7 @@ def execute_collect(job):
                 )
         elif data_type == 'capital':
             service = factory.create_capital_service()
-            symbols = build_symbols_for_service(service, symbols)
+            symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             execute_resumable_symbol_loop(
                 job,
                 symbols,
@@ -258,7 +267,7 @@ def execute_collect(job):
             )
         elif data_type == 'main_business':
             service = factory.create_statement_service()
-            symbols = build_symbols_for_service(service, symbols)
+            symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             execute_resumable_symbol_loop(
                 job,
                 symbols,
@@ -307,12 +316,25 @@ def initialize_symbol_progress(job_id, symbols):
     return remaining_symbols
 
 
-def build_financial_statement_symbols(service, symbols):
-    if symbols is None:
-        return service.build_symbols(symbols)
+def apply_data_type_symbol_scope(data_type, service, symbols):
     if isinstance(symbols, str):
         symbols = [symbols]
-    return sorted(symbols)
+    if symbols is not None:
+        symbols = sorted(symbols)
+
+    config = DATA_TYPE_CONFIG.get(data_type, {})
+    if config.get('security_scope') == 'a_stock':
+        scoped_symbols = service.filter_a_stock_symbols(symbols)
+        if symbols is not None and len(scoped_symbols) != len(symbols):
+            logger.info(
+                'Applied A-stock symbol scope: data_type=%s requested=%d kept=%d dropped=%d',
+                data_type, len(symbols), len(scoped_symbols), len(symbols) - len(scoped_symbols)
+            )
+        return scoped_symbols
+
+    if symbols is None:
+        return service.build_symbols(symbols)
+    return symbols
 
 
 def build_symbols_for_service(service, symbols):

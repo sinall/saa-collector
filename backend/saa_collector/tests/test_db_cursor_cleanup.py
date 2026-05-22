@@ -21,6 +21,25 @@ class CursorCleanupTest(TestCase):
         cursor.close.assert_called_once()
         connection.close.assert_called_once()
 
+    def test_tushare_filter_a_stock_symbols_uses_stock_scope_and_closes_resources(self):
+        service = BasicStockService.__new__(BasicStockService)
+        service.db_config = {}
+        service._logger = MagicMock()
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchall.return_value = [('000001',), ('000002',)]
+
+        with patch.object(basic_stock_module.mysql.connector, 'connect', return_value=connection):
+            symbols = service.filter_a_stock_symbols(['510300', '000002', '000001'])
+
+        self.assertEqual(symbols, ['000001', '000002'])
+        executed_query = cursor.execute.call_args[0][0]
+        self.assertIn("type = 'STOCK'", executed_query)
+        self.assertIn("market = 'A'", executed_query)
+        cursor.execute.assert_called_once_with(executed_query, ['000001', '000002', '510300'])
+        cursor.close.assert_called_once()
+        connection.close.assert_called_once()
+
     def test_progress_load_listing_times_closes_cursor_and_connection(self):
         connection = MagicMock()
         cursor = connection.cursor.return_value

@@ -124,6 +124,38 @@ class BasicStockService(BasicService):
             symbols = self.get_symbols_from_db()
         return symbols
 
+    def filter_a_stock_symbols(self, symbols):
+        if isinstance(symbols, str):
+            symbols = [symbols]
+        if not symbols:
+            return self.get_symbols_from_db()
+
+        requested_symbols = sorted(set(symbols))
+        placeholders = ','.join(['%s'] * len(requested_symbols))
+        query = (
+            "SELECT symbol FROM saa_stocks "
+            "WHERE type = 'STOCK' AND market = 'A' AND symbol IN ({})"
+        ).format(placeholders)
+        cnx = mysql.connector.connect(**self.db_config)
+        cursor = None
+        try:
+            cursor = cnx.cursor()
+            cursor.execute(query, requested_symbols)
+            symbols = [i[0] for i in cursor.fetchall()]
+            symbols.sort()
+        finally:
+            if cursor:
+                cursor.close()
+            cnx.close()
+
+        dropped_symbols = sorted(set(requested_symbols) - set(symbols))
+        if dropped_symbols:
+            self._logger.info(
+                'Filtered non-A-stock symbols: requested=%d kept=%d dropped=%d dropped_symbols=%s',
+                len(requested_symbols), len(symbols), len(dropped_symbols), dropped_symbols[:20]
+            )
+        return symbols
+
     def get_symbols_from_db(self):
         query = "SELECT symbol FROM saa_stocks WHERE type = 'STOCK' AND market = 'A'"
         cnx = mysql.connector.connect(**self.db_config)
