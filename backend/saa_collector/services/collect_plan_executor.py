@@ -5,7 +5,7 @@ import gc
 from datetime import datetime
 
 from django import db
-from django.db import connection
+from django.db import connection, transaction
 from django.utils import timezone
 
 from saa_collector.collect_job_config import get_cache_control
@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 REMAINING_SYMBOLS_KEY = 'remaining_symbols'
 COMPLETED_SYMBOLS_KEY = 'completed_symbols'
 FAILED_SYMBOLS_KEY = 'failed_symbols'
+
+
+class PlanExecutionStopped(RuntimeError):
+    pass
 
 
 def parse_period_to_date(period_str):
@@ -46,11 +50,16 @@ def execute_plan(plan_id, task_id=None):
     context_token = set_collect_execution_context(task_id=task_id, plan_id=plan_id)
 
     try:
-        plan = CollectPlan.objects.get(id=plan_id)
-        plan.status = 'RUNNING'
-        plan.started_at = timezone.now()
-        plan.completed_at = None
-        plan.save()
+        with transaction.atomic():
+            plan = CollectPlan.objects.select_for_update().get(id=plan_id)
+            if plan.status == 'STOPPED':
+                logger.info('Collect plan %s already stopped before execution starts', plan.id)
+                return
+            plan.status = 'RUNNING'
+            if plan.started_at is None:
+                plan.started_at = timezone.now()
+            plan.completed_at = None
+            plan.save()
         logger.info(
             'Starting collect plan: name=%s execution_mode=%s jobs=%d',
             plan.name,
@@ -58,11 +67,12 @@ def execute_plan(plan_id, task_id=None):
             plan.jobs.count(),
         )
 
-        jobs = list(plan.jobs.all())
+        jobs = list(plan.jobs.exclude(status='SUCCESS'))
 
         if plan.execution_mode == 'PARALLEL':
             threads = []
             for job in jobs:
+                ensure_plan_not_stopped(plan_id)
                 t = threading.Thread(target=execute_job, args=(job.id, task_id, plan_id))
                 t.start()
                 threads.append(t)
@@ -70,10 +80,14 @@ def execute_plan(plan_id, task_id=None):
                 t.join()
         else:
             for job in jobs:
+                ensure_plan_not_stopped(plan_id)
                 execute_job(job.id, task_id, plan_id)
 
         refresh_django_db_connections('before plan finalization')
         plan.refresh_from_db()
+        if plan.status == 'STOPPED':
+            logger.info('Collect plan %s stopped before finalization', plan.id)
+            return
         if plan.jobs.filter(status='FAILED').exists():
             plan.status = 'FAILED'
         else:
@@ -82,6 +96,16 @@ def execute_plan(plan_id, task_id=None):
         plan.completed_at = timezone.now()
         plan.save()
         logger.info('Finished collect plan: status=%s', plan.status)
+    except PlanExecutionStopped:
+        logger.info('Collect plan %s stopped', plan_id)
+        try:
+            refresh_django_db_connections('before marking plan stopped')
+            plan = CollectPlan.objects.get(id=plan_id)
+            plan.status = 'STOPPED'
+            plan.completed_at = None
+            plan.save(update_fields=['status', 'completed_at'])
+        except Exception:
+            logger.exception('Failed to mark collect plan as stopped')
     except Exception as e:
         logger.exception('Collect plan execution failed: %s', e)
         try:
@@ -112,12 +136,21 @@ def execute_job(job_id, task_id=None, plan_id=None):
             api_cache_bypass=get_cache_control(job.config, 'api_cache_bypass'),
             api_cache_ttl_seconds=get_cache_control(job.config, 'api_cache_ttl_seconds'),
         )
+        ensure_plan_not_stopped(effective_plan_id)
         job.start()
         logger.info('Starting collect job')
         execute_collect(job)
         refresh_django_db_connections('before marking job success')
         job.complete(success=True, message='执行完成')
         logger.info('Finished collect job: status=SUCCESS')
+    except PlanExecutionStopped:
+        logger.info('Collect job %s stopped', job_id)
+        try:
+            refresh_django_db_connections('before marking job stopped')
+            job = CollectJob.objects.get(id=job_id)
+            job.stop(message='任务已停止')
+        except Exception:
+            logger.exception('Failed to mark collect job as stopped: job_id=%s', job_id)
     except Exception as e:
         logger.exception('Collect job execution failed: %s', e)
         try:
@@ -195,10 +228,12 @@ def execute_collect(job):
 
             def on_symbol_success(symbol):
                 mark_symbol_success(job.id, symbol)
+                ensure_plan_not_stopped(job.plan_id)
 
             def on_symbol_failure(symbol):
                 failed_symbols.append(symbol)
                 mark_symbol_failure(job.id, symbol)
+                ensure_plan_not_stopped(job.plan_id)
 
             service.produce(
                 remaining_symbols,
@@ -208,7 +243,7 @@ def execute_collect(job):
                 after_symbol=release_process_memory,
                 progress_total_symbols=len(symbols),
                 progress_completed_symbols=len(symbols) - len(remaining_symbols),
-            )
+                )
             if failed_symbols:
                 raise RuntimeError(
                     'financial_statements failed for {} symbols: {}'.format(
@@ -288,6 +323,19 @@ def execute_collect(job):
         reset_collect_execution_context(unit_context_token)
 
 
+def ensure_plan_not_stopped(plan_id):
+    if not plan_id:
+        return
+    status = (
+        CollectPlan.objects
+        .filter(id=plan_id)
+        .values_list('status', flat=True)
+        .first()
+    )
+    if status == 'STOPPED':
+        raise PlanExecutionStopped()
+
+
 def get_remaining_symbols(job, symbols):
     config = job.config or {}
     if REMAINING_SYMBOLS_KEY in config:
@@ -364,7 +412,10 @@ def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, star
     )
     for symbol in remaining_symbols:
         try:
+            ensure_plan_not_stopped(job.plan_id)
             collect_symbol(symbol)
+        except PlanExecutionStopped:
+            raise
         except Exception as e:
             logger.exception('Failed to collect %s for symbol %s', data_type_label, symbol)
             failed_symbols.append((symbol, str(e)))
@@ -375,6 +426,7 @@ def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, star
             progress.finished('Finished collecting {}'.format(data_type_label), symbol)
         finally:
             release_process_memory(symbol)
+        ensure_plan_not_stopped(job.plan_id)
 
     if failed_symbols:
         raise RuntimeError(

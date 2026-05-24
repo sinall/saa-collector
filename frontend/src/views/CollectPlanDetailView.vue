@@ -21,6 +21,23 @@
               @click="executePlan"
               :loading="executing"
             >执行</el-button>
+            <el-button
+              type="danger"
+              v-if="plan?.status === 'QUEUED' || plan?.status === 'RUNNING'"
+              @click="stopPlan"
+              :loading="stopping"
+            >停止</el-button>
+            <el-button
+              type="primary"
+              v-if="plan?.status === 'STOPPED'"
+              @click="continuePlan"
+              :loading="continuing"
+            >继续</el-button>
+            <el-button
+              v-if="plan?.status === 'STOPPED' || plan?.status === 'FAILED' || plan?.status === 'COMPLETED'"
+              @click="resetPlan"
+              :loading="resetting"
+            >重置</el-button>
             <el-button 
               type="primary" 
               v-if="plan?.status === 'COMPLETED' || plan?.status === 'FAILED'"
@@ -108,7 +125,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import api, { fetchCollectPlan, fetchIntegrityReportSummary } from '@/utils/api'
+import { fetchCollectPlan, fetchIntegrityReportSummary, continueCollectPlan, resetCollectPlan, stopCollectPlan, executeCollectPlan } from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps<{ id: string }>()
@@ -117,6 +134,9 @@ const plan = ref<any>(null)
 const reportSummary = ref<any>(null)
 const loading = ref(true)
 const executing = ref(false)
+const stopping = ref(false)
+const continuing = ref(false)
+const resetting = ref(false)
 let pollTimer: number | null = null
 
 const clearPollTimer = () => {
@@ -183,10 +203,9 @@ const loadCurrentPlan = async () => {
 const executePlan = async () => {
   executing.value = true
   try {
-    await api.post(`/collect-plans/${props.id}/execute/`)
+    await executeCollectPlan(parseInt(props.id))
     ElMessage.success('计划开始执行')
-    loading.value = false
-    pollPlan()
+    await loadCurrentPlan()
   } catch (error: any) {
     ElMessage.error(error.response?.data?.error || '执行失败')
   } finally {
@@ -206,10 +225,9 @@ const reExecutePlan = async () => {
       }
     )
     executing.value = true
-    await api.post(`/collect-plans/${props.id}/execute/`)
+    await executeCollectPlan(parseInt(props.id))
     ElMessage.success('计划开始重新执行')
-    loading.value = false
-    pollPlan()
+    await loadCurrentPlan()
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error.response?.data?.error || '执行失败')
@@ -219,10 +237,62 @@ const reExecutePlan = async () => {
   }
 }
 
+const stopPlan = async () => {
+  stopping.value = true
+  try {
+    await stopCollectPlan(parseInt(props.id))
+    ElMessage.success('计划已停止')
+    await loadCurrentPlan()
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.error || '停止失败')
+  } finally {
+    stopping.value = false
+  }
+}
+
+const continuePlan = async () => {
+  continuing.value = true
+  try {
+    await continueCollectPlan(parseInt(props.id))
+    ElMessage.success('计划已继续执行')
+    await loadCurrentPlan()
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.error || '继续失败')
+  } finally {
+    continuing.value = false
+  }
+}
+
+const resetPlan = async () => {
+  resetting.value = true
+  try {
+    await ElMessageBox.confirm(
+      '确定要重置该计划吗？这会清空所有任务状态和续采进度。',
+      '确认重置',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    await resetCollectPlan(parseInt(props.id))
+    ElMessage.success('计划已重置')
+    await loadCurrentPlan()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.error || '重置失败')
+    }
+  } finally {
+    resetting.value = false
+  }
+}
+
 const getStatusType = (status: string) => {
   const types: Record<string, string> = {
+    'QUEUED': 'info',
     'PENDING': 'info',
     'RUNNING': 'warning',
+    'STOPPED': 'danger',
     'COMPLETED': 'success',
     'FAILED': 'danger'
   }
@@ -233,6 +303,7 @@ const getJobStatusType = (status: string) => {
   const types: Record<string, string> = {
     'PENDING': 'info',
     'RUNNING': 'warning',
+    'STOPPED': 'danger',
     'SUCCESS': 'success',
     'FAILED': 'danger'
   }

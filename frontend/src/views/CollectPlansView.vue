@@ -61,15 +61,19 @@
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="viewPlan(row.id)">查看</el-button>
-            <el-dropdown trigger="click" style="vertical-align: middle; margin-left: 8px;" v-if="row.status === 'PENDING'">
+            <el-dropdown trigger="click" style="vertical-align: middle; margin-left: 8px;" v-if="row.status === 'PENDING' || row.status === 'QUEUED' || row.status === 'RUNNING' || row.status === 'STOPPED' || row.status === 'COMPLETED' || row.status === 'FAILED'">
               <el-button link type="info">
                 <el-icon><More /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item @click="$router.push(`/collect-plans/${row.id}/edit`)">编辑</el-dropdown-item>
-                  <el-dropdown-item @click="executePlan(row)">执行</el-dropdown-item>
-                  <el-dropdown-item divided @click="deletePlan(row.id)">删除</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'PENDING'" @click="$router.push(`/collect-plans/${row.id}/edit`)">编辑</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'PENDING'" @click="executePlan(row)">执行</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'QUEUED' || row.status === 'RUNNING'" @click="stopPlan(row)">停止</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'STOPPED'" @click="continuePlan(row)">继续</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'STOPPED' || row.status === 'FAILED' || row.status === 'COMPLETED'" @click="resetPlan(row)">重置</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'COMPLETED' || row.status === 'FAILED'" @click="executePlan(row)">重新执行</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'PENDING'" divided @click="deletePlan(row.id)">删除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -146,6 +150,9 @@ import { More } from '@element-plus/icons-vue'
 import {
   fetchCollectPlans,
   executeCollectPlan,
+  stopCollectPlan,
+  continueCollectPlan,
+  resetCollectPlan,
   deleteCollectPlan,
   createCollectPlan
 } from '@/utils/api'
@@ -265,6 +272,7 @@ const getStatusType = (status: string) => {
     'QUEUED': 'info',
     'PENDING': 'info',
     'RUNNING': 'warning',
+    'STOPPED': 'danger',
     'COMPLETED': 'success',
     'FAILED': 'danger'
   }
@@ -288,6 +296,54 @@ const executePlan = async (row: DisplayPlan) => {
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error.response?.data?.error || '执行失败')
+    }
+  }
+}
+
+const stopPlan = async (row: DisplayPlan) => {
+  try {
+    await ElMessageBox.confirm('确定要停止该计划吗？', '提示', { type: 'warning' })
+    const response = await stopCollectPlan(row.id)
+    if (response.success) {
+      ElMessage.success('计划已停止')
+      fetchPlans()
+    } else {
+      ElMessage.error(response.error || '停止失败')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.error || '停止失败')
+    }
+  }
+}
+
+const continuePlan = async (row: DisplayPlan) => {
+  try {
+    const response = await continueCollectPlan(row.id)
+    if (response.success) {
+      ElMessage.success('计划已继续执行')
+      fetchPlans()
+    } else {
+      ElMessage.error(response.error || '继续失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.error || '继续失败')
+  }
+}
+
+const resetPlan = async (row: DisplayPlan) => {
+  try {
+    await ElMessageBox.confirm('确定要重置该计划吗？', '提示', { type: 'warning' })
+    const response = await resetCollectPlan(row.id)
+    if (response.success) {
+      ElMessage.success('计划已重置')
+      fetchPlans()
+    } else {
+      ElMessage.error(response.error || '重置失败')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.error || '重置失败')
     }
   }
 }

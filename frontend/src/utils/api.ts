@@ -731,7 +731,7 @@ export const fetchStocksMock = async (params?: {
 export interface CollectPlan {
   id: number
   name: string
-  status: 'QUEUED' | 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  status: 'QUEUED' | 'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'
   status_display: string
   source: 'MANUAL' | 'INTEGRITY' | 'SCHEDULE'
   source_display: string
@@ -786,8 +786,8 @@ function generateMockCollectSchedules(): CollectSchedule[] {
   const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
   const frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
   const stockCodes = ['000001', '000002', '600000', '600001', '600036']
-  const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
-  const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
+  const statuses: Array<'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'STOPPED', 'COMPLETED', 'FAILED']
+  const statusDisplays = ['待执行', '执行中', '已停止', '已完成', '执行失败']
 
   for (let i = 1; i <= 8; i++) {
     const date = new Date()
@@ -841,8 +841,8 @@ function generateMockCollectPlans(): CollectPlan[] {
   const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
   const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
   const stockCodes = ['000001', '000002', '600000', '600001', '600036']
-  const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
-  const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
+  const statuses: Array<'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'STOPPED', 'COMPLETED', 'FAILED']
+  const statusDisplays = ['待执行', '执行中', '已停止', '已完成', '执行失败']
 
   for (let i = 1; i <= 8; i++) {
     const date = new Date()
@@ -932,6 +932,21 @@ export const executeCollectPlan = async (id: number): Promise<ApiResponse<any>> 
   return response.data
 }
 
+export const stopCollectPlan = async (id: number): Promise<ApiResponse<CollectPlan>> => {
+  const response = await api.post(`/collect-plans/${id}/stop/`)
+  return response.data
+}
+
+export const continueCollectPlan = async (id: number): Promise<ApiResponse<CollectPlan>> => {
+  const response = await api.post(`/collect-plans/${id}/continue/`)
+  return response.data
+}
+
+export const resetCollectPlan = async (id: number): Promise<ApiResponse<CollectPlan>> => {
+  const response = await api.post(`/collect-plans/${id}/reset/`)
+  return response.data
+}
+
 export const deleteCollectPlan = async (id: number): Promise<ApiResponse<null>> => {
   const response = await api.delete(`/collect-plans/${id}/`)
   return response.data
@@ -964,8 +979,8 @@ export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<Coll
   let plan = generateMockCollectPlans().find(p => p.id === id)
 
   if (!plan) {
-    const statuses: Array<'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']
-    const statusDisplays = ['待执行', '执行中', '已完成', '执行失败']
+    const statuses: Array<'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'STOPPED', 'COMPLETED', 'FAILED']
+    const statusDisplays = ['待执行', '执行中', '已停止', '已完成', '执行失败']
     const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
     const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
     const stockCodes = ['000001', '000002', '600000', '600001', '600036']

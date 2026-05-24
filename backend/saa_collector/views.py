@@ -24,7 +24,12 @@ from django.shortcuts import get_object_or_404
 
 from .collect_job_config import build_collect_job_config
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
-from .task_dispatcher import create_plan_from_schedule, dispatch_plan, reset_plan_for_dispatch
+from .task_dispatcher import (
+    create_plan_from_schedule,
+    dispatch_plan,
+    reset_plan_for_dispatch,
+    stop_plan_execution,
+)
 from .serializers import (
     CollectJobSerializer, CollectJobCreateSerializer,
     DataStatusSerializer, DataCompletenessSerializer,
@@ -2317,6 +2322,59 @@ class CollectPlanExecuteView(APIView):
         dispatch_plan(plan)
         plan.refresh_from_db()
 
+        return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
+
+
+class CollectPlanStopView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(CollectPlan, pk=pk)
+
+        try:
+            stop_plan_execution(plan)
+        except ValueError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        plan.refresh_from_db()
+        return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
+
+
+class CollectPlanContinueView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(CollectPlan, pk=pk)
+
+        if plan.status != 'STOPPED':
+            return Response({
+                'success': False,
+                'error': '只能继续已停止的计划'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        resume_jobs = plan.jobs.exclude(status='SUCCESS')
+        dispatch_plan(plan, jobs_queryset=resume_jobs)
+        plan.refresh_from_db()
+        return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
+
+
+class CollectPlanResetView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(CollectPlan, pk=pk)
+
+        if plan.status == 'RUNNING':
+            return Response({
+                'success': False,
+                'error': '执行中的计划不能直接重置，请先停止'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        reset_plan_for_dispatch(plan)
+        plan.refresh_from_db()
         return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
 
     def _execute_plan(self, plan_id):

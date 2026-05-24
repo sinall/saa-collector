@@ -9,6 +9,7 @@ class CollectJob(models.Model):
         ('QUEUED', '排队中'),
         ('PENDING', '待执行'),
         ('RUNNING', '执行中'),
+        ('STOPPED', '已停止'),
         ('SUCCESS', '成功'),
         ('FAILED', '失败'),
     ]
@@ -41,6 +42,13 @@ class CollectJob(models.Model):
 
     def complete(self, success=True, message=None):
         self.status = 'SUCCESS' if success else 'FAILED'
+        self.end_time = timezone.now()
+        if message:
+            self.message = message
+        self.save()
+
+    def stop(self, message=None):
+        self.status = 'STOPPED'
         self.end_time = timezone.now()
         if message:
             self.message = message
@@ -126,6 +134,7 @@ class CollectPlan(models.Model):
         ('QUEUED', '排队中'),
         ('PENDING', '待执行'),
         ('RUNNING', '执行中'),
+        ('STOPPED', '已停止'),
         ('COMPLETED', '已完成'),
         ('FAILED', '失败'),
     ]

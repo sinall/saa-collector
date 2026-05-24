@@ -23,6 +23,9 @@ urlpatterns = [
     path('collect-plans/', views.CollectPlanListView.as_view(), name='collect-plan-list'),
     path('collect-plans/<int:pk>/', views.CollectPlanDetailView.as_view(), name='collect-plan-detail'),
     path('collect-plans/<int:pk>/execute/', views.CollectPlanExecuteView.as_view(), name='collect-plan-execute'),
+    path('collect-plans/<int:pk>/stop/', views.CollectPlanStopView.as_view(), name='collect-plan-stop'),
+    path('collect-plans/<int:pk>/continue/', views.CollectPlanContinueView.as_view(), name='collect-plan-continue'),
+    path('collect-plans/<int:pk>/reset/', views.CollectPlanResetView.as_view(), name='collect-plan-reset'),
 
     path('collect-schedules/', views.CollectScheduleListView.as_view(), name='collect-schedule-list'),
     path('collect-schedules/<int:pk>/', views.CollectScheduleDetailView.as_view(), name='collect-schedule-detail'),
