@@ -787,6 +787,23 @@ POST /api/collect-plans/{id}/execute/
             └── 自动更新关联报告中的缺失项状态
 ```
 
+### 长任务拆分与恢复约束
+
+`CollectPlan` 和 `CollectJob` 是当前前端可见的管理单元。Celery task id 只用于队列追踪，不应直接成为用户必须理解或操作的对象。对于 `financial_statements` 这类 5000+ symbols、单次可能运行 30 小时以上的长任务，后端可以把一个 `CollectJob` 内部拆成多个 Celery chunk task 执行，但前端仍默认展示原来的 Plan/Job 层级。
+
+拆分后的内部执行必须满足两个目标：
+
+- **内存回收**：每个 chunk 作为独立 Celery task 结束后，worker 子进程可以通过 `max-tasks-per-child` 或 `max-memory-per-child` 回收，避免单个超长 task 在 5000+ symbols 内持续累计 RSS。
+- **失败续跑**：执行状态不能只保存在进程内存或日志中。系统需要持久化记录未完成的 symbol 或 chunk；任务中断、worker 重启或某个 chunk 失败后，重新执行同一个 job 时应只处理 `remaining_symbols` 或未完成 chunk，避免整批 30 小时任务从头开始。
+
+推荐的用户可见语义：
+
+- 用户仍看到一个 `CollectJob(data_type='financial_statements')`。
+- chunk 作为内部执行细节，可写入独立进度表、`job.config.remaining_symbols`，或后续专门的 job progress 模型。运行完成后应清理临时进度字段，避免长期保存 5000+ 个已完成 symbol。
+- 所有 chunk 成功后，原 `CollectJob` 才标记为 `SUCCESS`。
+- 任一 chunk 最终失败时，原 `CollectJob` 标记为 `FAILED`，message 中应包含失败 symbol/chunk 摘要，便于下次恢复执行和人工排查。
+- 重新执行 `FAILED` job 时优先走恢复逻辑，不应默认清空已成功进度。
+
 ### 修复反馈机制
 
 当 CollectPlan 执行完成后（所有 jobs 成功），自动更新关联报告的缺失项状态：

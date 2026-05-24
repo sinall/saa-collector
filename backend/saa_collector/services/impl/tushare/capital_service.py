@@ -9,16 +9,18 @@ class CapitalServiceImpl(CapitalService, BasicStockService):
     def __init__(self):
         super().__init__()
 
-    def collect(self, symbols, start_date=None):
+    def collect(self, symbols, start_date=None, progress_enabled=True):
         sub_resource = 'dividend'
         table = 'saa_capitals'
         symbols = self.build_symbols(symbols)
-        progress = ProgressLogger.for_symbols(
-            self._logger,
-            symbols,
-            profile='capital',
-            start_date=start_date,
-        )
+        progress = None
+        if progress_enabled:
+            progress = ProgressLogger.for_symbols(
+                self._logger,
+                symbols,
+                profile='capital',
+                start_date=start_date,
+            )
         batch_symbols = self.get_save_batch_symbols()
         batch_records = []
         pending_symbols = []
@@ -53,5 +55,7 @@ class CapitalServiceImpl(CapitalService, BasicStockService):
         self.finish_pending_progress(progress, pending_symbols)
 
     def finish_pending_progress(self, progress, pending_symbols):
+        if not progress:
+            return
         for pending_symbol in pending_symbols:
             progress.finished('Finished collecting capital', pending_symbol)

@@ -1,5 +1,7 @@
 import logging
 import threading
+import ctypes
+import gc
 from datetime import datetime
 
 from django import db
@@ -13,8 +15,14 @@ from saa_collector.services.collect_execution_context import (
     reset_collect_execution_context,
     set_collect_execution_context,
 )
+from saa_collector.services.common.progress import ProgressLogger
 
 logger = logging.getLogger(__name__)
+
+
+REMAINING_SYMBOLS_KEY = 'remaining_symbols'
+COMPLETED_SYMBOLS_KEY = 'completed_symbols'
+FAILED_SYMBOLS_KEY = 'failed_symbols'
 
 
 def parse_period_to_date(period_str):
@@ -149,7 +157,12 @@ def execute_collect(job):
             service.collect(start_date, end_date)
         elif data_type == 'stock_info':
             service = factory.create_stock_info_service()
-            service.collect(symbols)
+            symbols = build_symbols_for_service(service, symbols)
+            execute_resumable_symbol_loop(
+                job,
+                symbols,
+                lambda symbol: service.collect([symbol], progress_enabled=False),
+            )
         elif data_type == 'quote':
             service = factory.create_quote_service()
             service.collect(symbols)
@@ -158,24 +171,96 @@ def execute_collect(job):
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
-            service.produce(symbols, start_date)
+            symbols = build_financial_statement_symbols(service, symbols)
+            remaining_symbols = initialize_symbol_progress(job.id, symbols)
+            if not remaining_symbols:
+                logger.info('Skipping financial statements collect: all %d symbols completed', len(symbols))
+                clear_symbol_progress(job.id)
+                return
+
+            failed_symbols = []
+
+            def on_symbol_success(symbol):
+                mark_symbol_success(job.id, symbol)
+
+            def on_symbol_failure(symbol):
+                failed_symbols.append(symbol)
+                mark_symbol_failure(job.id, symbol)
+
+            service.produce(
+                remaining_symbols,
+                start_date,
+                on_symbol_success=on_symbol_success,
+                on_symbol_failure=on_symbol_failure,
+                after_symbol=release_process_memory,
+                progress_total_symbols=len(symbols),
+                progress_completed_symbols=len(symbols) - len(remaining_symbols),
+            )
+            if failed_symbols:
+                raise RuntimeError(
+                    'financial_statements failed for {} symbols: {}'.format(
+                        len(failed_symbols), ','.join(failed_symbols[:20])
+                    )
+                )
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
             report_types = params.get('report_types', [])
-            if data_type == 'balance_sheet' or 'balance_sheet' in report_types:
-                service.collect_balance_sheet(symbols, start_date)
-            if data_type == 'income' or 'income' in report_types:
-                service.collect_income(symbols, start_date)
-            if data_type == 'cash_flow' or 'cash_flow' in report_types:
-                service.collect_cash_flow(symbols, start_date)
-            if data_type == 'dividend' or 'dividend' in report_types:
-                service.collect_dividend(symbols, start_date)
+            symbols = build_symbols_for_service(service, symbols)
+            if report_types:
+                logger.info(
+                    'Running multi-report statement job without generic symbol resume: report_types=%s',
+                    report_types
+                )
+                if 'balance_sheet' in report_types:
+                    service.collect_balance_sheet(symbols, start_date)
+                if 'income' in report_types:
+                    service.collect_income(symbols, start_date)
+                if 'cash_flow' in report_types:
+                    service.collect_cash_flow(symbols, start_date)
+                if 'dividend' in report_types:
+                    service.collect_dividend(symbols, start_date)
+            elif data_type == 'balance_sheet':
+                execute_resumable_symbol_loop(
+                    job, symbols,
+                    lambda symbol: service.collect_balance_sheet([symbol], start_date, progress_enabled=False),
+                    start_date=start_date,
+                )
+            elif data_type == 'income':
+                execute_resumable_symbol_loop(
+                    job, symbols,
+                    lambda symbol: service.collect_income([symbol], start_date, progress_enabled=False),
+                    start_date=start_date,
+                )
+            elif data_type == 'cash_flow':
+                execute_resumable_symbol_loop(
+                    job, symbols,
+                    lambda symbol: service.collect_cash_flow([symbol], start_date, progress_enabled=False),
+                    start_date=start_date,
+                )
+            elif data_type == 'dividend':
+                execute_resumable_symbol_loop(
+                    job, symbols,
+                    lambda symbol: service.collect_dividend([symbol], start_date, progress_enabled=False),
+                    start_date=start_date,
+                )
         elif data_type == 'capital':
             service = factory.create_capital_service()
-            service.collect(symbols, start_date)
+            symbols = build_symbols_for_service(service, symbols)
+            execute_resumable_symbol_loop(
+                job,
+                symbols,
+                lambda symbol: service.collect([symbol], start_date, progress_enabled=False),
+                start_date=start_date,
+            )
         elif data_type == 'main_business':
             service = factory.create_statement_service()
-            service.collect_main_business(symbols, start_date)
+            symbols = build_symbols_for_service(service, symbols)
+            execute_resumable_symbol_loop(
+                job,
+                symbols,
+                lambda symbol: service.collect_main_business([symbol], start_date, progress_enabled=False),
+                start_date=start_date,
+            )
         elif data_type == 'valuation':
             from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
             collect_job = ValuationCollectJob()
@@ -188,6 +273,182 @@ def execute_collect(job):
             logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")
     finally:
         reset_collect_execution_context(unit_context_token)
+
+
+def get_remaining_symbols(job, symbols):
+    config = job.config or {}
+    if REMAINING_SYMBOLS_KEY in config:
+        remaining_symbols = set(config.get(REMAINING_SYMBOLS_KEY) or [])
+        return [symbol for symbol in symbols if symbol in remaining_symbols]
+
+    completed_symbols = set(config.get(COMPLETED_SYMBOLS_KEY, []))
+    return [symbol for symbol in symbols if symbol not in completed_symbols]
+
+
+def initialize_symbol_progress(job_id, symbols):
+    job = CollectJob.objects.get(id=job_id)
+    config = dict(job.config or {})
+    remaining_symbols = get_remaining_symbols(job, symbols)
+
+    if REMAINING_SYMBOLS_KEY in config and COMPLETED_SYMBOLS_KEY not in config:
+        return remaining_symbols
+
+    config.pop(COMPLETED_SYMBOLS_KEY, None)
+    if remaining_symbols:
+        config[REMAINING_SYMBOLS_KEY] = remaining_symbols
+    else:
+        config.pop(REMAINING_SYMBOLS_KEY, None)
+    job.config = config
+    job.save(update_fields=['config'])
+    return remaining_symbols
+
+
+def build_financial_statement_symbols(service, symbols):
+    if symbols is None:
+        return service.build_symbols(symbols)
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    return sorted(symbols)
+
+
+def build_symbols_for_service(service, symbols):
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    if symbols is None:
+        return service.build_symbols(symbols)
+    return sorted(symbols)
+
+
+def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, start_date=None):
+    data_type_label = label or job.data_type
+    remaining_symbols = initialize_symbol_progress(job.id, symbols)
+    if not remaining_symbols:
+        logger.info('Skipping %s collect: all %d symbols completed', data_type_label, len(symbols))
+        clear_symbol_progress(job.id)
+        return
+
+    failed_symbols = []
+    progress = ProgressLogger.for_symbols(
+        logger,
+        remaining_symbols,
+        profile=get_progress_profile(data_type_label),
+        start_date=start_date,
+        display_completed_items=len(symbols) - len(remaining_symbols),
+        display_total_items=len(symbols),
+    )
+    for symbol in remaining_symbols:
+        try:
+            collect_symbol(symbol)
+        except Exception as e:
+            logger.exception('Failed to collect %s for symbol %s', data_type_label, symbol)
+            failed_symbols.append((symbol, str(e)))
+            mark_symbol_failure(job.id, symbol)
+            progress.failed('Failed collecting {}'.format(data_type_label), symbol)
+        else:
+            mark_symbol_success(job.id, symbol)
+            progress.finished('Finished collecting {}'.format(data_type_label), symbol)
+        finally:
+            release_process_memory(symbol)
+
+    if failed_symbols:
+        raise RuntimeError(
+            '{} failed for {} symbols: {}'.format(
+                data_type_label,
+                len(failed_symbols),
+                ','.join(format_failed_symbol(symbol, reason) for symbol, reason in failed_symbols[:20])
+            )
+        )
+
+
+def get_progress_profile(data_type_label):
+    return {
+        'balancesheet': 'balance_sheet',
+        'balance_sheet': 'balance_sheet',
+        'cashflow': 'cash_flow',
+        'cash_flow': 'cash_flow',
+    }.get(data_type_label, data_type_label)
+
+
+def format_failed_symbol(symbol, reason):
+    if not reason:
+        return symbol
+    return '{} ({})'.format(symbol, reason[:120])
+
+
+def mark_symbol_success(job_id, symbol):
+    update_symbol_progress(job_id, completed_symbol=symbol)
+
+
+def mark_symbol_failure(job_id, symbol):
+    update_symbol_progress(job_id, failed_symbol=symbol)
+
+
+def update_symbol_progress(job_id, completed_symbol=None, failed_symbol=None):
+    job = CollectJob.objects.get(id=job_id)
+    config = dict(job.config or {})
+    all_symbols = build_config_symbols(config)
+    remaining_symbols = unique_list(config.get(REMAINING_SYMBOLS_KEY, all_symbols))
+    failed_symbols = unique_list(config.get(FAILED_SYMBOLS_KEY, []))
+
+    if completed_symbol:
+        remaining_symbols = [symbol for symbol in remaining_symbols if symbol != completed_symbol]
+        failed_symbols = [symbol for symbol in failed_symbols if symbol != completed_symbol]
+
+    if failed_symbol:
+        if failed_symbol not in remaining_symbols:
+            remaining_symbols.append(failed_symbol)
+        if failed_symbol not in failed_symbols:
+            failed_symbols.append(failed_symbol)
+
+    config.pop(COMPLETED_SYMBOLS_KEY, None)
+    if remaining_symbols:
+        config[REMAINING_SYMBOLS_KEY] = remaining_symbols
+    else:
+        config.pop(REMAINING_SYMBOLS_KEY, None)
+
+    if failed_symbols:
+        config[FAILED_SYMBOLS_KEY] = failed_symbols
+    else:
+        config.pop(FAILED_SYMBOLS_KEY, None)
+
+    job.config = config
+    job.save(update_fields=['config'])
+
+
+def clear_symbol_progress(job_id):
+    job = CollectJob.objects.get(id=job_id)
+    config = dict(job.config or {})
+    changed = False
+    for key in (REMAINING_SYMBOLS_KEY, COMPLETED_SYMBOLS_KEY, FAILED_SYMBOLS_KEY):
+        if key in config:
+            config.pop(key, None)
+            changed = True
+    if changed:
+        job.config = config
+        job.save(update_fields=['config'])
+
+
+def build_config_symbols(config):
+    symbols = (config or {}).get('symbols') or []
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    return sorted(symbols)
+
+
+def unique_list(values):
+    result = []
+    for value in values or []:
+        if value not in result:
+            result.append(value)
+    return result
+
+
+def release_process_memory(symbol=None):
+    gc.collect()
+    try:
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except Exception:
+        logger.debug('malloc_trim is unavailable', exc_info=True)
 
 
 def update_report_items(plan):

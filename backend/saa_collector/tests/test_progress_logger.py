@@ -108,6 +108,22 @@ class ProgressLoggerTest(unittest.TestCase):
         rendered = log_template % log_args
         self.assertIn('unit=symbol', rendered)
 
+    def test_progress_log_can_resume_display_count(self):
+        logger = MagicMock()
+        progress = ProgressLogger.for_symbols(
+            logger,
+            ['000401', '000402'],
+            display_completed_items=77,
+            display_total_items=5995,
+        )
+
+        progress.finished('Finished producing statement', '000401')
+
+        log_template = logger.info.call_args.args[0]
+        log_args = logger.info.call_args.args[1:]
+        rendered = log_template % log_args
+        self.assertIn('[78/5995 unit=symbol]', rendered)
+
     def test_logging_filter_includes_collect_execution_context(self):
         record = logging.LogRecord(
             name='test',

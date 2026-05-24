@@ -30,16 +30,18 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         super().__init__()
         self._logger = logging.getLogger()
 
-    def collect(self, symbols):
+    def collect(self, symbols, progress_enabled=True):
         start_time = time.time()
         symbols = self.build_symbols(symbols)
         total = len(symbols)
         self._logger.info('Start collecting stock info for %d symbols', total)
-        progress = ProgressLogger.for_symbols(
-            self._logger,
-            symbols,
-            profile='stock_info',
-        )
+        progress = None
+        if progress_enabled:
+            progress = ProgressLogger.for_symbols(
+                self._logger,
+                symbols,
+                profile='stock_info',
+            )
 
         save_interval = self._get_save_interval()
         table_config_df = self.config_service.get_table_config('saa_stocks')
@@ -54,12 +56,14 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
                     record = self._get_stock_info_for_symbol(symbol, table_config_df)
                     if record:
                         accumulated_records.append(record)
-                    progress.finished('Finished collecting stock info', symbol)
+                    if progress:
+                        progress.finished('Finished collecting stock info', symbol)
                 except Exception as e:
                     self._logger.error(
                         'Failed to process symbol %s: %s', symbol, e
                     )
-                    progress.failed('Failed collecting stock info', symbol)
+                    if progress:
+                        progress.failed('Failed collecting stock info', symbol)
 
                 elapsed = time.time() - last_save_time
                 if elapsed >= save_interval and accumulated_records:

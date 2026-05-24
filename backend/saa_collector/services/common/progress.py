@@ -77,12 +77,14 @@ class HistoricalSpanEstimator(object):
 
 
 class ProgressLogger(object):
-    def __init__(self, logger, items, unit='item', profile='default', context=None):
+    def __init__(self, logger, items, unit='item', profile='default', context=None,
+                 display_completed_items=0, display_total_items=None):
         self.logger = logger or logging.getLogger()
         self.items = list(items or [])
         self.unit = unit
         self.profile = profile or 'default'
         self.context = context or {}
+        self.display_completed_items = int(display_completed_items or 0)
         self.estimator = create_collection_estimator(
             self.profile, self.items, self.context, logger=self.logger
         )
@@ -91,6 +93,7 @@ class ProgressLogger(object):
             for item in self.items
         }
         self.total_items = len(self.items)
+        self.display_total_items = int(display_total_items or self.total_items)
         self.total_weight = sum(self.item_weights.values()) or self.total_items or 1
         self.completed_items = 0
         self.completed_weight = 0
@@ -98,20 +101,24 @@ class ProgressLogger(object):
 
     @classmethod
     def for_symbols(cls, logger, symbols, profile='default', **context):
+        display_completed_items = context.pop('display_completed_items', 0)
+        display_total_items = context.pop('display_total_items', None)
         return cls(
             logger=logger,
             items=symbols,
             unit='symbol',
             profile=profile,
             context=context,
+            display_completed_items=display_completed_items,
+            display_total_items=display_total_items,
         )
 
     def finished(self, message, item):
         self._advance(item)
         self.logger.info(
             '[%d/%d unit=%s] %s for %s; elapsed=%s, avg=%s/%s, remaining=%s, eta=%s',
-            self.completed_items,
-            self.total_items,
+            self.display_completed,
+            self.display_total_items,
             self.unit,
             message,
             item,
@@ -126,8 +133,8 @@ class ProgressLogger(object):
         self._advance(item)
         self.logger.warning(
             '[%d/%d unit=%s] %s for %s; elapsed=%s, avg=%s/%s, remaining=%s, eta=%s',
-            self.completed_items,
-            self.total_items,
+            self.display_completed,
+            self.display_total_items,
             self.unit,
             message,
             item,
@@ -141,6 +148,10 @@ class ProgressLogger(object):
     def _advance(self, item):
         self.completed_items += 1
         self.completed_weight += self.item_weights.get(item, 1)
+
+    @property
+    def display_completed(self):
+        return self.display_completed_items + self.completed_items
 
     @property
     def elapsed_seconds(self):

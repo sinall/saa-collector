@@ -14,13 +14,17 @@ class StatementServiceImpl(StatementService, BasicStockService):
         self._logger = logging.getLogger()
         self.maintain_service = StatementMaintainService()
 
-    def produce(self, symbols, start_date=None):
+    def produce(self, symbols, start_date=None, on_symbol_success=None,
+                on_symbol_failure=None, after_symbol=None,
+                progress_total_symbols=None, progress_completed_symbols=0):
         symbols = self.build_symbols(symbols)
         progress = ProgressLogger.for_symbols(
             self._logger,
             symbols,
             profile='financial_statements',
             start_date=start_date,
+            display_completed_items=progress_completed_symbols,
+            display_total_items=progress_total_symbols,
         )
         for symbol in symbols:
             try:
@@ -29,6 +33,14 @@ class StatementServiceImpl(StatementService, BasicStockService):
             except:
                 self._logger.exception('Failed to produce statement for %s', symbol)
                 progress.failed('Failed producing statement', symbol)
+                if on_symbol_failure:
+                    on_symbol_failure(symbol)
+            else:
+                if on_symbol_success:
+                    on_symbol_success(symbol)
+            finally:
+                if after_symbol:
+                    after_symbol(symbol)
 
     def process(self, symbols, start_date=None):
         self.maintain_service.refresh_financial_report_cache(symbols)

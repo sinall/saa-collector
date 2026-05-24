@@ -4,6 +4,22 @@ import sys
 import subprocess
 
 
+def should_cleanup_interrupted_collect_tasks(service):
+    if service != "celery-worker":
+        return False
+    if os.getenv("CLEANUP_INTERRUPTED_COLLECT_TASKS_ON_START", "true").lower() in ("0", "false", "no", "off"):
+        return False
+    return os.getenv("COLLECTOR_CELERY_QUEUE", "collector") == "collector"
+
+
+def cleanup_interrupted_collect_tasks():
+    cmd = ["python", "manage.py", "cleanup_interrupted_collect_tasks"]
+    print(f"Starting: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
 def main():
     service = os.getenv("SERVICE", "gunicorn")
 
@@ -44,6 +60,9 @@ def main():
             "--error-logfile", "-",
             "config.wsgi:application",
         ]
+
+    if should_cleanup_interrupted_collect_tasks(service):
+        cleanup_interrupted_collect_tasks()
 
     print(f"Starting: {' '.join(cmd)}")
     sys.exit(subprocess.run(cmd).returncode)

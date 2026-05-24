@@ -35,3 +35,20 @@
 - 执行成功后以前端收到的后端 plan 数据为准更新列表。
 - 如果执行接口只返回 schedule 或简化结果，则执行成功后重新拉取采集计划列表或新计划详情。
 - 修复时同时覆盖“财务报表采集(5月)”这类非 Tick schedule，避免默认名称污染新计划展示。
+
+## 已修复问题
+
+### worker 重启后执行中计划未自动释放
+
+状态：已修复。
+
+现象：
+
+- 财务报表采集计划执行中重启 `saa-collector-worker` 后，采集计划详情页仍显示 `执行中`。
+- 页面只在 `COMPLETED` 或 `FAILED` 状态下显示“重新执行”按钮，导致用户无法直接触发续跑。
+
+修复：
+
+- collector 队列 worker 启动前自动执行 `cleanup_interrupted_collect_tasks`。
+- 清理逻辑把孤儿 `RUNNING` plan/job 标记为 `FAILED`，保留 `job.config.remaining_symbols`，重新执行时仍可续跑。
+- scheduler 队列 worker 不执行该清理，避免 scheduler 重启误伤正在运行的 collector 任务。

@@ -74,6 +74,7 @@ remaining = elapsed / completed_symbols * remaining_symbols
 - 不拆分具体 API、SQL、DB batch 成本。
 - 不改变现有采集顺序，symbols 仍保持排序。
 - 不为当前代码中不存在的显式 symbol/date 双重循环提前设计复杂调度。
+- 本文首版只设计日志 ETA，不把 Celery chunk 作为前端可见的新管理层级。
 
 ## 设计决策记录
 
@@ -136,6 +137,104 @@ for symbol in symbols:
 | `trade_days` | `CalendarServiceImpl.collect(start_date, end_date)` | 非 symbol 任务 | 暂不纳入 symbol ETA |
 
 `StatementServiceImpl.produce()` 需要特别说明：它不是等所有股票采集完后再统一 process，而是每个 symbol 采集完成后马上刷新 financial report cache 和 TTM cache。因此进度日志放在每个 symbol 全部采集和处理完成之后更准确。
+
+## 长任务执行边界
+
+`financial_statements` 在全市场场景下可能包含 5000+ symbols，单次执行耗时可达 30 小时以上。仅在一个 Celery task 内按 symbol 循环，虽然代码上不会把所有 records 长期放在列表里，但同一个 worker 子进程会持续经历 pandas、MySQL client、DataFrame 转换和 DB 写入的高水位内存使用；`max-tasks-per-child` 和 `max-memory-per-child` 通常要等当前 task 结束后才有机会回收进程。因此，ETA 日志只能改善可观察性，不能单独解决长任务内存高水位和失败重跑成本。
+
+后续如果为财报采集引入 Celery chunk，应保持以下边界：
+
+- 用户可见管理单元仍是 `CollectPlan` 和 `CollectJob`，不要要求用户直接管理 Celery chunk。
+- chunk 是后端内部执行单元，可按固定 symbol 数量或按估算工作量切分。
+- 未完成 symbol/chunk 状态必须持久化到数据库，而不是只依赖 Celery result backend 或日志。
+- 重新执行失败的 `financial_statements` job 时，应从 `remaining_symbols` 或未完成 chunk 继续，跳过已成功完成并已落库的部分。
+- `remaining_symbols` 在执行开始时初始化为本次待采集 symbol 列表，单个 symbol 成功后从列表移除，失败时保留在列表中。任务成功完成后应清理 `remaining_symbols` 和失败摘要，避免最终 job 配置长期占用大量空间。
+- chunk 汇总结果决定原 `CollectJob` 状态；全部成功才标记 `SUCCESS`，存在最终失败则标记 `FAILED` 并保留失败摘要。
+
+这个约束和 ETA 的 symbol completion 点是一致的：一个 symbol 的 collect、process/cache 都完成后，才认为该 symbol 可被持久化标记为完成。这样即使 worker 在 5000+ symbols 中途退出，下次恢复也不会把已经完成的 30 小时工作全部作废。
+
+### 生产内存压力观测：API 已返回、本地处理变慢并最终 SIGKILL
+
+2026-05-19 生产环境在采集 `financial_statements` 时出现一次典型观测：worker 内存贴近容器上限，日志在 Tushare API 返回后长时间没有刷新，进程短暂继续推进，随后 ForkPoolWorker 被 `SIGKILL`，Celery 报 `WorkerLostError`。
+
+OOM 前资源状态：
+
+```text
+Mem: 3.5Gi total, 3.1Gi used, 124Mi free, 412Mi available
+Swap: 3.0Gi total, 2.6Gi used, 366Mi free
+saa-collector-worker: 767.2MiB / 768MiB, 99.89%
+docker stats BLOCK I/O: 15GB / 1GB
+```
+
+关键日志片段：
+
+```text
+[2026-05-19 12:20:13,978: INFO/ForkPoolWorker-2] [1012/5995 unit=symbol] Finished producing statement for 002424; elapsed=12:38:27, avg=00:00:44/symbol, remaining=31:46:02, eta=2026-05-20 20:06:16
+[2026-05-19 12:20:13,981: INFO/ForkPoolWorker-2] Start to produce statement for 002425
+[2026-05-19 12:20:14,236: INFO/ForkPoolWorker-2] Querying balancesheet for symbol 002425
+[2026-05-19 12:20:15,702: INFO/ForkPoolWorker-2] End up calling pro.query(balancesheet, ..., ...) with 100 records return
+[2026-05-19 12:20:22,589: INFO/ForkPoolWorker-2] Prepared 66 saa_raw_balance_sheet records for symbol 002425
+[2026-05-19 12:20:23,907: INFO/ForkPoolWorker-2] Saved final 66 saa_raw_balance_sheet records
+[2026-05-19 12:20:24,155: INFO/ForkPoolWorker-2] Start to call pro.query(income, ts_code,end_date,tot, ts_code='002425.SZ', start_date=None)
+[2026-05-19 12:20:24,881: INFO/ForkPoolWorker-2] End up calling pro.query(income, ..., ...) with 86 records return
+[2026-05-19 12:20:32,913: INFO/ForkPoolWorker-2] Prepared 71 saa_raw_income_statement records for symbol 002425
+[2026-05-19 12:20:33,960: INFO/ForkPoolWorker-2] Saved final 71 saa_raw_income_statement records
+[2026-05-19 12:20:34,320: INFO/ForkPoolWorker-2] Start to call pro.query(cashflow, ts_code,end_date,c_f, ts_code='002425.SZ', start_date=None)
+[2026-05-19 12:20:34,619: INFO/ForkPoolWorker-2] End up calling pro.query(cashflow, ..., ...) with 90 records return
+[2026-05-19 12:31:57,385: INFO/ForkPoolWorker-2] Prepared 71 saa_raw_cash_flow_statement records for symbol 002425
+[2026-05-19 12:31:58,564: INFO/ForkPoolWorker-2] Saved final 71 saa_raw_cash_flow_statement records
+[2026-05-19 12:31:58,661: INFO/ForkPoolWorker-2] Start to call pro.query(dividend, ts_code,cash_div_tax, ts_code='002425.SZ', start_date=None)
+[2026-05-19 12:32:04,925: INFO/ForkPoolWorker-2] End up calling pro.query(dividend, ..., ...) with 33 records return
+[2026-05-19 12:32:13,144: INFO/ForkPoolWorker-2] Prepared 0 saa_dividends records for symbol 002425
+[2026-05-19 12:32:14,410: INFO/ForkPoolWorker-2] Saved final 11 saa_dividends records
+[2026-05-19 12:32:14,466: INFO/ForkPoolWorker-2] Start to process statement for 002425
+[2026-05-19 12:32:46,979: INFO/ForkPoolWorker-2] End up refresh-financial-report-cache for 002425
+[2026-05-19 12:32:50,401: INFO/ForkPoolWorker-2] End up refresh-ttm-report-cache for 002425
+[2026-05-19 12:32:51,010: INFO/ForkPoolWorker-2] End up processing statement for 002425
+[2026-05-19 12:32:51,200: INFO/ForkPoolWorker-2] End up producing statement for 002425
+[2026-05-19 12:32:51,320: INFO/ForkPoolWorker-2] [1013/5995 unit=symbol] Finished producing statement for 002425; elapsed=12:51:05, avg=00:00:45/symbol, remaining=32:15:47, eta=2026-05-20 20:48:38
+[2026-05-19 12:32:51,329: INFO/ForkPoolWorker-2] Start to produce statement for 002426
+[2026-05-19 12:32:51,335: INFO/ForkPoolWorker-2] Start to collect statement for 002426
+[2026-05-19 12:32:52,417: INFO/ForkPoolWorker-2] Querying balancesheet for symbol 002426
+[2026-05-19 12:32:52,519: INFO/ForkPoolWorker-2] Start to call pro.query(balancesheet, ts_code,end_date,mon, ts_code='002426.SZ', start_date=None)
+[2026-05-19 12:34:21,988: INFO/ForkPoolWorker-2] End up calling pro.query(balancesheet, ..., ...) with 98 records return
+[2026-05-19 12:38:41,866: ERROR/MainProcess] Process 'ForkPoolWorker-2' pid:10 exited with 'signal 9 (SIGKILL)'
+[2026-05-19 12:38:42,661: ERROR/MainProcess] Task handler raised error: WorkerLostError('Worker exited prematurely: signal 9 (SIGKILL) Job: 1.')
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/site-packages/billiard/pool.py", line 1265, in mark_as_worker_lost
+    raise WorkerLostError(
+billiard.exceptions.WorkerLostError: Worker exited prematurely: signal 9 (SIGKILL) Job: 1.
+[2026-05-19 12:38:49,923: INFO/MainProcess] missed heartbeat from celery@fe1d1e24d48a
+2026-05-19 12:38:50,780 - INFO - Starting collect plan task: task_id=3b81728d-70c7-4469-9851-423307e7c5ef plan_id=1075
+[2026-05-19 12:38:50,807: WARNING/MainProcess] consumer: Connection to broker lost. Trying to re-establish the connection...
+redis.exceptions.ConnectionError: Connection closed by server.
+```
+
+分析：
+
+- `cashflow` 的外部 API 调用只用了约 0.3 秒：`12:20:34.320` 到 `12:20:34.619`。
+- API 返回后到 `Prepared 71 saa_raw_cash_flow_statement records` 用了约 11 分 23 秒。
+- 这段时间位于本地处理阶段：DataFrame 去重、`to_dict('records')`、`transform_records()`，以及生成待保存 records。
+- 90 条 records 正常不应消耗 11 分钟；结合 worker 贴近 768MiB 限制、宿主机 swap 使用 2.6GiB、BLOCK I/O 达 15GB，说明当时已经处于严重内存压力和 swap thrashing。
+- `002425` 最终完成，但下一支 `002426` 在 `balancesheet` API 返回后约 4 分 20 秒被 `SIGKILL`。这说明“日志长时间不刷新”不是单纯外部 API 慢，而是高内存压力下本地处理和内存分配已经不可持续。
+- `WorkerLostError` 是 Celery 主进程观察到 worker 子进程被系统杀掉后的结果；后续 Redis `Connection closed by server` 可能是同一宿主机内存压力下 broker 连接受影响的连带症状。
+- 没有立刻 OOM 不代表状态健康。内核可通过 swap 勉强维持进程一段时间，但 Python/pandas 的内存访问会被换页拖到分钟级，最终仍可能被 cgroup OOM 或宿主机 OOM 终止。
+
+后续排查建议：
+
+```bash
+vmstat 1 10
+docker exec saa-collector-worker ps -o pid,ppid,stat,pcpu,pmem,rss,vsz,wchan:32,etime,cmd
+docker exec saa-collector-worker sh -c 'for p in $(pgrep -f "celery|python"); do echo ===$p===; grep -E "State|VmRSS|VmSwap|VmSize" /proc/$p/status; cat /proc/$p/wchan; done'
+dmesg -T | tail -80 | grep -Ei 'oom|killed|memory|cgroup'
+```
+
+后续代码改进建议：
+
+- 在 `pro.query` 返回后、DataFrame 去重后、`to_dict('records')` 后、`transform_records()` 后增加 DEBUG/INFO 级耗时日志，便于区分 pandas 转换慢还是字段转换慢。
+- 继续保留 `remaining_symbols` 续跑状态，避免 worker 被杀后整批重跑。
+- 将 `financial_statements` 拆成 Celery chunk task，让 worker 子进程能在 chunk 结束后回收，而不是一个进程跑完 5995 个 symbols。
+- 每个 symbol 后执行 `gc.collect()` / `malloc_trim(0)` 只能缓解 RSS 高水位，不能替代 chunk 级进程回收。
 
 ## 核心设计
 
