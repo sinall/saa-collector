@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import math
 
 from saa_collector.services.abstract.capital_service import CapitalService
 from saa_collector.services.common.progress import ProgressLogger
@@ -30,15 +31,12 @@ class CapitalServiceImpl(CapitalService, BasicStockService):
         ):
             records = []
             for raw_record in raw_records:
-                ts_code = raw_record['ts_code']
-                base_share = raw_record['base_share'] * 10000
-                multiplier = (1 + (raw_record['stk_bo_rate'] or 0) + (raw_record['stk_co_rate'] or 0))
-                record = {
-                    'symbol': self.convert_code(ts_code),
-                    'date': self.convert_date(raw_record['ex_date']),
-                    'capital': base_share * multiplier,
-                }
-                if not record['date'] or not record['capital']:
+                record = self.build_capital_record(raw_record)
+                if not record:
+                    self._logger.debug(
+                        'Skipped invalid capital raw record for symbol %s: %s',
+                        symbol, raw_record
+                    )
                     continue
                 records.append(record)
             records = self.filter_records(records, start_date)
@@ -59,3 +57,31 @@ class CapitalServiceImpl(CapitalService, BasicStockService):
             return
         for pending_symbol in pending_symbols:
             progress.finished('Finished collecting capital', pending_symbol)
+
+    def build_capital_record(self, raw_record):
+        ts_code = raw_record.get('ts_code')
+        ex_date = raw_record.get('ex_date')
+        base_share = self.clean_number(raw_record.get('base_share'))
+        if not ts_code or not ex_date or base_share is None:
+            return None
+
+        stk_bo_rate = self.clean_number(raw_record.get('stk_bo_rate'), default=0)
+        stk_co_rate = self.clean_number(raw_record.get('stk_co_rate'), default=0)
+        capital = base_share * 10000 * (1 + stk_bo_rate + stk_co_rate)
+        if not capital:
+            return None
+        return {
+            'symbol': self.convert_code(ts_code),
+            'date': self.convert_date(ex_date),
+            'capital': capital,
+        }
+
+    def clean_number(self, value, default=None):
+        if value is None:
+            return default
+        try:
+            if math.isnan(value):
+                return default
+        except TypeError:
+            pass
+        return value
