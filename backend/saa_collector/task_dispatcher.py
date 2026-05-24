@@ -2,6 +2,7 @@ import logging
 
 from django.utils import timezone
 
+from saa_collector.collect_job_config import build_collect_job_config
 from saa_collector.models import CollectJob, CollectPlan
 
 logger = logging.getLogger(__name__)
@@ -56,9 +57,9 @@ def create_plan_from_schedule(schedule, trigger_type):
     CollectJob.objects.create(
         plan=plan,
         data_type=schedule.data_type,
-        config={
-            'symbols': schedule.symbols,
-            'params': schedule.params
-        }
+        config=build_collect_job_config(
+            symbols=schedule.symbols,
+            params=schedule.params,
+        )
     )
     return plan

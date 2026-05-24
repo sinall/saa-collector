@@ -197,3 +197,32 @@ class CollectSchedule(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.get_status_display()}"
+
+
+class ExternalApiCacheEntry(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    provider = models.CharField('数据源', max_length=50)
+    api_name = models.CharField('API名称', max_length=100)
+    cache_key = models.CharField('缓存键', max_length=64, unique=True)
+    canonical_call_json = models.JSONField('规范化调用')
+    params_json = models.JSONField('调用参数', default=dict)
+    fields = models.TextField('请求字段', blank=True, default='')
+    response_json = models.JSONField('原始响应', default=list)
+    raw_response_schema_version = models.CharField('原始响应Schema版本', max_length=50)
+    expires_at = models.DateTimeField('过期时间')
+    hit_count = models.PositiveIntegerField('命中次数', default=0)
+    last_hit_at = models.DateTimeField('最后命中时间', null=True, blank=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        db_table = 'collector_external_api_cache'
+        indexes = [
+            models.Index(fields=['provider', 'api_name']),
+            models.Index(fields=['expires_at']),
+        ]
+        verbose_name = '外部API缓存'
+        verbose_name_plural = '外部API缓存'
+
+    def __str__(self):
+        return f"{self.provider}:{self.api_name}:{self.cache_key}"

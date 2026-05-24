@@ -8,6 +8,7 @@ from django import db
 from django.db import connection
 from django.utils import timezone
 
+from saa_collector.collect_job_config import get_cache_control
 from saa_collector.constants import DATA_TYPE_CONFIG
 from saa_collector.models import CollectJob, CollectPlan, DataIntegrityItem
 from saa_collector.services.collect_execution_context import (
@@ -105,6 +106,9 @@ def execute_job(job_id, task_id=None, plan_id=None):
             plan_id=effective_plan_id,
             job_id=job.id,
             data_type=job.data_type,
+            api_cache_enabled=get_cache_control(job.config, 'api_cache_enabled'),
+            api_cache_bypass=get_cache_control(job.config, 'api_cache_bypass'),
+            api_cache_ttl_seconds=get_cache_control(job.config, 'api_cache_ttl_seconds'),
         )
         job.start()
         logger.info('Starting collect job')

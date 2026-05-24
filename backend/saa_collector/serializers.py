@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .collect_job_config import build_collect_job_config
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 class CollectJobSerializer(serializers.ModelSerializer):
     data_type_display = serializers.CharField(source='get_data_type_display', read_only=True)
@@ -223,14 +224,14 @@ class CollectPlanCreateSerializer(serializers.Serializer):
             CollectJob.objects.create(
                 plan=plan,
                 data_type=job_data['data_type'],
-                config={
-                    'symbols': job_data.get('symbols', []),
-                    'params': {
+                config=build_collect_job_config(
+                    symbols=job_data.get('symbols', []),
+                    params={
                         'start_date': str(job_data['start_date']) if job_data.get('start_date') else None,
                         'end_date': str(job_data['end_date']) if job_data.get('end_date') else None,
                         'report_types': job_data.get('report_types', []),
-                    }
-                }
+                    },
+                )
             )
 
         return plan

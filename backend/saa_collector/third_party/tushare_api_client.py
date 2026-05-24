@@ -3,10 +3,14 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
+import hashlib
+import json
+import math
+from datetime import date, datetime
 from decimal import Decimal, ROUND_UP
 from urllib.parse import urlparse
 
+import pandas as pd
 import requests
 import tushare as ts
 
@@ -24,10 +28,22 @@ class TushareApiClient:
     DEFAULT_REQUEST_PER_MINUTES = 80
     MAX_RETRIES = 3
     RETRY_BACKOFF_FACTOR = 5  # seconds, multiplied by 2^attempt
+    CACHE_PROVIDER = 'tushare'
+    CACHE_SCHEMA_VERSION = 'tushare-raw-v1'
+    CACHE_TTL_BY_API = {
+        'balancesheet': 30 * 24 * 60 * 60,
+        'income': 30 * 24 * 60 * 60,
+        'cashflow': 30 * 24 * 60 * 60,
+        'dividend': 30 * 24 * 60 * 60,
+        'fina_mainbz': 30 * 24 * 60 * 60,
+        'stk_factor': 30 * 24 * 60 * 60,
+        'stock_basic': 7 * 24 * 60 * 60,
+    }
 
-    def __init__(self, token, rate_limit=None):
+    def __init__(self, token, rate_limit=None, cache_store=None):
         self._logger = logging.getLogger()
         self.pro = ts.pro_api(token)
+        self.cache_store = cache_store
         requests_per_minute = rate_limit or self.DEFAULT_REQUEST_PER_MINUTES
         self.interval = float(Decimal(60 / requests_per_minute).quantize(Decimal('.1'), rounding=ROUND_UP))
         self.last_query_time = datetime.now()
@@ -40,6 +56,12 @@ class TushareApiClient:
         )
 
     def query(self, sub_resource, fields='', **kwargs):
+        cache_controls = self._pop_cache_controls(kwargs)
+        cache_context = self._build_cache_context(sub_resource, fields, kwargs, cache_controls)
+        cached_result = self._get_cached_result(cache_context)
+        if cached_result is not None:
+            return cached_result
+
         rate_limit_wait_seconds = self._wait_for_rate_limit()
         last_error = None
         for attempt in range(self.MAX_RETRIES):
@@ -53,6 +75,7 @@ class TushareApiClient:
                 call_started_at = time.monotonic()
                 result = self.pro.query(sub_resource, fields, **kwargs)
                 call_elapsed_seconds = time.monotonic() - call_started_at
+                self._store_cached_result(cache_context, result)
                 self._logger.info(
                     'End up calling pro.query(%s, ..., ...) with %d records return; '
                     'api_elapsed_seconds=%.3f rate_limit_wait_seconds=%.3f',
@@ -82,6 +105,203 @@ class TushareApiClient:
         raise TushareApiException(
             f'{sub_resource} failed after {self.MAX_RETRIES} retries: {last_error}'
         ) from last_error
+
+    def build_cache_key(self, sub_resource, fields='', params=None):
+        canonical_call = self.build_canonical_call(sub_resource, params or {})
+        canonical_json = json.dumps(
+            canonical_call, sort_keys=True, separators=(',', ':'), ensure_ascii=True
+        )
+        return hashlib.sha256(canonical_json.encode('utf-8')).hexdigest()
+
+    def build_canonical_call(self, sub_resource, params):
+        return {
+            'provider': self.CACHE_PROVIDER,
+            'api': sub_resource,
+            'params': self._normalize_cache_params(params),
+            'version': self.CACHE_SCHEMA_VERSION,
+        }
+
+    def _normalize_cache_params(self, params):
+        normalized = {}
+        for key, value in sorted((params or {}).items()):
+            if key == 'fields':
+                continue
+            normalized[key] = self._normalize_cache_value(value)
+        return normalized
+
+    def _normalize_cache_value(self, value):
+        if value == '':
+            return None
+        if isinstance(value, (list, tuple, set)):
+            return sorted(self._normalize_cache_value(item) for item in value)
+        if hasattr(value, 'strftime'):
+            return value.strftime('%Y%m%d')
+        return value
+
+    def _pop_cache_controls(self, params):
+        return {
+            'enabled': params.pop('api_cache_enabled', None),
+            'bypass': params.pop('api_cache_bypass', False),
+            'ttl_seconds': params.pop('api_cache_ttl_seconds', None),
+        }
+
+    def _build_cache_context(self, sub_resource, fields, params, controls):
+        effective_controls = self._merge_cache_controls_with_execution_context(controls)
+        ttl_seconds = self._get_cache_ttl(sub_resource, effective_controls.get('ttl_seconds'))
+        enabled = bool(effective_controls.get('enabled'))
+        bypass = bool(effective_controls.get('bypass'))
+
+        if not enabled:
+            self._logger.info('External API cache disabled: provider=tushare api=%s', sub_resource)
+            return {'enabled': False}
+        if bypass:
+            self._logger.info('External API cache bypassed: provider=tushare api=%s', sub_resource)
+            return {'enabled': False}
+        if not ttl_seconds or ttl_seconds <= 0:
+            self._logger.info('External API cache disabled by policy: provider=tushare api=%s', sub_resource)
+            return {'enabled': False}
+
+        canonical_call = self.build_canonical_call(sub_resource, params)
+        cache_key = self.build_cache_key(sub_resource, fields=fields, params=params)
+        return {
+            'enabled': True,
+            'provider': self.CACHE_PROVIDER,
+            'api_name': sub_resource,
+            'cache_key': cache_key,
+            'canonical_call': canonical_call,
+            'params': canonical_call['params'],
+            'fields': fields or '',
+            'ttl_seconds': ttl_seconds,
+            'schema_version': self.CACHE_SCHEMA_VERSION,
+        }
+
+    def _merge_cache_controls_with_execution_context(self, controls):
+        merged = dict(controls)
+        try:
+            from saa_collector.services.collect_execution_context import get_collect_execution_context
+            context = get_collect_execution_context()
+        except Exception:
+            context = {}
+
+        if merged.get('enabled') is None:
+            merged['enabled'] = context.get('api_cache_enabled')
+        if not merged.get('bypass'):
+            merged['bypass'] = context.get('api_cache_bypass', False)
+        if merged.get('ttl_seconds') is None:
+            merged['ttl_seconds'] = context.get('api_cache_ttl_seconds')
+        return merged
+
+    def _get_cache_ttl(self, sub_resource, ttl_override):
+        if ttl_override is not None:
+            try:
+                return int(ttl_override)
+            except (TypeError, ValueError):
+                self._logger.warning(
+                    'Invalid Tushare API cache ttl override: api=%s ttl=%r',
+                    sub_resource, ttl_override
+                )
+                return None
+        return self.CACHE_TTL_BY_API.get(sub_resource)
+
+    def _get_cached_result(self, cache_context):
+        if not cache_context.get('enabled'):
+            return None
+        try:
+            cache_store = self._get_cache_store()
+            records = cache_store.get(
+                provider=cache_context['provider'],
+                api_name=cache_context['api_name'],
+                cache_key=cache_context['cache_key'],
+            )
+        except Exception as e:
+            self._logger.warning('External API cache read failed: %s', e)
+            return None
+
+        if records is None:
+            return None
+
+        result = pd.DataFrame.from_records(records)
+        fields = self._parse_fields(cache_context.get('fields'))
+        if fields and not set(fields).issubset(set(result.columns)):
+            self._logger.info(
+                'External API cache miss: provider=tushare api=%s cache_key=%s reason=missing_fields requested=%s cached=%s',
+                cache_context['api_name'], cache_context['cache_key'], fields, list(result.columns)
+            )
+            return None
+        if fields:
+            result = result.loc[:, fields]
+        return result
+
+    def _store_cached_result(self, cache_context, result):
+        if not cache_context.get('enabled'):
+            return
+        try:
+            records = self._sanitize_response_records(result.to_dict('records'))
+            self._get_cache_store().set(
+                provider=cache_context['provider'],
+                api_name=cache_context['api_name'],
+                cache_key=cache_context['cache_key'],
+                canonical_call=cache_context['canonical_call'],
+                params=cache_context['params'],
+                fields=cache_context['fields'],
+                response_records=records,
+                schema_version=cache_context['schema_version'],
+                ttl_seconds=cache_context['ttl_seconds'],
+            )
+        except Exception as e:
+            self._logger.warning('External API cache write failed: %s', e)
+
+    def _sanitize_response_records(self, records):
+        return [
+            {
+                key: self._sanitize_json_value(value)
+                for key, value in record.items()
+            }
+            for record in records or []
+        ]
+
+    def _sanitize_json_value(self, value):
+        if isinstance(value, dict):
+            return {
+                key: self._sanitize_json_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [self._sanitize_json_value(item) for item in value]
+        if value is None:
+            return None
+        if isinstance(value, float):
+            if math.isnan(value) or math.isinf(value):
+                return None
+            return value
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, (pd.Timestamp, datetime, date)):
+            if pd.isna(value):
+                return None
+            return value.isoformat()
+        if hasattr(value, 'item'):
+            try:
+                item = value.item()
+            except (TypeError, ValueError):
+                item = value
+            if item is not value:
+                return self._sanitize_json_value(item)
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return value
+
+    def _get_cache_store(self):
+        if self.cache_store is None:
+            from saa_collector.third_party.api_cache import DjangoExternalApiCacheStore
+            self.cache_store = DjangoExternalApiCacheStore()
+        return self.cache_store
+
+    def _parse_fields(self, fields):
+        return [field.strip() for field in (fields or '').split(',') if field.strip()]
 
     def _build_redis_client(self):
         if redis is None:

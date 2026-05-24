@@ -22,6 +22,7 @@ from saa_collector.permissions import IsAuthenticatedInProduction
 from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 
+from .collect_job_config import build_collect_job_config
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 from .task_dispatcher import create_plan_from_schedule, dispatch_plan, reset_plan_for_dispatch
 from .serializers import (
@@ -269,14 +270,14 @@ class BaseCollectView(APIView):
 
         job = CollectJob.objects.create(
             data_type=self.data_type,
-            config={
-                'symbols': serializer.validated_data.get('symbols', []),
-                'params': {
+            config=build_collect_job_config(
+                symbols=serializer.validated_data.get('symbols', []),
+                params={
                     'start_date': str(serializer.validated_data.get('start_date')) if serializer.validated_data.get('start_date') else None,
                     'end_date': str(serializer.validated_data.get('end_date')) if serializer.validated_data.get('end_date') else None,
                     'report_types': serializer.validated_data.get('report_types', []),
-                }
-            }
+                },
+            )
         )
 
         thread = threading.Thread(target=self._run_job, args=(job.id,))
@@ -1561,12 +1562,12 @@ class DataIntegrityReportGeneratePlanView(APIView):
             CollectJob.objects.create(
                 plan=plan,
                 data_type=data_type,
-                config={
-                    'symbols': [] if report.stock_scope == 'ALL' else list(info['stock_codes']),
-                    'start_date': str(report.date_start) if report.date_start else None,
-                    'end_date': str(report.date_end) if report.date_end else None,
-                    'miss_periods': periods,
-                },
+                config=build_collect_job_config(
+                    symbols=[] if report.stock_scope == 'ALL' else list(info['stock_codes']),
+                    start_date=str(report.date_start) if report.date_start else None,
+                    end_date=str(report.date_end) if report.date_end else None,
+                    miss_periods=periods,
+                ),
                 status='PENDING'
             )
 
