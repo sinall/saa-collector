@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -113,7 +113,7 @@ const isEdit = computed(() => !!route.params.id)
 
 const stockScope = ref<'all' | 'selected'>('all')
 
-const form = ref({
+const buildDefaultForm = () => ({
   name: '',
   data_type: '',
   symbols: [] as string[],
@@ -125,6 +125,8 @@ const form = ref({
   enabled: true
 })
 
+const form = ref(buildDefaultForm())
+
 const rules: FormRules = {
   name: [{ required: true, message: '请输入日程名称', trigger: 'blur' }],
   data_type: [{ required: true, message: '请选择数据类型', trigger: 'change' }],
@@ -135,8 +137,16 @@ const setCron = (cron: string) => {
   form.value.cron_expression = cron
 }
 
+const resetFormState = () => {
+  form.value = buildDefaultForm()
+  stockScope.value = 'all'
+}
+
 const fetchSchedule = async () => {
-  if (!isEdit.value) return
+  if (!isEdit.value) {
+    resetFormState()
+    return
+  }
 
   loading.value = true
   try {
@@ -188,12 +198,13 @@ const handleSubmit = async () => {
       if (isEdit.value) {
         const id = parseInt(route.params.id as string)
         await updateCollectSchedule(id, payload)
+        ElMessage.success('保存成功')
+        router.push(`/collect-schedules/${id}`)
       } else {
         await createCollectSchedule(payload)
+        ElMessage.success('创建成功')
+        router.push('/collect-schedules')
       }
-
-      ElMessage.success(isEdit.value ? '保存成功' : '创建成功')
-      router.push('/collect-schedules')
     } catch (error: any) {
       ElMessage.error(error.message || '操作失败')
     } finally {
@@ -206,6 +217,15 @@ onMounted(() => {
   loadDataTypes()
   fetchSchedule()
 })
+
+watch(
+  () => route.params.id,
+  (newId, oldId) => {
+    if (route.name !== 'collect-schedule-edit') return
+    if (newId === oldId) return
+    fetchSchedule()
+  }
+)
 </script>
 
 <style scoped>
