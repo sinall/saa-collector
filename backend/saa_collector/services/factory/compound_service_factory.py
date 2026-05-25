@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import logging
+
 from django.conf import settings
 
 from saa_collector.services.common.valuation_service import ValuationServiceImpl
@@ -6,6 +8,8 @@ from saa_collector.services.factory.service_factory import ServiceFactory
 from saa_collector.services.impl.akshare.service_factory import AkshareServiceFactoryImpl
 from saa_collector.services.impl.cninfo.service_factory import CninfoServiceFactoryImpl
 from saa_collector.services.impl.tushare.service_factory import TushareServiceFactoryImpl
+
+logger = logging.getLogger(__name__)
 
 
 class CompoundServiceFactory(ServiceFactory):
@@ -19,6 +23,11 @@ class CompoundServiceFactory(ServiceFactory):
             self.impl = self.akshare_impl
         else:
             self.impl = self.tushare_impl
+        logger.info(
+            'CompoundServiceFactory initialized: DATA_SOURCE=%s selected_impl=%s',
+            data_source,
+            self.impl.__class__.__name__,
+        )
 
     def create_calendar_service(self):
         return self.impl.create_calendar_service()

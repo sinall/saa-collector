@@ -40,26 +40,29 @@ class CalendarServiceImpl(CalendarService):
         if not records:
             self._logger.info("No trade days to save")
             return
-        
+
+        ordered_records = sorted(records, key=lambda record: record['date'])
         self._logger.info(f"Saving {len(records)} trade days to database")
-        self._logger.info(f"Date range: {records[0]['date']} ~ {records[-1]['date']}")
-        self._logger.info(f"Sample records (first 5): {[r['date'] for r in records[:5]]}")
-        
+        self._logger.info(
+            f"Date range: {ordered_records[0]['date']} ~ {ordered_records[-1]['date']}"
+        )
+        self._logger.info(f"Sample records (first 5): {[r['date'] for r in ordered_records[:5]]}")
+
         cnx = mysql.connector.connect(**self.db_config)
         cursor = cnx.cursor(prepared=True)
-        
+
         sql = """
             INSERT INTO saa_trade_days (date) VALUES (%s)
             ON DUPLICATE KEY UPDATE date = VALUES(date)
         """
-        
-        for record in records:
+
+        for record in ordered_records:
             cursor.execute(sql, (record['date'],))
-        
+
         cnx.commit()
         cursor.close()
         cnx.close()
-        
+
         self._logger.info(f"Successfully saved {len(records)} trade days")
 
     def get_last_trade_day_monthly(self, exchange=None, start_date=None, end_date=None, is_open='1'):

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .collect_job_config import build_collect_job_config
+from .date_expressions import normalize_schedule_params, validate_schedule_params
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 class CollectJobSerializer(serializers.ModelSerializer):
     data_type_display = serializers.CharField(source='get_data_type_display', read_only=True)
@@ -255,8 +256,19 @@ class CollectScheduleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'last_triggered_at', 'next_trigger_at', 'created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['params'] = normalize_schedule_params(data.get('params'))
+        return data
+
 
 class CollectScheduleCreateSerializer(serializers.ModelSerializer):
+    def validate_params(self, value):
+        try:
+            return validate_schedule_params(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
     class Meta:
         model = CollectSchedule
         fields = ['name', 'data_type', 'symbols', 'params', 'cron_expression', 'status']
@@ -268,6 +280,12 @@ class CollectScheduleCreateSerializer(serializers.ModelSerializer):
 
 
 class CollectScheduleUpdateSerializer(serializers.ModelSerializer):
+    def validate_params(self, value):
+        try:
+            return validate_schedule_params(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
     class Meta:
         model = CollectSchedule
         fields = ['name', 'data_type', 'symbols', 'params', 'cron_expression', 'status']

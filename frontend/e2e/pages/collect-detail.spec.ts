@@ -156,6 +156,28 @@ test.describe('Collect Schedule Detail Page', () => {
 })
 
 test.describe('Collect Schedule Edit Page', () => {
+  test('should show relative date input guidance', async ({ page }) => {
+    await page.route('**/api/data-types/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data_types: [
+            { key: 'historical_quote', label: '历史行情' },
+          ],
+          groups: [],
+        }),
+      })
+    })
+
+    await page.goto('/admin/collector/collect-schedules/new')
+    await waitForPageLoad(page)
+
+    await expect(page.getByPlaceholder('例如: T-180、T-180d、today 或 2024-01-01')).toBeVisible()
+    await expect(page.getByPlaceholder('例如: T-1、T-1td、today 或 2024-12-31')).toBeVisible()
+    await expect(page.getByText('T±N 默认按交易日计算，T±Ntd 与其等价，T±Nd 按自然日计算。')).toBeVisible()
+  })
+
   test('should reload schedule detail when navigating to another schedule edit id', async ({ page }) => {
     await page.route('**/api/data-types/', async route => {
       await route.fulfill({
@@ -181,7 +203,7 @@ test.describe('Collect Schedule Edit Page', () => {
           name: '财务报表采集(5月)',
           data_type: 'financial_statements',
           symbols: [],
-          params: { date_start: 'today', date_end: 'today' },
+          params: { date_start: 'T-180', date_end: 'T-1' },
           cron_expression: '0 9 * * 1-5',
           status: 'ENABLED',
         },
@@ -190,7 +212,7 @@ test.describe('Collect Schedule Edit Page', () => {
           name: '历史行情采集',
           data_type: 'historical_quote',
           symbols: [],
-          params: { date_start: 'today', date_end: 'today' },
+          params: { date_start: 'T-30d', date_end: 'T-1td' },
           cron_expression: '0 18 * * 1-5',
           status: 'ENABLED',
         },

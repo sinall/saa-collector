@@ -58,7 +58,8 @@ def scan_due_collect_schedules():
 
             due_at = schedule.next_trigger_at
             schedule.last_triggered_at = due_at
-            schedule.next_trigger_at = get_next_schedule_fire_time(schedule, due_at)
+            next_base = now if due_at < now else due_at
+            schedule.next_trigger_at = get_next_schedule_fire_time(schedule, next_base)
             schedule.save(update_fields=['last_triggered_at', 'next_trigger_at'])
 
             plan = create_plan_from_schedule(schedule, trigger_type='AUTO')

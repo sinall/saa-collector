@@ -67,11 +67,14 @@
 
         <el-form-item label="采集参数">
           <el-form-item label="日期开始">
-            <el-input v-model="form.params.date_start" placeholder="例如: today 或 2024-01-01" />
+            <el-input v-model="form.params.date_start" placeholder="例如: T-180、T-180d、today 或 2024-01-01" />
           </el-form-item>
           <el-form-item label="日期结束">
-            <el-input v-model="form.params.date_end" placeholder="例如: today 或 2024-12-31" />
+            <el-input v-model="form.params.date_end" placeholder="例如: T-1、T-1td、today 或 2024-12-31" />
           </el-form-item>
+          <el-text size="small" type="info">
+            T±N 默认按交易日计算，T±Ntd 与其等价，T±Nd 按自然日计算。
+          </el-text>
         </el-form-item>
 
         <el-form-item label="是否启用">

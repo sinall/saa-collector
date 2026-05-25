@@ -45,8 +45,11 @@ class CalendarServiceImpl(CalendarService):
             self._logger.info("No trade days to save")
             return
 
+        ordered_records = sorted(records, key=lambda record: record['date'])
         self._logger.info(f"Saving {len(records)} trade days to database")
-        self._logger.info(f"Date range: {records[0]['date']} ~ {records[-1]['date']}")
+        self._logger.info(
+            f"Date range: {ordered_records[0]['date']} ~ {ordered_records[-1]['date']}"
+        )
 
         cnx = mysql.connector.connect(**self.db_config)
         cursor = cnx.cursor(prepared=True)
@@ -56,7 +59,7 @@ class CalendarServiceImpl(CalendarService):
             ON DUPLICATE KEY UPDATE date = VALUES(date)
         """
 
-        for record in records:
+        for record in ordered_records:
             cursor.execute(sql, (record['date'],))
 
         cnx.commit()

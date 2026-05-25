@@ -4,9 +4,11 @@ API_CACHE_CONTROL_KEYS = (
     'api_cache_ttl_seconds',
 )
 
+from saa_collector.date_expressions import normalize_schedule_params
+
 
 def build_collect_job_config(symbols=None, params=None, **extra):
-    params = dict(params or {})
+    params = normalize_schedule_params(params)
     config = {
         'symbols': symbols or [],
         'params': params,

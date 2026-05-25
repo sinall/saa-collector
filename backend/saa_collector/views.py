@@ -23,6 +23,7 @@ from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 
 from .collect_job_config import build_collect_job_config
+from .date_expressions import normalize_schedule_params, parse_schedule_date
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 from .task_dispatcher import (
     create_plan_from_schedule,
@@ -69,6 +70,20 @@ def parse_period_to_date(period_str):
         except (ValueError, IndexError):
             pass
     return datetime.strptime(period_str, '%Y-%m-%d').date()
+
+
+def resolve_collect_dates_from_job(job):
+    params = normalize_schedule_params(job.config.get('params', {}))
+    start_value = job.config.get('start_date')
+    end_value = job.config.get('end_date')
+    if start_value not in (None, ''):
+        params = dict(params, start_date=start_value)
+    if end_value not in (None, ''):
+        params = dict(params, end_date=end_value)
+
+    start_date = parse_schedule_date(params.get('start_date'), today=timezone.localdate())
+    end_date = parse_schedule_date(params.get('end_date'), today=timezone.localdate())
+    return start_date, end_date, params
 
 
 def calculate_expected_periods(earliest_date, latest_date, frequency):
@@ -343,9 +358,7 @@ class CollectHistoricalQuotesView(BaseCollectView):
         factory = CompoundServiceFactory()
         service = factory.create_quote_service()
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
-        params = job.config.get('params', {})
-        start_date = job.config.get('start_date') or params.get('start_date')
-        end_date = job.config.get('end_date') or params.get('end_date')
+        start_date, end_date, _ = resolve_collect_dates_from_job(job)
         service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         job.complete(success=True, message=f"Collected historical quotes")
 
@@ -358,10 +371,7 @@ class CollectStatementsView(BaseCollectView):
         factory = CompoundServiceFactory()
         service = factory.create_statement_service()
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
-        params = job.config.get('params', {})
-        start_date = job.config.get('start_date') or params.get('start_date')
-        if start_date:
-            start_date = parse_period_to_date(start_date)
+        start_date, _, params = resolve_collect_dates_from_job(job)
 
         report_types = params.get('report_types', [])
 
@@ -385,10 +395,7 @@ class CollectCapitalView(BaseCollectView):
         factory = CompoundServiceFactory()
         service = factory.create_capital_service()
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
-        params = job.config.get('params', {})
-        start_date = job.config.get('start_date') or params.get('start_date')
-        if start_date:
-            start_date = parse_period_to_date(start_date)
+        start_date, _, _ = resolve_collect_dates_from_job(job)
         service.collect(symbols, start_date)
         job.complete(success=True, message=f"Collected capital changes")
 
@@ -411,10 +418,7 @@ class CollectMainBusinessView(BaseCollectView):
         factory = CompoundServiceFactory()
         service = factory.create_statement_service()
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
-        params = job.config.get('params', {})
-        start_date = job.config.get('start_date') or params.get('start_date')
-        if start_date:
-            start_date = parse_period_to_date(start_date)
+        start_date, _, _ = resolve_collect_dates_from_job(job)
         service.collect_main_business(symbols, start_date)
         job.complete(success=True, message=f"Collected main business data")
 
@@ -2438,14 +2442,7 @@ class CollectPlanResetView(APIView):
         factory = CompoundServiceFactory()
         data_type = job.data_type
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
-        params = job.config.get('params', {})
-        start_date = job.config.get('start_date') or params.get('start_date')
-        end_date = job.config.get('end_date') or params.get('end_date')
-
-        if start_date:
-            start_date = parse_period_to_date(start_date)
-        if end_date:
-            end_date = parse_period_to_date(end_date)
+        start_date, end_date, params = resolve_collect_dates_from_job(job)
 
         logger.info(f"[Job {job.id}] Collecting: data_type={data_type}, symbols={symbols}, "
                     f"start_date={start_date}, end_date={end_date}")
@@ -2983,14 +2980,7 @@ class CollectScheduleTriggerView(APIView):
         factory = CompoundServiceFactory()
         data_type = job.data_type
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
-        params = job.config.get('params', {})
-        start_date = params.get('start_date')
-        end_date = params.get('end_date')
-
-        if start_date:
-            start_date = parse_period_to_date(start_date)
-        if end_date:
-            end_date = parse_period_to_date(end_date)
+        start_date, end_date, params = resolve_collect_dates_from_job(job)
 
         logger.info(f"[Job {job.id}] Triggered execution: data_type={data_type}, symbols={symbols}")
 

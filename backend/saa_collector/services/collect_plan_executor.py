@@ -2,7 +2,7 @@ import logging
 import threading
 import ctypes
 import gc
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django import db
 from django.db import connection, transaction
@@ -10,6 +10,10 @@ from django.utils import timezone
 
 from saa_collector.collect_job_config import get_cache_control
 from saa_collector.constants import DATA_TYPE_CONFIG
+from saa_collector.date_expressions import (
+    normalize_schedule_params,
+    resolve_schedule_date_range,
+)
 from saa_collector.models import CollectJob, CollectPlan, DataIntegrityItem
 from saa_collector.services.collect_execution_context import (
     get_collect_execution_context,
@@ -175,14 +179,32 @@ def execute_collect(job):
     factory = CompoundServiceFactory()
     data_type = job.data_type
     symbols = job.config.get('symbols') if job.config.get('symbols') else None
-    params = job.config.get('params', {})
-    start_date = job.config.get('start_date') or params.get('start_date')
-    end_date = job.config.get('end_date') or params.get('end_date')
+    params = normalize_schedule_params(job.config.get('params', {}))
+    start_value = job.config.get('start_date')
+    end_value = job.config.get('end_date')
+    if start_value not in (None, ''):
+        params = dict(params, start_date=start_value)
+    if end_value not in (None, ''):
+        params = dict(params, end_date=end_value)
+    calendar_service = None
 
-    if start_date:
-        start_date = parse_period_to_date(start_date)
-    if end_date:
-        end_date = parse_period_to_date(end_date)
+    def refresh_trade_calendar(latest_trade_day, base_date):
+        nonlocal calendar_service
+        if latest_trade_day is None or base_date is None:
+            return
+        if calendar_service is None:
+            calendar_service = factory.create_calendar_service()
+
+        refresh_start = latest_trade_day + timedelta(days=1)
+        if refresh_start > base_date:
+            return
+        calendar_service.collect(refresh_start, base_date)
+
+    start_date, end_date, params = resolve_schedule_date_range(
+        params,
+        today=timezone.localdate(),
+        trade_calendar_refresher=refresh_trade_calendar,
+    )
 
     unit = 'symbol' if data_type in (
         'stock_info', 'quote', 'historical_quote', 'financial_statements',
