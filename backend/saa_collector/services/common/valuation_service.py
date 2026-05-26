@@ -147,7 +147,7 @@ class ValuationServiceImpl(ValuationService):
             records.append(self._build_board_summary_record(sheet_title, summary_row, date))
         return records
 
-    def query_industry_records(self, date):
+    def _download_cnindex_crsc_payload(self, date, payload_description='cnindex industry valuation'):
         check_date = get_trade_day_before_with_offset(date.date(), 1)
         if check_date is None:
             raise ValueError(f'No trade day found before {date.date()}')
@@ -169,12 +169,13 @@ class ValuationServiceImpl(ValuationService):
             )
         )
         try:
-            payload = response.json()
+            return response.json()
         except ValueError as exc:
             response_text = response.content.decode('utf-8', errors='replace')
             raise ValueError(
-                'Failed to parse cnindex industry valuation response: '
+                'Failed to parse {} response: '
                 'url={} status_code={} response_headers=\n{}\ncontent_type={} response_length={} response_body={!r} cache_key={}'.format(
+                    payload_description,
                     response.url,
                     response.status_code,
                     self._format_response_headers(response),
@@ -184,6 +185,9 @@ class ValuationServiceImpl(ValuationService):
                     cache_context.get('cache_key'),
                 )
             ) from exc
+
+    def query_industry_records(self, date):
+        payload = self._download_cnindex_crsc_payload(date)
 
         plate = None
         for block in payload:

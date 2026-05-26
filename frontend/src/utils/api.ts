@@ -289,8 +289,9 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
     { key: 'valuation_board', label: '板块估值', frequency: 'daily' },
     { key: 'valuation_industry', label: '行业估值', frequency: 'daily' },
     { key: 'index_weights', label: '指数成分股权重', frequency: 'quarterly' },
-    { key: 'industries', label: '行业信息', frequency: null },
-    { key: 'industry_stocks', label: '行业股票关系', frequency: 'monthly' },
+    { key: 'industries', label: '量化行业分类', frequency: null },
+    { key: 'csrc_industry_classifications', label: '证监会行业分类', frequency: null },
+    { key: 'industry_stocks', label: '行业成分股', frequency: 'monthly' },
   ]
 
   let periods: string[] = []
@@ -1634,7 +1635,7 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
     }
   },
   'saa_industries': {
-    table_label: '行业信息',
+    table_label: '量化行业分类',
     config: {
       fields: [
         { name: 'category', label: '行业分类', visible: true, fixed: true, order: 1, width: 100 },
@@ -1644,8 +1645,18 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
       ]
     }
   },
+  'saa_industry_classifications': {
+    table_label: '证监会行业分类',
+    config: {
+      fields: [
+        { name: 'id', label: '行业代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'name', label: '行业名称', visible: true, order: 2, width: 160 },
+        { name: 'parent_id', label: '上级行业', visible: true, order: 3, width: 100 },
+      ]
+    }
+  },
   'saa_industry_stocks': {
-    table_label: '行业股票关系',
+    table_label: '行业成分股',
     config: {
       fields: [
         { name: 'industry_code', label: '行业代码', visible: true, fixed: true, order: 1, width: 100 },
@@ -1700,8 +1711,9 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
     order: 5,
     items: [
       { key: 'index_weights', label: '指数成分股权重', table: 'saa_index_weights' },
-      { key: 'industries', label: '行业信息', table: 'saa_industries' },
-      { key: 'industry_stocks', label: '行业股票关系', table: 'saa_industry_stocks' },
+      { key: 'industries', label: '量化行业分类', table: 'saa_industries' },
+      { key: 'csrc_industry_classifications', label: '证监会行业分类', table: 'saa_industry_classifications' },
+      { key: 'industry_stocks', label: '行业成分股', table: 'saa_industry_stocks' },
     ]
   },
 ]

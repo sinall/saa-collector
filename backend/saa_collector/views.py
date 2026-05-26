@@ -2483,6 +2483,10 @@ class CollectPlanResetView(APIView):
             from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
             collect_job = ValuationCollectJob()
             collect_job()
+        elif data_type == 'csrc_industry_classifications':
+            from saa_collector.services.common.industry_classification_service import CsrcIndustryClassificationService
+            service = CsrcIndustryClassificationService()
+            service.collect()
         elif data_type == 'tick':
             from saa_collector.jobs.tick_job import TickJob
             collect_job = TickJob()
@@ -3020,6 +3024,10 @@ class CollectScheduleTriggerView(APIView):
             from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
             collect_job = ValuationCollectJob()
             collect_job()
+        elif data_type == 'csrc_industry_classifications':
+            from saa_collector.services.common.industry_classification_service import CsrcIndustryClassificationService
+            service = CsrcIndustryClassificationService()
+            service.collect()
         elif data_type == 'tick':
             from saa_collector.jobs.tick_job import TickJob
             collect_job = TickJob()

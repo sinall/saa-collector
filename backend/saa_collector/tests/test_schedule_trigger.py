@@ -42,3 +42,27 @@ class CollectScheduleTriggerAPITest(TestCase):
         self.assertEqual(plan_data['source_schedule_name'], '财务报表采集(5月)')
         self.assertNotIn(tick_schedule.name, plan_data['name'])
         dispatch_plan.assert_called_once()
+
+    def test_update_csrc_industry_classification_schedule(self):
+        schedule = CollectSchedule.objects.create(
+            name='证监会行业分类维护',
+            data_type='csrc_industry_classifications',
+            symbols=[],
+            params={},
+            cron_expression='5 0 7 5 *',
+            status='DISABLED',
+        )
+
+        response = self.client.put(f'/api/collect-schedules/{schedule.id}/', {
+            'name': '证监会行业分类维护',
+            'data_type': 'csrc_industry_classifications',
+            'symbols': [],
+            'params': {},
+            'cron_expression': '5 0 7 5 *',
+            'status': 'DISABLED',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['data_type'], 'csrc_industry_classifications')
+        self.assertEqual(response.data['data']['params'], {})
