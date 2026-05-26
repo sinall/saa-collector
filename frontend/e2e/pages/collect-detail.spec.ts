@@ -69,7 +69,7 @@ test.describe('Collect Schedule Detail Page', () => {
             data_type: 'historical_quote',
             data_type_display: '历史行情',
             symbols: [],
-            params: { date_start: 'T-30d', date_end: 'T-1td' },
+            params: { start_date: 'T-30d', end_date: 'T-1td' },
             cron_expression: '0 18 * * 1-5',
             status: 'ENABLED',
             last_triggered_at: null,
@@ -85,9 +85,11 @@ test.describe('Collect Schedule Detail Page', () => {
     await waitForPageLoad(page)
 
     await expect(page.getByRole('button', { name: '执行' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '编辑' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '删除' })).toBeVisible()
-    await expect(page.locator('.header-actions .el-switch')).toBeVisible()
+    await expect(page.getByRole('button', { name: '更多' })).toBeVisible()
+    await page.getByRole('button', { name: '更多' }).click()
+    await expect(page.getByRole('menuitem', { name: '编辑' })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: '禁用' })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: '删除' })).toBeVisible()
   })
   test('should reload schedule detail when navigating to another schedule id', async ({ page }) => {
     await page.route('**/api/data-types/', async route => {
@@ -122,7 +124,7 @@ test.describe('Collect Schedule Detail Page', () => {
           data_type: 'historical_quote',
           data_type_display: '历史行情',
           symbols: [],
-          params: { date_start: 'T-30d', date_end: 'T-1td' },
+          params: { start_date: 'T-30d', end_date: 'T-1td' },
           cron_expression: '0 18 * * 1-5',
           status: 'ENABLED',
           last_triggered_at: null,
@@ -248,7 +250,7 @@ test.describe('Collect Schedule Edit Page', () => {
           name: '财务报表采集(5月)',
           data_type: 'financial_statements',
           symbols: [],
-          params: { date_start: 'T-180', date_end: 'T-1' },
+          params: { start_date: 'T-180', end_date: 'T-1' },
           cron_expression: '0 9 * * 1-5',
           status: 'ENABLED',
         },
@@ -257,7 +259,7 @@ test.describe('Collect Schedule Edit Page', () => {
           name: '历史行情采集',
           data_type: 'historical_quote',
           symbols: [],
-          params: { date_start: 'T-30d', date_end: 'T-1td' },
+          params: { start_date: 'T-30d', end_date: 'T-1td' },
           cron_expression: '0 18 * * 1-5',
           status: 'ENABLED',
         },
@@ -308,7 +310,7 @@ test.describe('Collect Schedule Edit Page', () => {
           data_type: 'historical_quote',
           data_type_display: '历史行情',
           symbols: [],
-          params: { date_start: 'T-2', date_end: 'T-1td' },
+          params: { start_date: 'T-2', end_date: 'T-1td' },
           cron_expression: '0 18 * * 1-5',
           status: 'ENABLED',
           last_triggered_at: null,

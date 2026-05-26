@@ -215,29 +215,11 @@ const formatParams = (params: unknown) => {
   if (typeof params !== 'object') return String(params)
 
   try {
-    return JSON.stringify(normalizeDisplayParams(params as Record<string, any>), null, 2)
+    return JSON.stringify(params, null, 2)
   } catch (error) {
     console.error('Failed to format schedule params:', error)
     return String(params)
   }
-}
-
-const normalizeDisplayParams = (params: Record<string, any>) => {
-  const normalized = { ...params }
-
-  if (normalized.date_start ?? normalized.start_date ?? null) {
-    const startDate = normalized.date_start ?? normalized.start_date
-    normalized.date_start = startDate
-    delete normalized.start_date
-  }
-
-  if (normalized.date_end ?? normalized.end_date ?? null) {
-    const endDate = normalized.date_end ?? normalized.end_date
-    normalized.date_end = endDate
-    delete normalized.end_date
-  }
-
-  return normalized
 }
 
 onMounted(() => {

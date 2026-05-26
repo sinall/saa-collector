@@ -6,9 +6,15 @@ Collector schedules SHALL accept relative date expressions for start and end dat
 
 #### Scenario: User saves a schedule with trading-day offsets
 
-- **WHEN** a user creates or updates a collect schedule with `date_start`, `date_end`, `start_date`, or `end_date` values such as `T-180`, `T+2`, or `T-1td`
+- **WHEN** a user creates or updates a collect schedule with `start_date` or `end_date` values such as `T-180`, `T+2`, or `T-1td`
 - **THEN** the backend SHALL accept those expressions as valid schedule date inputs
 - **AND** it SHALL persist the operator-entered relative expressions instead of resolving them to fixed absolute dates
+
+#### Scenario: Legacy date aliases are accepted for backward compatibility
+
+- **WHEN** a user creates or updates a collect schedule with legacy `date_start` / `date_end` keys
+- **THEN** the backend SHALL accept the request
+- **AND** it SHALL normalize the stored schedule params to `start_date` / `end_date`
 
 #### Scenario: User saves a schedule with calendar-day offsets
 
@@ -39,6 +45,6 @@ Collector schedule execution SHALL resolve stored date expressions with consiste
 
 #### Scenario: Date aliases resolve to the same effective values
 
-- **WHEN** a schedule is stored with `date_start` / `date_end`, `start_date` / `end_date`, or a mix of both
+- **WHEN** a schedule is stored with `start_date` / `end_date` or legacy aliases that normalize to those keys
 - **THEN** schedule validation and execution SHALL use the same effective start and end dates
 - **AND** manual and automatic schedule triggers SHALL observe identical resolved values

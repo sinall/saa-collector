@@ -87,8 +87,8 @@ class ScheduleDateExpressionTest(TestCase):
 
         start_date, end_date, normalized = resolve_schedule_date_range(
             {
-                'date_start': 'T-2',
-                'date_end': 'T',
+                'start_date': 'T-2',
+                'end_date': 'T',
             },
             today=date(2026, 5, 25),
             trade_calendar_refresher=refresh_trade_calendar,
@@ -96,8 +96,8 @@ class ScheduleDateExpressionTest(TestCase):
 
         self.assertEqual(start_date, date(2026, 5, 21))
         self.assertEqual(end_date, date(2026, 5, 25))
-        self.assertEqual(normalized['date_start'], 'T-2')
-        self.assertEqual(normalized['date_end'], 'T')
+        self.assertEqual(normalized['start_date'], 'T-2')
+        self.assertEqual(normalized['end_date'], 'T')
 
     def test_parse_schedule_date_supports_trading_day_offsets_with_td_suffix(self):
         parsed = parse_schedule_date('T-1td', today=date(2026, 5, 24))
@@ -108,16 +108,16 @@ class ScheduleDateExpressionTest(TestCase):
         with self.assertRaises(ValueError):
             parse_schedule_date('T-1x', today=date(2026, 5, 25))
 
-    def test_normalize_schedule_params_keeps_both_schedule_date_aliases(self):
+    def test_normalize_schedule_params_canonicalizes_schedule_date_aliases(self):
         normalized = normalize_schedule_params({
             'date_start': 'T-180',
             'date_end': 'T-1td',
         })
 
-        self.assertEqual(normalized['date_start'], 'T-180')
         self.assertEqual(normalized['start_date'], 'T-180')
-        self.assertEqual(normalized['date_end'], 'T-1td')
         self.assertEqual(normalized['end_date'], 'T-1td')
+        self.assertNotIn('date_start', normalized)
+        self.assertNotIn('date_end', normalized)
 
 
 class CollectScheduleRelativeDateAPITest(TestCase):
@@ -131,14 +131,14 @@ class CollectScheduleRelativeDateAPITest(TestCase):
             for trade_day in ('2026-05-21', '2026-05-22', '2026-05-25', '2026-05-26'):
                 cursor.execute('INSERT INTO saa_trade_days (date) VALUES (%s)', [trade_day])
 
-    def test_create_schedule_accepts_and_preserves_relative_date_expressions(self):
+    def test_create_schedule_canonicalizes_relative_date_expressions(self):
         response = self.client.post('/api/collect-schedules/', {
             'name': 'Relative date schedule',
             'data_type': 'historical_quote',
             'symbols': ['000001'],
             'params': {
-                'date_start': 'T-2',
-                'date_end': 'T-1td',
+                'start_date': 'T-2',
+                'end_date': 'T-1td',
             },
             'cron_expression': '*/5 * * * *',
             'status': 'ENABLED',
@@ -146,10 +146,10 @@ class CollectScheduleRelativeDateAPITest(TestCase):
 
         self.assertEqual(response.status_code, 201)
         schedule = CollectSchedule.objects.get()
-        self.assertEqual(schedule.params['date_start'], 'T-2')
         self.assertEqual(schedule.params['start_date'], 'T-2')
-        self.assertEqual(schedule.params['date_end'], 'T-1td')
         self.assertEqual(schedule.params['end_date'], 'T-1td')
+        self.assertNotIn('date_start', schedule.params)
+        self.assertNotIn('date_end', schedule.params)
 
     def test_create_schedule_rejects_invalid_relative_date_expression(self):
         response = self.client.post('/api/collect-schedules/', {
@@ -170,7 +170,7 @@ class CollectScheduleRelativeDateAPITest(TestCase):
 class CollectExecutionDateAliasTest(TestCase):
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     @patch('saa_collector.services.collect_plan_executor.resolve_schedule_date_range')
-    def test_execute_collect_treats_date_aliases_identically(
+    def test_execute_collect_treats_legacy_date_aliases_identically(
             self, resolve_schedule_date_range_mock, factory_class):
         resolve_schedule_date_range_mock.side_effect = [
             (date(2026, 5, 21), date(2026, 5, 22), {}),

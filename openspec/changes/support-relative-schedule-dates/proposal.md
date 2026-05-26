@@ -8,7 +8,7 @@ Collector schedules currently treat date parameters as plain strings and only re
 - Define `T±N` and `T±Ntd` as trading-day offsets, with `td` optional.
 - Define `T±Nd` as calendar-day offsets.
 - Keep `T`, `today`, and `YYYY-MM-DD` inputs valid.
-- Normalize schedule parameter aliases so `date_start` / `date_end` and `start_date` / `end_date` behave consistently through validation, persistence, and execution.
+- Standardize schedule date parameters on `start_date` / `end_date` through validation, persistence, and execution, while still accepting legacy aliases for backward compatibility.
 - Resolve trading-day offsets against collector's trading calendar rather than weekday-only heuristics.
 
 ## Capabilities

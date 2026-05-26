@@ -823,8 +823,8 @@ function generateMockCollectSchedules(): CollectSchedule[] {
       symbols: i % 2 === 0 ? [] : stockCodes.slice(0, 3 + Math.floor(Math.random() * 3)),
       cron_expression: frequency === 'daily' ? '0 0 * * *' : frequency === 'weekly' ? '0 0 * * 1' : frequency === 'monthly' ? '0 0 1 * *' : frequency === 'quarterly' ? '0 0 1 1 */3' : '0 0 1 1 *',
       params: {
-        date_start: '2009-01-01',
-        date_end: date.toISOString().split('T')[0] ?? '',
+        start_date: '2009-01-01',
+        end_date: date.toISOString().split('T')[0] ?? '',
       },
       status: Math.random() > 0.5 ? 'ENABLED' : 'DISABLED',
       status_display: Math.random() > 0.5 ? '已启用' : '已禁用',

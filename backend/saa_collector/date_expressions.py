@@ -61,17 +61,16 @@ def normalize_schedule_params(params):
 
     if start_value not in (None, ''):
         normalized['start_date'] = start_value
-        normalized['date_start'] = start_value
     else:
         normalized.pop('start_date', None)
-        normalized.pop('date_start', None)
 
     if end_value not in (None, ''):
         normalized['end_date'] = end_value
-        normalized['date_end'] = end_value
     else:
         normalized.pop('end_date', None)
-        normalized.pop('date_end', None)
+
+    normalized.pop('date_start', None)
+    normalized.pop('date_end', None)
 
     return normalized
 

@@ -67,10 +67,10 @@
 
         <el-form-item v-if="currentDataTypeNeedsDate" label="采集参数">
           <el-form-item label="日期开始">
-            <el-input v-model="form.params.date_start" placeholder="例如: T-180、T-180d、today 或 2024-01-01" />
+            <el-input v-model="form.params.start_date" placeholder="例如: T-180、T-180d、today 或 2024-01-01" />
           </el-form-item>
           <el-form-item label="日期结束">
-            <el-input v-model="form.params.date_end" placeholder="例如: T-1、T-1td、today 或 2024-12-31" />
+            <el-input v-model="form.params.end_date" placeholder="例如: T-1、T-1td、today 或 2024-12-31" />
           </el-form-item>
           <el-text size="small" type="info">
             T±N 默认按交易日计算，T±Ntd 与其等价，T±Nd 按自然日计算。
@@ -126,8 +126,8 @@ const buildDefaultForm = () => ({
   symbols: [] as string[],
   cron_expression: '',
   params: {
-    date_start: 'today',
-    date_end: 'today'
+    start_date: 'today',
+    end_date: 'today'
   },
   enabled: true
 })
@@ -161,16 +161,17 @@ const fetchSchedule = async () => {
     const response = await fetchCollectSchedule(id)
     if (response.success && response.data) {
       const schedule = response.data
-      const dateStart = (schedule.params as Record<string, any>)?.date_start
-      const dateEnd = (schedule.params as Record<string, any>)?.date_end
+      const scheduleParams = schedule.params as Record<string, any>
+      const startDate = scheduleParams?.start_date ?? scheduleParams?.date_start
+      const endDate = scheduleParams?.end_date ?? scheduleParams?.date_end
       form.value = {
         name: schedule.name,
         data_type: schedule.data_type,
         symbols: schedule.symbols || [],
         cron_expression: schedule.cron_expression,
         params: {
-          date_start: dateStart ?? '',
-          date_end: dateEnd ?? ''
+          start_date: startDate ?? '',
+          end_date: endDate ?? ''
         },
         enabled: schedule.status === 'ENABLED'
       }

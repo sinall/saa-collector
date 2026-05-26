@@ -1,6 +1,6 @@
 ## Context
 
-Collector schedules persist operator-entered parameters in `CollectSchedule.params` and later pass them into collect plan execution. Current date handling is fragmented: some paths accept raw strings such as `today`, execution code reads both `date_start`/`date_end` and `start_date`/`end_date` inconsistently, and there is no shared parser for trading-day offsets. Because trading-day offsets depend on the collector trading calendar, the parser must live on the backend near schedule validation and execution rather than in the frontend alone.
+Collector schedules persist operator-entered parameters in `CollectSchedule.params` and later pass them into collect plan execution. Current date handling is fragmented: some paths accept raw strings such as `today`, execution code has historically accepted both legacy `date_start`/`date_end` aliases and canonical `start_date`/`end_date`, and there is no shared parser for trading-day offsets. Because trading-day offsets depend on the collector trading calendar, the parser must live on the backend near schedule validation and execution rather than in the frontend alone.
 
 ## Goals / Non-Goals
 
@@ -10,7 +10,7 @@ Collector schedules persist operator-entered parameters in `CollectSchedule.para
 - Treat bare `T±N` as trading-day offsets to match common finance notation.
 - Resolve trading-day offsets against persisted trade days rather than weekday-only math.
 - Keep existing absolute dates and `today` inputs working.
-- Normalize date parameter aliases so schedule creation, update, manual trigger, and auto execution all see the same effective values.
+- Normalize date parameter aliases so schedule creation, update, manual trigger, and auto execution all see the same effective `start_date` / `end_date` values.
 
 **Non-Goals:**
 
@@ -36,8 +36,8 @@ Collector schedules persist operator-entered parameters in `CollectSchedule.para
   Rationale: relative dates should move as the schedule runs; persisting resolved absolute dates would freeze the window.
   Alternative considered: resolve to absolute dates during schedule save. Rejected because recurring schedules would stop being relative.
 
-- Normalize `date_start`/`date_end` and `start_date`/`end_date` into one canonical view before validation and execution.
-  Rationale: current alias drift is an existing bug risk and would make relative-date support unreliable.
+- Normalize schedule date inputs to canonical `start_date`/`end_date` values before validation and execution, while still accepting legacy aliases on read.
+  Rationale: canonical naming keeps persistence and execution consistent, and backward compatibility avoids breaking old schedules.
 
 ## Risks / Trade-offs
 

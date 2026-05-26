@@ -53,7 +53,7 @@ class ScheduleScannerTest(TestCase):
             name='Due schedule',
             data_type='quote',
             symbols=['000001'],
-            params={'date_start': 'today'},
+            params={'start_date': 'today'},
             cron_expression='*/5 * * * *',
             status='ENABLED',
             next_trigger_at=due_at,
