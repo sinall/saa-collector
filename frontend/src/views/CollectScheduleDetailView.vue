@@ -31,7 +31,10 @@
           <el-descriptions-item label="日程名称">{{ schedule.name }}</el-descriptions-item>
           <el-descriptions-item label="数据类型">{{ schedule.data_type_display }}</el-descriptions-item>
           <el-descriptions-item label="Cron表达式">
-            <code>{{ schedule.cron_expression }}</code>
+            <div class="cron-field">
+              <code>{{ schedule.cron_expression }}</code>
+              <span class="cron-description">{{ describeCronExpression(schedule.cron_expression) }}</span>
+            </div>
           </el-descriptions-item>
           <el-descriptions-item label="股票范围">
             <span v-if="schedule.symbols?.length">
@@ -71,6 +74,7 @@ import {
   updateCollectSchedule
 } from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { describeCronExpression } from '@/utils/cron'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -179,7 +183,9 @@ const formatDateTime = (isoString: string) => {
   }).replace(/\//g, '-')
 }
 
-onMounted(loadCurrentSchedule)
+onMounted(() => {
+  loadCurrentSchedule()
+})
 
 watch(
   () => props.id,
@@ -203,5 +209,15 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.cron-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cron-description {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>

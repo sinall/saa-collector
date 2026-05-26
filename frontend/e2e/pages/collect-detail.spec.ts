@@ -153,6 +153,51 @@ test.describe('Collect Schedule Detail Page', () => {
     await expect(page.locator('.collect-schedule-detail')).toContainText('历史行情采集')
     await expect(page.locator('.collect-schedule-detail')).not.toContainText('估值数据采集')
   })
+
+  test('should explain cron expression on detail page', async ({ page }) => {
+    await page.route('**/api/data-types/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data_types: [
+            { key: 'valuation', label: '估值数据' },
+          ],
+          groups: [],
+        }),
+      })
+    })
+
+    await page.route('**/api/collect-schedules/3/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            id: 3,
+            name: '估值数据采集',
+            data_type: 'valuation',
+            data_type_display: '估值数据',
+            symbols: [],
+            params: {},
+            cron_expression: '5 0 7 5 *',
+            status: 'ENABLED',
+            last_triggered_at: null,
+            next_trigger_at: '2026-05-07T00:05:00+08:00',
+            created_at: '2026-05-25T10:00:00+08:00',
+            updated_at: '2026-05-25T10:00:00+08:00',
+          },
+        }),
+      })
+    })
+
+    await page.goto('/admin/collector/collect-schedules/3')
+    await waitForPageLoad(page)
+
+    await expect(page.getByText('5 0 7 5 *')).toBeVisible()
+    await expect(page.getByText('每年 5月7日 00:05', { exact: true })).toBeVisible()
+  })
 })
 
 test.describe('Collect Schedule Edit Page', () => {

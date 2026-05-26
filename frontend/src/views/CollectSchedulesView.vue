@@ -18,6 +18,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="cron_expression" label="Cron表达式" width="130" />
+        <el-table-column label="说明" min-width="190">
+          <template #default="{ row }">
+            <span class="cron-description">{{ describeCronExpression(row.cron_expression) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ENABLED' ? 'success' : 'info'">
@@ -57,6 +62,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
 import { useDataTypes } from '@/composables/useDataTypes'
+import { describeCronExpression } from '@/utils/cron'
 import {
   fetchCollectSchedules,
   updateCollectSchedule,
@@ -155,5 +161,9 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.cron-description {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>
