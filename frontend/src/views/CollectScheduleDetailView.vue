@@ -12,22 +12,27 @@
           </div>
           <div class="header-actions">
             <el-button type="primary" @click="triggerNow">执行</el-button>
-            <el-button @click="goToEdit">编辑</el-button>
-            <el-switch
-              v-model="schedule.status"
-              active-value="ENABLED"
-              inactive-value="DISABLED"
-              active-text="启用"
-              inactive-text="禁用"
-              @change="toggleStatus"
-            />
-            <el-button type="danger" plain @click="deleteCurrentSchedule">删除</el-button>
+            <el-dropdown trigger="click" @command="handleHeaderAction">
+              <el-button plain>
+                更多
+                <el-icon class="el-icon--right"><More /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item command="toggle">
+                    {{ schedule.status === 'ENABLED' ? '禁用' : '启用' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
       </template>
 
       <div v-if="schedule">
-        <el-descriptions :column="3" border>
+        <el-descriptions class="schedule-descriptions" :column="3" border label-width="140px">
           <el-descriptions-item label="日程名称">{{ schedule.name }}</el-descriptions-item>
           <el-descriptions-item label="数据类型">{{ schedule.data_type_display }}</el-descriptions-item>
           <el-descriptions-item label="Cron表达式">
@@ -41,9 +46,6 @@
               {{ schedule.symbols.slice(0, 5).join(', ') }}{{ schedule.symbols.length > 5 ? '...' : '' }}
             </span>
             <span v-else>全部股票</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="参数配置">
-            <code>{{ JSON.stringify(schedule.params) }}</code>
           </el-descriptions-item>
           <el-descriptions-item label="启用状态">
             <el-tag :type="schedule.status === 'ENABLED' ? 'success' : 'info'">
@@ -59,6 +61,13 @@
           <el-descriptions-item label="创建时间">{{ formatDateTime(schedule.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDateTime(schedule.updated_at) }}</el-descriptions-item>
         </el-descriptions>
+
+        <el-card class="params-card" shadow="never">
+          <template #header>
+            <span>参数配置</span>
+          </template>
+          <pre class="params-json">{{ formatParams(schedule.params) }}</pre>
+        </el-card>
       </div>
     </el-card>
   </div>
@@ -74,6 +83,7 @@ import {
   updateCollectSchedule
 } from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { More } from '@element-plus/icons-vue'
 import { describeCronExpression } from '@/utils/cron'
 
 const props = defineProps<{ id: string }>()
@@ -126,6 +136,22 @@ const toggleStatus = async () => {
 const goToEdit = () => {
   if (!schedule.value) return
   router.push(`/collect-schedules/${schedule.value.id}/edit`)
+}
+
+const handleHeaderAction = async (command: string) => {
+  if (command === 'edit') {
+    goToEdit()
+    return
+  }
+
+  if (command === 'toggle') {
+    await toggleStatus()
+    return
+  }
+
+  if (command === 'delete') {
+    await deleteCurrentSchedule()
+  }
 }
 
 const triggerNow = async () => {
@@ -183,6 +209,37 @@ const formatDateTime = (isoString: string) => {
   }).replace(/\//g, '-')
 }
 
+const formatParams = (params: unknown) => {
+  if (params == null) return '-'
+  if (typeof params === 'string') return params
+  if (typeof params !== 'object') return String(params)
+
+  try {
+    return JSON.stringify(normalizeDisplayParams(params as Record<string, any>), null, 2)
+  } catch (error) {
+    console.error('Failed to format schedule params:', error)
+    return String(params)
+  }
+}
+
+const normalizeDisplayParams = (params: Record<string, any>) => {
+  const normalized = { ...params }
+
+  if (normalized.date_start ?? normalized.start_date ?? null) {
+    const startDate = normalized.date_start ?? normalized.start_date
+    normalized.date_start = startDate
+    delete normalized.start_date
+  }
+
+  if (normalized.date_end ?? normalized.end_date ?? null) {
+    const endDate = normalized.date_end ?? normalized.end_date
+    normalized.date_end = endDate
+    delete normalized.end_date
+  }
+
+  return normalized
+}
+
 onMounted(() => {
   loadCurrentSchedule()
 })
@@ -204,11 +261,17 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
 }
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.schedule-descriptions :deep(.el-descriptions__label) {
+  font-weight: 500;
 }
 .cron-field {
   display: flex;
@@ -219,5 +282,16 @@ watch(
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.4;
+}
+.params-card {
+  margin-top: 16px;
+}
+.params-json {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace);
 }
 </style>
