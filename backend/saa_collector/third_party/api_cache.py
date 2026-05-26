@@ -1,4 +1,7 @@
+import hashlib
+import json
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 
 from django.db import transaction
@@ -10,8 +13,18 @@ from saa_collector.models import ExternalApiCacheEntry
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class CachedApiResponse:
+    body: bytes
+    content_type: str = ''
+    encoding: str = ''
+    filename: str = ''
+    status_code: int | None = None
+    headers: dict | None = None
+
+
 class DjangoExternalApiCacheStore:
-    def get(self, *, provider, api_name, cache_key):
+    def get_response(self, *, provider, api_name, cache_key):
         now = timezone.now()
         entry = ExternalApiCacheEntry.objects.filter(
             provider=provider,
@@ -40,11 +53,21 @@ class DjangoExternalApiCacheStore:
             'External API cache hit: provider=%s api=%s cache_key=%s',
             provider, api_name, cache_key
         )
-        return entry.response_json
+        return CachedApiResponse(
+            body=bytes(entry.response_body),
+            content_type=entry.response_content_type,
+            encoding=entry.response_encoding,
+            filename=entry.response_filename,
+            status_code=entry.response_status_code,
+            headers=entry.response_headers_json,
+        )
 
-    def set(
-            self, *, provider, api_name, cache_key, canonical_call,
-            params, fields, response_records, schema_version, ttl_seconds):
+    def set_response(
+            self, *, provider, api_name, cache_key, canonical_call, params,
+            body, content_type='', filename='', status_code=None, headers=None,
+            schema_version, ttl_seconds, fields='', encoding='', request_method='',
+            request_url='', request_body=''):
+        body = bytes(body or b'')
         expires_at = timezone.now() + timedelta(seconds=ttl_seconds)
         with transaction.atomic():
             ExternalApiCacheEntry.objects.update_or_create(
@@ -55,12 +78,68 @@ class DjangoExternalApiCacheStore:
                     'canonical_call_json': canonical_call,
                     'params_json': params,
                     'fields': fields or '',
-                    'response_json': response_records,
+                    'request_method': request_method or '',
+                    'request_url': request_url or '',
+                    'request_body': request_body or '',
+                    'response_status_code': status_code,
+                    'response_headers_json': dict(headers or {}),
+                    'response_content_type': content_type or '',
+                    'response_encoding': encoding or '',
+                    'response_filename': filename or '',
+                    'response_body': body,
+                    'response_sha256': hashlib.sha256(body).hexdigest(),
                     'raw_response_schema_version': schema_version,
                     'expires_at': expires_at,
                 },
             )
         logger.info(
-            'External API cache stored: provider=%s api=%s cache_key=%s ttl_seconds=%s records=%d',
-            provider, api_name, cache_key, ttl_seconds, len(response_records or [])
+            'External API cache stored: provider=%s api=%s cache_key=%s ttl_seconds=%s bytes=%d',
+            provider, api_name, cache_key, ttl_seconds, len(body)
+        )
+
+    def get_records(self, *, provider, api_name, cache_key):
+        cached = self.get_response(provider=provider, api_name=api_name, cache_key=cache_key)
+        if cached is None:
+            return None
+        encoding = cached.encoding or 'utf-8'
+        return json.loads(cached.body.decode(encoding))
+
+    def set_records(
+            self, *, provider, api_name, cache_key, canonical_call,
+            params, fields, response_records, schema_version, ttl_seconds):
+        body = json.dumps(
+            response_records or [],
+            ensure_ascii=False,
+            separators=(',', ':'),
+        ).encode('utf-8')
+        self.set_response(
+            provider=provider,
+            api_name=api_name,
+            cache_key=cache_key,
+            canonical_call=canonical_call,
+            params=params,
+            fields=fields,
+            body=body,
+            content_type='application/json',
+            encoding='utf-8',
+            schema_version=schema_version,
+            ttl_seconds=ttl_seconds,
+        )
+
+    def get(self, *, provider, api_name, cache_key):
+        return self.get_records(provider=provider, api_name=api_name, cache_key=cache_key)
+
+    def set(
+            self, *, provider, api_name, cache_key, canonical_call,
+            params, fields, response_records, schema_version, ttl_seconds):
+        self.set_records(
+            provider=provider,
+            api_name=api_name,
+            cache_key=cache_key,
+            canonical_call=canonical_call,
+            params=params,
+            fields=fields,
+            response_records=response_records,
+            schema_version=schema_version,
+            ttl_seconds=ttl_seconds,
         )
