@@ -16,8 +16,7 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         self._logger = logging.getLogger()
 
     def collect(self, symbols=None, start_date=None):
-        today = datetime.today()
-        today = today.strftime('%Y%m%d')
+        today = datetime.today().strftime('%Y%m%d')
         df = self.pro.query('daily', trade_date=today)
         if df.empty:
             return
@@ -25,7 +24,35 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         symbols = self.build_symbols(symbols)
 
         df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
-        df = df[df['code'].isin(symbols)]
+        df = df[df['code'].isin(symbols)].copy()
+        df['price'] = df['close']
+        df['date'] = df['trade_date'].apply(lambda x: "{}-{}-{}".format(x[:4], x[4:6], x[6:]))
+        df = df[['code', 'price', 'date']]
+        records = df.to_dict('records')
+        self.save_records(records, 'saa_prices_ex', 'code')
+
+    def collect_historical(self, symbols=None, trade_date=None, start_date=None, end_date=None):
+        dates = [d for d in [trade_date, start_date, end_date] if d is not None]
+        if not dates:
+            return
+
+        start_date = min(dates)
+        end_date = max(dates)
+        query_kwargs = {
+            'ts_code': symbols,
+            'start_date': start_date.strftime('%Y%m%d') if start_date else None,
+            'end_date': end_date.strftime('%Y%m%d') if end_date else None,
+        }
+        if trade_date is not None:
+            query_kwargs['trade_date'] = trade_date.strftime('%Y%m%d')
+
+        df = self.pro.monthly(**query_kwargs)
+        if df.empty:
+            return
+
+        symbols = self.build_symbols(symbols)
+        df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
+        df = df[df['code'].isin(symbols)].copy()
         df['price'] = df['close']
         df['date'] = df['trade_date'].apply(lambda x: "{}-{}-{}".format(x[:4], x[4:6], x[6:]))
         df = df[['code', 'price', 'date']]
@@ -34,8 +61,16 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         self.save_records(records, 'saa_prices_ex', 'code')
 
     def filter_records(self, records, start_date=None):
-        records = [record for record in records if record['date'].month % 3 == 0]
-        return records
+        filtered_records = []
+        for record in records:
+            record_date = record.get('date')
+            if isinstance(record_date, str):
+                record_date = datetime.strptime(record_date, '%Y-%m-%d').date()
+            if record_date is None:
+                continue
+            if record_date.month % 3 == 0:
+                filtered_records.append(record)
+        return filtered_records
 
 
 if __name__ == '__main__':
