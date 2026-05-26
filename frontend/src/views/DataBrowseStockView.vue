@@ -180,7 +180,7 @@ const pageTitle = computed(() => {
 const currentTable = computed(() => {
   for (const group of dataTypeGroups.value) {
     const item = group.items.find(i => i.key === activeDataType.value)
-    if (item) return item.table
+    if (item) return item.table || 'saa_stocks'
   }
   return 'saa_stocks'
 })

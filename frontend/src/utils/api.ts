@@ -72,7 +72,7 @@ export const login = async (username: string, password: string): Promise<{token:
 export interface DataTypeConfig {
   key: string
   label: string
-  table: string
+  table: string | null
   frequency?: string | null
   stock_level: boolean
   group?: string
@@ -286,6 +286,7 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
     { key: 'main_business', label: '主营业务', frequency: 'quarterly' },
     { key: 'capital', label: '股本变动', frequency: 'yearly' },
     { key: 'dividend', label: '分红数据', frequency: 'yearly' },
+    { key: 'valuation', label: '估值数据', frequency: null },
     { key: 'valuation_board', label: '板块估值', frequency: 'daily' },
     { key: 'valuation_industry', label: '行业估值', frequency: 'daily' },
     { key: 'index_weights', label: '指数成分股权重', frequency: 'quarterly' },
@@ -1479,7 +1480,7 @@ export interface DataTypeGroup {
   items: {
     key: string
     label: string
-    table: string
+    table: string | null
   }[]
 }
 
@@ -1711,6 +1712,7 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
     order: 5,
     items: [
       { key: 'index_weights', label: '指数成分股权重', table: 'saa_index_weights' },
+      { key: 'valuation', label: '估值数据', table: null },
       { key: 'industries', label: '量化行业分类', table: 'saa_industries' },
       { key: 'csrc_industry_classifications', label: '证监会行业分类', table: 'saa_industry_classifications' },
       { key: 'industry_stocks', label: '行业成分股', table: 'saa_industry_stocks' },

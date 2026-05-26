@@ -174,6 +174,18 @@ DATA_TYPE_CONFIG = {
         'security_scope': 'a_stock',
         'order': 11,
     },
+    'valuation': {
+        'table': None,
+        'date_column': None,
+        'data_frequency': None,
+        'stock_level': False,
+        'label': '估值数据',
+        'supports_integrity_check': False,
+        'group': 'valuation',
+        'show_completeness': False,
+        'need_date': False,
+        'order': 12,
+    },
     'valuation_board': {
         'table': 'saa_board_valuation_levels',
         'date_column': 'report_date',
@@ -184,7 +196,7 @@ DATA_TYPE_CONFIG = {
         'group': 'valuation',
         'show_completeness': True,
         'need_date': True,
-        'order': 12,
+        'order': 13,
     },
     'valuation_industry': {
         'table': 'saa_industry_valuation_levels',
@@ -196,7 +208,7 @@ DATA_TYPE_CONFIG = {
         'group': 'valuation',
         'show_completeness': True,
         'need_date': True,
-        'order': 13,
+        'order': 14,
     },
     'index_weights': {
         'table': 'saa_index_weights',
@@ -209,7 +221,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': True,
         'need_date': True,
-        'order': 14,
+        'order': 15,
     },
     'industries': {
         'table': 'saa_industries',
@@ -221,7 +233,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': False,
         'need_date': False,
-        'order': 15,
+        'order': 16,
     },
     'csrc_industry_classifications': {
         'table': 'saa_industry_classifications',
@@ -233,7 +245,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': False,
         'need_date': False,
-        'order': 16,
+        'order': 17,
     },
     'industry_stocks': {
         'table': 'saa_industry_stocks',
@@ -246,7 +258,7 @@ DATA_TYPE_CONFIG = {
         'group': 'industry',
         'show_completeness': True,
         'need_date': True,
-        'order': 17,
+        'order': 18,
     },
 }
 

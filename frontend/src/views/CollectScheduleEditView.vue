@@ -65,7 +65,7 @@
           </el-button-group>
         </el-form-item>
 
-        <el-form-item label="采集参数">
+        <el-form-item v-if="currentDataTypeNeedsDate" label="采集参数">
           <el-form-item label="日期开始">
             <el-input v-model="form.params.date_start" placeholder="例如: T-180、T-180d、today 或 2024-01-01" />
           </el-form-item>
@@ -113,6 +113,10 @@ const submitting = ref(false)
 const loading = ref(false)
 
 const isEdit = computed(() => !!route.params.id)
+const currentDataTypeNeedsDate = computed(() => {
+  const dataType = dataTypes.value.find(item => item.key === form.value.data_type)
+  return dataType?.need_date !== false
+})
 
 const stockScope = ref<'all' | 'selected'>('all')
 
@@ -157,14 +161,16 @@ const fetchSchedule = async () => {
     const response = await fetchCollectSchedule(id)
     if (response.success && response.data) {
       const schedule = response.data
+      const dateStart = (schedule.params as Record<string, any>)?.date_start
+      const dateEnd = (schedule.params as Record<string, any>)?.date_end
       form.value = {
         name: schedule.name,
         data_type: schedule.data_type,
         symbols: schedule.symbols || [],
         cron_expression: schedule.cron_expression,
         params: {
-          date_start: (schedule.params as Record<string, any>)?.date_start || 'today',
-          date_end: (schedule.params as Record<string, any>)?.date_end || 'today'
+          date_start: dateStart ?? '',
+          date_end: dateEnd ?? ''
         },
         enabled: schedule.status === 'ENABLED'
       }
@@ -194,7 +200,7 @@ const handleSubmit = async () => {
         data_type: form.value.data_type,
         symbols: stockScope.value === 'all' ? [] : form.value.symbols,
         cron_expression: form.value.cron_expression,
-        params: form.value.params,
+        params: currentDataTypeNeedsDate.value ? form.value.params : {},
         status: form.value.enabled ? 'ENABLED' as const : 'DISABLED' as const
       }
 

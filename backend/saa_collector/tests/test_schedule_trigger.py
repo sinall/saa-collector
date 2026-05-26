@@ -66,3 +66,27 @@ class CollectScheduleTriggerAPITest(TestCase):
         self.assertTrue(response.data['success'])
         self.assertEqual(response.data['data']['data_type'], 'csrc_industry_classifications')
         self.assertEqual(response.data['data']['params'], {})
+
+    def test_update_valuation_schedule(self):
+        schedule = CollectSchedule.objects.create(
+            name='估值数据采集',
+            data_type='valuation',
+            symbols=[],
+            params={},
+            cron_expression='30 19 * * 1-5',
+            status='DISABLED',
+        )
+
+        response = self.client.put(f'/api/collect-schedules/{schedule.id}/', {
+            'name': '估值数据采集',
+            'data_type': 'valuation',
+            'symbols': [],
+            'params': {},
+            'cron_expression': '30 19 * * 1-5',
+            'status': 'DISABLED',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['data_type'], 'valuation')
+        self.assertEqual(response.data['data']['params'], {})

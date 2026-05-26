@@ -4,7 +4,7 @@ import { fetchDataTypesConfig } from '@/utils/api'
 export interface DataTypeConfig {
   key: string
   label: string
-  table: string
+  table: string | null
   frequency?: string | null
   stock_level: boolean
   group?: string

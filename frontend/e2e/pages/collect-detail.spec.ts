@@ -344,6 +344,66 @@ test.describe('Collect Schedule Edit Page', () => {
     await expect(page.locator('.collect-schedule-detail')).toBeVisible()
     await expect(page.getByRole('cell', { name: '历史行情采集' })).toBeVisible()
   })
+
+  test('should save no-date schedule without injecting date params', async ({ page }) => {
+    let savedPayload: any = null
+
+    await page.route('**/api/data-types/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data_types: [
+            {
+              key: 'valuation',
+              label: '估值数据',
+              need_date: false,
+            },
+          ],
+          groups: [],
+        }),
+      })
+    })
+
+    await page.route('**/api/collect-schedules/10/', async route => {
+      const responseBody = {
+        success: true,
+        data: {
+          id: 10,
+          name: '估值数据采集',
+          data_type: 'valuation',
+          data_type_display: '估值数据',
+          symbols: [],
+          params: {},
+          cron_expression: '30 19 * * 1-5',
+          status: 'ENABLED',
+          last_triggered_at: null,
+          next_trigger_at: '2026-05-26T19:30:00+08:00',
+          created_at: '2026-05-25T10:00:00+08:00',
+          updated_at: '2026-05-25T10:00:00+08:00',
+        },
+      }
+
+      if (route.request().method() === 'PUT') {
+        savedPayload = route.request().postDataJSON()
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(responseBody),
+      })
+    })
+
+    await page.goto('/admin/collector/collect-schedules/10/edit')
+    await waitForPageLoad(page)
+
+    await expect(page.getByPlaceholder('例如: T-180、T-180d、today 或 2024-01-01')).not.toBeVisible()
+    await page.getByRole('button', { name: '保存' }).click()
+
+    await expect.poll(() => savedPayload).not.toBeNull()
+    expect(savedPayload.params).toEqual({})
+  })
 })
 
 test.describe('Collect Plan Edit Page - Browser Navigation', () => {
