@@ -27,8 +27,9 @@ class TushareQuoteServiceTest(SimpleTestCase):
         service.save_records.assert_called_once()
         records = service.save_records.call_args.args[0]
         self.assertEqual(len(records), 2)
-        self.assertEqual([record['code'] for record in records], ['000001', '000002'])
+        self.assertEqual([record['symbol'] for record in records], ['000001', '000002'])
         self.assertEqual([record['date'] for record in records], ['2026-05-26', '2026-05-26'])
+        self.assertEqual(service.save_records.call_args.args[1:], ('saa_latest_prices', 'symbol'))
 
     def test_filter_records_accepts_string_dates(self):
         service = self._make_service()

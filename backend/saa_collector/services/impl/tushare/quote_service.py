@@ -23,13 +23,14 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
 
         symbols = self.build_symbols(symbols)
 
-        df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
-        df = df[df['code'].isin(symbols)].copy()
+        df['symbol'] = df['ts_code'].apply(lambda x: x.split('.')[0])
+        df = df[df['symbol'].isin(symbols)].copy()
         df['price'] = df['close']
         df['date'] = df['trade_date'].apply(lambda x: "{}-{}-{}".format(x[:4], x[4:6], x[6:]))
-        df = df[['code', 'price', 'date']]
+        df = df[['symbol', 'price', 'date']]
         records = df.to_dict('records')
-        self.save_records(records, 'saa_prices_ex', 'code')
+        self._logger.info("Saving %d records to DB", len(records))
+        self.save_records(records, 'saa_latest_prices', 'symbol')
 
     def collect_historical(self, symbols=None, trade_date=None, start_date=None, end_date=None):
         dates = [d for d in [trade_date, start_date, end_date] if d is not None]
