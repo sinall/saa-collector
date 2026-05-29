@@ -241,6 +241,10 @@ def execute_collect(job):
             from saa_collector.services.common.stock_status_service import StockStatusService
             service = StockStatusService()
             service.collect(end_date or start_date)
+        elif data_type == 'index_quotes':
+            from saa_collector.services.common.index_quote_service import IndexQuoteService
+            service = IndexQuoteService()
+            service.collect(symbols, start_date, end_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
