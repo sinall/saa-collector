@@ -5,6 +5,7 @@ import time
 import mysql.connector
 
 from saa_collector.services.abstract.stock_info_service import StockInfoService
+from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
 from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 from ...common.stock_utils import StockUtils
@@ -22,7 +23,11 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         symbols = self.build_symbols(symbols)
         records = self.get_stock_info_list(symbols)
         cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, 'saa_stocks', 'symbol')
+        try:
+            DB().to_sql(records, cnx, 'saa_stocks', 'symbol')
+            SecurityMasterRefreshService().refresh_from_stocks(cnx)
+        finally:
+            cnx.close()
         self._logger.info("--- %s seconds ---", int(time.time() - start_time))
 
     def build_symbols(self, symbols):

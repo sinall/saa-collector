@@ -4,6 +4,7 @@ import re
 import time
 
 from saa_collector.services.abstract.stock_info_service import StockInfoService
+from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
 from saa_collector.third_party.cninfo_api_client import CninfoApiClient
 from .basic_stock_service import BasicStockService
 
@@ -22,6 +23,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
         symbols = self.build_symbols(symbols)
         records = self.get_stock_info_list(symbols)
         self.save_records(records, 'saa_stocks', 'symbol')
+        SecurityMasterRefreshService().refresh_from_stocks()
         self._logger.info("--- %s seconds ---", int(time.time() - start_time))
 
     def build_symbols(self, symbols):

@@ -6,6 +6,7 @@ import mysql.connector
 
 from saa_collector.services.abstract.stock_info_service import StockInfoService
 from saa_collector.services.common.progress import ProgressLogger
+from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
 from saa_collector.utils.db import DB
 from .basic_stock_service import BasicStockService
 
@@ -80,6 +81,8 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
                 self._logger.info(
                     'Final batch: saved %d records', len(accumulated_records)
                 )
+
+            SecurityMasterRefreshService().refresh_from_stocks(cnx)
         finally:
             try:
                 cnx.close()
