@@ -22,3 +22,16 @@ class DataTypesConfigTest(TestCase):
         self.assertEqual(data_types['csrc_industry_classifications']['label'], '证监会行业分类')
         self.assertEqual(data_types['csrc_industry_classifications']['table'], 'saa_industry_classifications')
         self.assertFalse(data_types['csrc_industry_classifications']['need_date'])
+
+    def test_extras_data_type_is_available_for_mfactor_stock_status(self):
+        response = self.client.get('/api/data-types/')
+
+        self.assertEqual(response.status_code, 200)
+        data_types = {
+            item['key']: item
+            for item in response.data['data_types']
+        }
+        self.assertEqual(data_types['extras']['label'], '股票状态')
+        self.assertEqual(data_types['extras']['table'], 'saa_extras')
+        self.assertEqual(data_types['extras']['stock_column'], 'code')
+        self.assertTrue(data_types['extras']['need_date'])

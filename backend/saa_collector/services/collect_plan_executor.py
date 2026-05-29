@@ -237,6 +237,10 @@ def execute_collect(job):
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type == 'extras':
+            from saa_collector.services.common.stock_status_service import StockStatusService
+            service = StockStatusService()
+            service.collect(end_date or start_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)

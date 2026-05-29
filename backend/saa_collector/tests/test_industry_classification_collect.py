@@ -17,3 +17,14 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         execute_collect(job)
 
         service_class.return_value.collect.assert_called_once()
+
+    @patch('saa_collector.services.common.stock_status_service.StockStatusService')
+    def test_execute_collect_runs_extras_job(self, service_class):
+        job = CollectJob.objects.create(
+            data_type='extras',
+            config={'symbols': [], 'params': {'start_date': '2026-05-29'}},
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect.assert_called_once()
