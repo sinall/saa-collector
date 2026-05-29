@@ -7,6 +7,7 @@ This directory contains collector documentation. Current durable behavior belong
 | Document | Purpose | Status |
 | --- | --- | --- |
 | `deployment.md` | Collector routing, service modes, environment, and deployment notes | Current operations reference; production Compose details still come from `../saa-conf` in the parent workspace |
+| `mfactor-data-dependencies.md` | mfactor data dependency map and collector evolution boundary | Current integration/evolution reference |
 | `testing.md` | E2E testing workflow and Playwright usage | Current testing reference |
 | `playwright-setup.md` | Playwright system dependency setup | Current setup quick reference |
 | `plans/development-backlog.md` | Rolling issue backlog from production and daily use | Current backlog |
