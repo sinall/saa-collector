@@ -102,14 +102,14 @@ Important implication: collecting raw daily prices and raw financial statements 
 
 | mfactor source table | Existing `saa` counterpart | Collector status | Next action |
 | --- | --- | --- | --- |
-| `trade_days` | `saa_trade_days` | Data type and executor exist; production schedule was not observed | Add or verify schedule |
-| `securities` | Prefer `saa_securities`; fallback `saa_stocks` | `stock_info` writes `saa_stocks`; `saa_securities` refresh path needs confirmation | Implement or document `saa_securities` refresh/sync |
+| `trade_days` | `saa_trade_days` | Data type and executor exist; production schedule needs verification | Add or verify schedule |
+| `securities` | Prefer `saa_securities`; fallback `saa_stocks` | `stock_info` writes `saa_stocks` and refreshes `saa_securities` | Verify production `stock_info` schedule |
 | `prices` | `saa_prices_ex` | `historical_quote` data type and schedule exist | Map directly in mfactor adapter |
-| `extras` | `saa_extras` | Table exists; no collector data type/schedule observed | Add ST status data type and schedule |
-| `index_quotes` | `saa_index_quotes` | Table exists; no collector data type/schedule observed | Add index quote data type and schedule |
-| `index_weights` | `saa_index_weights` | Table/config exist; executor/schedule missing | Implement collector job and schedule |
-| `industries` | `saa_industries` | Table/config exist; executor/schedule missing | Implement refresh governance and schedule if needed |
-| `industry_stocks` | `saa_industry_stocks` | Table/config exist; executor/schedule missing | Implement collector job and schedule |
+| `extras` | `saa_extras` | Data type and executor implemented | Verify production schedule |
+| `index_quotes` | `saa_index_quotes` | Data type and executor implemented | Verify production schedule |
+| `index_weights` | `saa_index_weights` | Data type and executor implemented | Verify production schedule |
+| `industries` | `saa_industries` | Data type and executor implemented with Tushare SW2021 source | Verify production schedule |
+| `industry_stocks` | `saa_industry_stocks` | Data type and executor implemented with cached Tushare member API | Verify production schedule |
 | Financial statement input | `saa_financial_statements_combined` | View exists; code-level governance missing | Version view definition and add freshness checks |
 | Monthly price input | `saa_monthly_prices` | View exists; code-level governance missing | Version view definition and add freshness checks |
 | Quarterly price input | `saa_quarterly_prices` | View exists; code-level governance missing | Version view definition and add freshness checks |
@@ -143,7 +143,7 @@ Important implication: collecting raw daily prices and raw financial statements 
 - `csrc_industry_classifications`
 - `industry_stocks`
 
-However, executor support is narrower. `backend/saa_collector/services/collect_plan_executor.py` currently executes:
+Executor support for the mfactor source-data set now includes:
 
 - `trade_days`
 - `stock_info`
@@ -157,14 +157,16 @@ However, executor support is narrower. `backend/saa_collector/services/collect_p
 - `capital`
 - `main_business`
 - `valuation`
+- `extras`
+- `index_quotes`
+- `index_weights`
+- `industries`
+- `industry_stocks`
 - `csrc_industry_classifications`
 - `tick`
 
 Configured but not currently executable as real collector jobs:
 
-- `index_weights`
-- `industries`
-- `industry_stocks`
 - `valuation_board`
 - `valuation_industry`
 
@@ -200,7 +202,7 @@ These should remain derived from collector-managed daily price data, not fetched
 
 `mfactor` needs benchmark constituents through `index_weights`.
 
-`saa_index_weights` already exists and collector defines `index_weights` metadata, but the executor does not implement collection. This should become a first-class collector data type with:
+`saa_index_weights` exists and collector implements `index_weights` as a first-class collector data type with:
 
 - Index code
 - Date
@@ -217,9 +219,9 @@ These should remain derived from collector-managed daily price data, not fetched
 
 Collector currently has CSRC industry classification collection, but that is not the same as the quantitative industry exposure model used by `mfactor`.
 
-Collector should implement separate collection and normalization for the industry taxonomy required by factor neutralization and exposure construction.
+Collector implements separate collection and normalization for the SW2021 industry taxonomy required by factor neutralization and exposure construction.
 
-`saa_industries` and `saa_industry_stocks` already exist, so the immediate work is to add or document refresh ownership, executor support, and schedules rather than to create new tables.
+`saa_industries` and `saa_industry_stocks` already exist and now have executor support. The immediate remaining work is to verify production schedules and keep the Tushare API cache policy aligned with provider update cadence.
 
 ### Stock Status Metadata
 
@@ -232,13 +234,13 @@ Collector should provide normalized status fields required by analysis:
 - Effective date
 - Stock code
 
-`saa_extras` already exists with `code`, `date`, and `is_st`. Collector should add an explicit data type and schedule to refresh it, or document the existing refresh path if one exists outside collector.
+`saa_extras` already exists with `code`, `date`, and `is_st`. Collector now has an explicit `extras` data type and executor; production schedule coverage still needs verification.
 
 ### Index Quotes
 
 `mfactor` uses index quote history for benchmark and performance workflows.
 
-`saa_index_quotes` already exists with a shape matching `mfactor.index_quotes`. Collector should provide or document index quote collection and normalized storage for the benchmark indexes used by `mfactor`, including at least:
+`saa_index_quotes` already exists with a shape matching `mfactor.index_quotes`. Collector now provides index quote collection and normalized storage for benchmark indexes used by `mfactor`, including at least:
 
 - Index code
 - Trade date
@@ -273,9 +275,9 @@ The following collector schedules should exist once the missing data types are i
 
 ### Phase 1: Make Existing Gaps Explicit
 
-- Mark `index_weights`, `industries`, and `industry_stocks` as not executable until services exist, or implement them before allowing schedules to be created.
+- Keep `index_weights`, `industries`, and `industry_stocks` executable and covered by production schedules.
 - Document that `valuation_board` and `valuation_industry` are completeness/reporting data types, while `valuation` is the executable collection data type.
-- Add integrity/completeness checks for derived objects that `mfactor` depends on.
+- Add and run `check_mfactor_readiness` plus integrity/completeness checks for derived objects that `mfactor` depends on.
 - Keep collector-side views/tables focused on reusable data assets, not `mfactor` adapter shapes.
 - For each `mfactor` source table, first identify whether an existing `saa` object is already an adequate replacement. Add new collector production only for true gaps.
 
