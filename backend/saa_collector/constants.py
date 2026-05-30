@@ -71,9 +71,9 @@ DATA_TYPE_CONFIG = {
     'historical_quote': {
         'table': 'saa_prices_ex',
         'date_column': 'date',
-        'data_frequency': 'daily',
+        'data_frequency': 'monthly',
         'stock_level': True,
-        'label': '历史行情',
+        'label': '历史月行情',
         'stock_column': 'code',
         'supports_integrity_check': True,
         'group': 'market',

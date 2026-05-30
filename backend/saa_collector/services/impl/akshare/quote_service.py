@@ -35,6 +35,8 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
 
     def collect_historical(self, symbols=None, trade_date=None, start_date=None, end_date=None):
         dates = [d for d in [trade_date, start_date, end_date] if d is not None]
+        if not dates:
+            return
         start_date = min(dates)
         end_date = max(dates)
         df = pd.DataFrame()
@@ -48,18 +50,22 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
             return
         existing_symbols = self.build_symbols(symbols)
         df['code'] = df['股票代码']
-        df['price'] = df['收盘']
-        df['date'] = pd.to_datetime(df['日期'], format='%Y%m%d')
-        df = df[['code', 'price', 'date']]
+        df['date'] = pd.to_datetime(df['日期']).dt.strftime('%Y-%m-%d')
+        df['open'] = df['开盘']
+        df['close'] = df['收盘']
+        df['high'] = df['最高']
+        df['low'] = df['最低']
+        df['volume'] = df.get('成交量')
+        df['money'] = df.get('成交额')
+        df['paused'] = 0
+        df = df[['code', 'date', 'open', 'close', 'high', 'low', 'volume', 'money', 'paused']]
         df = df[df['code'].isin(existing_symbols)]
         records = df.to_dict('records')
-        if trade_date is None:
-            records = self.filter_records(records, start_date)
-        self.save_records(records, 'saa_prices_ex', 'code')
+        records = self.filter_records(records, start_date)
+        self.save_records(records, 'saa_prices_ex', ['code', 'date'])
 
     def filter_records(self, records, start_date=None):
-        records = [record for record in records if record['date'].month % 3 == 0]
-        return records
+        return [record for record in records if record.get('date') is not None]
 
 
 if __name__ == '__main__':

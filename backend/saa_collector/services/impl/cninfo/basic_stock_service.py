@@ -95,7 +95,10 @@ class BasicStockService(BasicService):
 
     def save_records(self, records, table, primary_keys):
         cnx = mysql.connector.connect(**self.db_config)
-        DB().to_sql(records, cnx, table)
+        try:
+            DB().to_sql(records, cnx, table, primary_keys)
+        finally:
+            cnx.close()
 
     def to_sql(self, rows, cnx, table, primary_keys):
         if len(rows) == 0:

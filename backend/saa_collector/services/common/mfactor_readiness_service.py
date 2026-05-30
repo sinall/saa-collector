@@ -7,7 +7,7 @@ from saa_collector.utils.db import DB
 MFACTOR_SOURCE_REQUIREMENTS = [
     {'name': 'Trading calendar', 'object': 'saa_trade_days', 'date_column': 'date'},
     {'name': 'Security master', 'object': 'saa_securities'},
-    {'name': 'Daily prices', 'object': 'saa_prices_ex', 'date_column': 'date'},
+    {'name': 'Monthly historical prices', 'object': 'saa_prices_ex', 'date_column': 'date'},
     {'name': 'Stock status metadata', 'object': 'saa_extras', 'date_column': 'date'},
     {'name': 'Index quotes', 'object': 'saa_index_quotes', 'date_column': 'date'},
     {'name': 'Index constituents and weights', 'object': 'saa_index_weights', 'date_column': 'date'},

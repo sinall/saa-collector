@@ -17,7 +17,7 @@ This document records how `mfactor` depends on market, fundamental, and referenc
 - Trading calendars
 - Stock/security master data
 - Daily and latest prices
-- Monthly and quarterly price aggregates derived from daily prices
+- Monthly and quarterly price aggregates derived from collector-managed month-end price data
 - Financial statements and combined financial statement views
 - Dividends
 - Capital changes
@@ -81,7 +81,7 @@ Do not introduce mandatory prefixes such as `v_` or `source_` only to mark imple
 | Capital changes | `saa.saa_capitals` | Collector has `capital` data type |
 | Dividends | `saa.saa_dividends` | Collector has `dividend` and composite `financial_statements` data types |
 
-Important implication: collecting raw daily prices and raw financial statements is not sufficient unless the derived objects are also maintained.
+Important implication: collecting raw price rows and raw financial statements is not sufficient unless the derived objects are also maintained.
 
 ## mfactor Runtime Data Dependencies
 
@@ -91,7 +91,7 @@ Important implication: collecting raw daily prices and raw financial statements 
 | --- | --- | --- | --- |
 | `trade_days` | Analysis calendar, month boundary calculation | Yes | Collector has `saa_trade_days`, but no automatic mfactor sync/read path |
 | `securities` | Security master data | Yes | Prefer `saa_securities` because its shape matches `mfactor.securities`; use `saa_stocks` as fallback/enrichment source |
-| `prices` | Daily stock prices used by analyzer/cross-section logic | Yes | Collector has `saa_prices_ex`; mapping/sync or direct read needed |
+| `prices` | Month-end stock prices used by current analyzer/cross-section workflows | Yes | Collector has `saa_prices_ex`; current collector baseline is monthly OHLCV from Tushare monthly data |
 | `extras` | ST/status metadata | Yes | `saa_extras` exists with `code/date/is_st`; collector data type and schedule are missing |
 | `index_quotes` | Benchmark/index quote series | Yes | `saa_index_quotes` exists; collector data type and schedule are missing |
 | `index_weights` | Benchmark constituents and weights | Yes | `saa_index_weights` exists and collector has config metadata, but executor/schedule are missing |
@@ -104,15 +104,15 @@ Important implication: collecting raw daily prices and raw financial statements 
 | --- | --- | --- | --- |
 | `trade_days` | `saa_trade_days` | Data type and executor exist; production schedule needs verification | Add or verify schedule |
 | `securities` | Prefer `saa_securities`; fallback `saa_stocks` | `stock_info` writes `saa_stocks` and refreshes `saa_securities` | Verify production `stock_info` schedule |
-| `prices` | `saa_prices_ex` | `historical_quote` data type and schedule exist | Map directly in mfactor adapter |
+| `prices` | `saa_prices_ex` | `historical_quote` data type and schedule exist; semantics are monthly month-end prices | Map directly in mfactor adapter and keep analyzer dates aligned to available month-end trade dates |
 | `extras` | `saa_extras` | Data type and executor implemented | Verify production schedule |
 | `index_quotes` | `saa_index_quotes` | Data type and executor implemented | Verify production schedule |
 | `index_weights` | `saa_index_weights` | Data type and executor implemented | Verify production schedule |
 | `industries` | `saa_industries` | Data type and executor implemented with Tushare SW2021 source | Verify production schedule |
 | `industry_stocks` | `saa_industry_stocks` | Data type and executor implemented with cached Tushare member API | Verify production schedule |
 | Financial statement input | `saa_financial_statements_combined` | View definition is versioned | Add freshness checks |
-| Monthly price input | `saa_monthly_prices` | View definition is versioned; current definition is expensive | Optimize definition or materialize, then add freshness checks |
-| Quarterly price input | `saa_quarterly_prices` | View definition is versioned; current definition is expensive | Optimize definition or materialize, then add freshness checks |
+| Monthly price input | `saa_monthly_prices` | View definition is versioned over `saa_prices_ex` | Deploy updated definition, then add freshness checks |
+| Quarterly price input | `saa_quarterly_prices` | View definition is versioned over `saa_prices_ex` | Deploy updated definition, then add freshness checks |
 | `factors` | Factor definitions | No | Owned by mfactor |
 | `security_factor_values` | Generated factor values | No | Produced by `mfactor manage.py generate` |
 | `analyzer_runs` | Analysis run records | No | Produced by mfactor analyzer workflow |
@@ -201,9 +201,9 @@ The objects currently exist as database views. Their current production definiti
 
 - `backend/sql/mfactor_derived_views.sql`
 
-Collector currently collects daily historical prices and should govern these views as deterministic aggregations over collector-managed daily price data.
+Collector currently treats `historical_quote` as the monthly historical price feed and should govern these views as deterministic aggregations over collector-managed month-end price data.
 
-These should remain derived from collector-managed daily price data, not fetched independently unless the provider supplies a materially different canonical series. The view definitions and freshness checks should be versioned with collector data governance.
+These should remain derived from collector-managed `saa_prices_ex` price data, not fetched independently unless the provider supplies a materially different canonical series. The view definitions and freshness checks should be versioned with collector data governance. If the project later introduces true daily historical prices, the monthly and quarterly views must continue to expose month-end semantics rather than raw daily rows.
 
 Current production definitions use `saa_prices`, `YEAR(date)`, `MONTH(date)`, `QUARTER(date)`, and correlated subqueries. This is kept as a baseline, not an optimized target. Future optimization should evaluate rewriting these views or replacing them with scheduled derived tables.
 
@@ -266,7 +266,7 @@ The following collector schedules should exist once the missing data types are i
 | --- | --- | --- |
 | `trade_days` | Daily or weekly, with future window refresh | Keep trading calendar complete |
 | `stock_info` | Daily or weekly | Keep listings, delistings, names, and security metadata current |
-| `historical_quote` | Daily after market close | Maintain daily price base table |
+| `historical_quote` | Monthly after month-end | Maintain monthly month-end OHLCV base table in `saa_prices_ex` for current mfactor workflows |
 | `quote` | Intraday or after market close as needed | Site latest quote data |
 | `financial_statements` | Monthly and during reporting seasons | Maintain raw statements and dividends |
 | `capital` | Monthly or during reporting seasons | Maintain capital change history |

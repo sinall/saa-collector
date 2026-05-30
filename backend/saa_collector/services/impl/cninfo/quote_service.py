@@ -52,24 +52,17 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         symbols = self.build_symbols(symbols)
         df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
         df = df[df['code'].isin(symbols)].copy()
-        df['price'] = df['close']
         df['date'] = df['trade_date'].apply(lambda x: "{}-{}-{}".format(x[:4], x[4:6], x[6:]))
-        df = df[['code', 'price', 'date']]
+        df['volume'] = df.get('vol')
+        df['money'] = df.get('amount')
+        df['paused'] = 0
+        df = df[['code', 'date', 'open', 'close', 'high', 'low', 'volume', 'money', 'paused']]
         records = df.to_dict('records')
         records = self.filter_records(records, start_date)
-        self.save_records(records, 'saa_prices_ex', 'code')
+        self.save_records(records, 'saa_prices_ex', ['code', 'date'])
 
     def filter_records(self, records, start_date=None):
-        filtered_records = []
-        for record in records:
-            record_date = record.get('date')
-            if isinstance(record_date, str):
-                record_date = datetime.datetime.strptime(record_date, '%Y-%m-%d').date()
-            if record_date is None:
-                continue
-            if record_date.month % 3 == 0:
-                filtered_records.append(record)
-        return filtered_records
+        return [record for record in records if record.get('date') is not None]
 
 
 if __name__ == '__main__':

@@ -1856,7 +1856,7 @@ class DataIntegrityReportHeatmapView(APIView):
 
 DATA_TYPE_LABELS = {
     'quote': '最新行情',
-    'historical_quote': '历史行情',
+    'historical_quote': '历史月行情',
     'balance_sheet': '资产负债表',
     'income': '利润表',
     'cash_flow': '现金流量表',
@@ -2608,7 +2608,7 @@ class DisplayFieldConfigView(APIView):
     TABLE_LABEL_MAP = {
         'saa_stocks': '基本信息',
         'saa_latest_prices': '最新行情',
-        'saa_prices_ex': '历史行情',
+        'saa_prices_ex': '历史月行情',
         'saa_raw_balance_sheet': '资产负债表',
         'saa_raw_income_statement': '利润表',
         'saa_raw_cash_flow_statement': '现金流量表',
@@ -2630,7 +2630,7 @@ class DisplayFieldConfigView(APIView):
             'label': '行情数据',
             'items': [
                 {'key': 'quote', 'label': '最新行情', 'table': 'saa_latest_prices'},
-                {'key': 'historical_quote', 'label': '历史行情', 'table': 'saa_prices_ex'},
+                {'key': 'historical_quote', 'label': '历史月行情', 'table': 'saa_prices_ex'},
             ]
         },
         {

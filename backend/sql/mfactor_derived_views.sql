@@ -8,8 +8,46 @@ CREATE OR REPLACE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `saa_financial_s
 
 -- saa_monthly_prices
 DROP VIEW IF EXISTS `saa_monthly_prices`;
-CREATE OR REPLACE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `saa_monthly_prices` AS select `p`.`symbol` AS `symbol`,(select `allp`.`price` from `saa_prices` `allp` where ((`allp`.`symbol` = `p`.`symbol`) and (year(`allp`.`date`) = max(year(`p`.`date`))) and (month(`allp`.`date`) = max(month(`p`.`date`)))) order by `allp`.`date` desc limit 1) AS `price`,max(`p`.`date`) AS `date`,((makedate(year(max(`p`.`date`)),1) + interval month(max(`p`.`date`)) month) - interval 1 day) AS `report_date` from `saa_prices` `p` group by `p`.`symbol`,year(`p`.`date`),month(`p`.`date`);
+CREATE OR REPLACE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `saa_monthly_prices` AS
+select
+    `p`.`code` AS `symbol`,
+    `p`.`close` AS `price`,
+    `p`.`date` AS `date`,
+    last_day(`p`.`date`) AS `report_date`
+from `saa_prices_ex` `p`
+join (
+    select
+        `code`,
+        year(`date`) AS `year_value`,
+        month(`date`) AS `month_value`,
+        max(`date`) AS `max_date`
+    from `saa_prices_ex`
+    group by `code`, year(`date`), month(`date`)
+) `latest`
+  on `latest`.`code` = `p`.`code`
+ and `latest`.`max_date` = `p`.`date`
+ and `latest`.`year_value` = year(`p`.`date`)
+ and `latest`.`month_value` = month(`p`.`date`);
 
 -- saa_quarterly_prices
 DROP VIEW IF EXISTS `saa_quarterly_prices`;
-CREATE OR REPLACE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `saa_quarterly_prices` AS select `p`.`symbol` AS `symbol`,(select `allp`.`price` from `saa_prices` `allp` where ((`allp`.`symbol` = `p`.`symbol`) and (year(`allp`.`date`) = max(year(`p`.`date`))) and (quarter(`allp`.`date`) = max(quarter(`p`.`date`)))) order by `allp`.`date` desc limit 1) AS `price`,max(`p`.`date`) AS `date`,((makedate(year(max(`p`.`date`)),1) + interval quarter(max(`p`.`date`)) quarter) - interval 1 day) AS `report_date` from `saa_prices` `p` group by `p`.`symbol`,year(`p`.`date`),quarter(`p`.`date`);
+CREATE OR REPLACE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `saa_quarterly_prices` AS
+select
+    `p`.`code` AS `symbol`,
+    `p`.`close` AS `price`,
+    `p`.`date` AS `date`,
+    ((makedate(year(`p`.`date`), 1) + interval quarter(`p`.`date`) quarter) - interval 1 day) AS `report_date`
+from `saa_prices_ex` `p`
+join (
+    select
+        `code`,
+        year(`date`) AS `year_value`,
+        quarter(`date`) AS `quarter_value`,
+        max(`date`) AS `max_date`
+    from `saa_prices_ex`
+    group by `code`, year(`date`), quarter(`date`)
+) `latest`
+  on `latest`.`code` = `p`.`code`
+ and `latest`.`max_date` = `p`.`date`
+ and `latest`.`year_value` = year(`p`.`date`)
+ and `latest`.`quarter_value` = quarter(`p`.`date`);

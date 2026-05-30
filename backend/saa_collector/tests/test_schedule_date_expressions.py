@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.db import connection
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from saa_collector.date_expressions import (
@@ -243,17 +244,22 @@ class CollectExecutionDateAliasTest(TestCase):
 
         execute_collect(job)
 
+        base_date = timezone.localdate()
+        expected_start_date, expected_end_date, _ = resolve_schedule_date_range(
+            job.config['params'],
+            today=base_date,
+        )
         calendar_service.collect.assert_called_once_with(
             date(2026, 5, 12),
-            date(2026, 5, 25),
+            base_date,
         )
         self.assertEqual(
             [call.args for call in service.collect_historical.call_args_list],
             [(['000001'],)],
         )
         self.assertEqual(service.collect_historical.call_args_list[0].kwargs, {
-            'start_date': date(2026, 5, 21),
-            'end_date': date(2026, 5, 25),
+            'start_date': expected_start_date,
+            'end_date': expected_end_date,
         })
 
 
