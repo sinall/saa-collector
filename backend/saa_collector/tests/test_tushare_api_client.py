@@ -279,3 +279,45 @@ class TushareApiClientTest(TestCase):
         cache_store.get.assert_not_called()
         cache_store.set.assert_not_called()
         pro_api.return_value.query.assert_called_once()
+
+    @patch('saa_collector.third_party.tushare_api_client.ts.pro_api')
+    @patch.object(tushare_api_client.TushareApiClient, '_build_redis_client', return_value=None)
+    def test_query_caches_sw_industry_apis_by_default(self, _build_redis_client, pro_api):
+        cache_store = Mock()
+        cache_store.get.return_value = None
+        pro_api.return_value.query.return_value = pd.DataFrame([
+            {'index_code': '801010.SI', 'industry_name': '农林牧渔'},
+        ])
+        client = tushare_api_client.TushareApiClient(
+            'token',
+            rate_limit=60,
+            cache_store=cache_store,
+        )
+
+        client.query(
+            'index_classify',
+            level='L1',
+            src='SW2021',
+            api_cache_enabled=True,
+        )
+
+        cache_store.get.assert_called_once()
+        cache_store.set.assert_called_once()
+        self.assertEqual(cache_store.set.call_args.kwargs['ttl_seconds'], 7 * 24 * 60 * 60)
+
+        cache_store.reset_mock()
+        cache_store.get.return_value = None
+        pro_api.return_value.query.return_value = pd.DataFrame([
+            {'l1_code': '801010.SI', 'ts_code': '000001.SZ'},
+        ])
+
+        client.query(
+            'index_member_all',
+            l1_code='801010.SI',
+            is_new='Y',
+            api_cache_enabled=True,
+        )
+
+        cache_store.get.assert_called_once()
+        cache_store.set.assert_called_once()
+        self.assertEqual(cache_store.set.call_args.kwargs['ttl_seconds'], 24 * 60 * 60)

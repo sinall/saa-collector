@@ -23,6 +23,9 @@ class DB(object):
         for field in normal_fields:
             quoted_field = self.quote_identifier(field)
             update_statements.append("{} = VALUES({})".format(quoted_field, quoted_field))
+        if not update_statements:
+            quoted_field = self.quote_identifier(fields[0])
+            update_statements.append("{} = VALUES({})".format(quoted_field, quoted_field))
         update_statement = ", ".join(update_statements)
         sql = "INSERT INTO {} ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}".format(
             self.quote_table_name(table),

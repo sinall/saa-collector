@@ -50,3 +50,25 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         execute_collect(job)
 
         service_class.return_value.collect.assert_called_once()
+
+    @patch('saa_collector.services.common.sw_industry_service.SwIndustryService')
+    def test_execute_collect_runs_industries_job(self, service_class):
+        job = CollectJob.objects.create(
+            data_type='industries',
+            config={'symbols': [], 'params': {'start_date': '2026-05-29'}},
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect_industries.assert_called_once()
+
+    @patch('saa_collector.services.common.sw_industry_service.SwIndustryService')
+    def test_execute_collect_runs_industry_stocks_job(self, service_class):
+        job = CollectJob.objects.create(
+            data_type='industry_stocks',
+            config={'symbols': ['801010'], 'params': {'start_date': '2026-05-29'}},
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect_industry_stocks.assert_called_once()

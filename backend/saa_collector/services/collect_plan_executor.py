@@ -249,6 +249,14 @@ def execute_collect(job):
             from saa_collector.services.common.index_weight_service import IndexWeightService
             service = IndexWeightService()
             service.collect(symbols, start_date, end_date)
+        elif data_type == 'industries':
+            from saa_collector.services.common.sw_industry_service import SwIndustryService
+            service = SwIndustryService()
+            service.collect_industries(end_date or start_date)
+        elif data_type == 'industry_stocks':
+            from saa_collector.services.common.sw_industry_service import SwIndustryService
+            service = SwIndustryService()
+            service.collect_industry_stocks(symbols, end_date or start_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)

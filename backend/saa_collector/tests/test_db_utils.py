@@ -38,3 +38,17 @@ class DBToSqlTest(TestCase):
         sql = cursor.execute.call_args.args[0]
         self.assertIn('INSERT INTO `saa_index_weights` (`index`, `date`, `code`, `weight`)', sql)
         self.assertIn('`weight` = VALUES(`weight`)', sql)
+
+    def test_to_sql_uses_noop_update_when_all_fields_are_primary_keys(self):
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+
+        DB().to_sql(
+            [{'industry_code': '801010', 'date': '2026-05-30', 'code': '000505'}],
+            connection,
+            'saa_industry_stocks',
+            ['industry_code', 'date', 'code'],
+        )
+
+        sql = cursor.execute.call_args.args[0]
+        self.assertIn('ON DUPLICATE KEY UPDATE `industry_code` = VALUES(`industry_code`)', sql)
