@@ -75,9 +75,9 @@ Do not introduce mandatory prefixes such as `v_` or `source_` only to mark imple
 
 | Data | Current object queried by mfactor | Collector status |
 | --- | --- | --- |
-| Combined financial statements | `saa.saa_financial_statements_combined` | Exists as a database view; needs collector-side definition/version governance and freshness checks |
-| Monthly prices | `saa.saa_monthly_prices` | Exists as a database view; needs collector-side definition/version governance and freshness checks |
-| Quarterly prices | `saa.saa_quarterly_prices` | Exists as a database view; needs collector-side definition/version governance and freshness checks |
+| Combined financial statements | `saa.saa_financial_statements_combined` | View definition versioned in `backend/sql/mfactor_derived_views.sql`; freshness checks still needed |
+| Monthly prices | `saa.saa_monthly_prices` | View definition versioned in `backend/sql/mfactor_derived_views.sql`; performance and freshness checks still needed |
+| Quarterly prices | `saa.saa_quarterly_prices` | View definition versioned in `backend/sql/mfactor_derived_views.sql`; performance and freshness checks still needed |
 | Capital changes | `saa.saa_capitals` | Collector has `capital` data type |
 | Dividends | `saa.saa_dividends` | Collector has `dividend` and composite `financial_statements` data types |
 
@@ -110,9 +110,9 @@ Important implication: collecting raw daily prices and raw financial statements 
 | `index_weights` | `saa_index_weights` | Data type and executor implemented | Verify production schedule |
 | `industries` | `saa_industries` | Data type and executor implemented with Tushare SW2021 source | Verify production schedule |
 | `industry_stocks` | `saa_industry_stocks` | Data type and executor implemented with cached Tushare member API | Verify production schedule |
-| Financial statement input | `saa_financial_statements_combined` | View exists; code-level governance missing | Version view definition and add freshness checks |
-| Monthly price input | `saa_monthly_prices` | View exists; code-level governance missing | Version view definition and add freshness checks |
-| Quarterly price input | `saa_quarterly_prices` | View exists; code-level governance missing | Version view definition and add freshness checks |
+| Financial statement input | `saa_financial_statements_combined` | View definition is versioned | Add freshness checks |
+| Monthly price input | `saa_monthly_prices` | View definition is versioned; current definition is expensive | Optimize definition or materialize, then add freshness checks |
+| Quarterly price input | `saa_quarterly_prices` | View definition is versioned; current definition is expensive | Optimize definition or materialize, then add freshness checks |
 | `factors` | Factor definitions | No | Owned by mfactor |
 | `security_factor_values` | Generated factor values | No | Produced by `mfactor manage.py generate` |
 | `analyzer_runs` | Analysis run records | No | Produced by mfactor analyzer workflow |
@@ -178,9 +178,12 @@ For valuation, the executable collector job is the composite `valuation` data ty
 
 `mfactor` expects `saa.saa_financial_statements_combined`.
 
-The object currently exists as a database view. Collector should govern it as part of the data-provider contract:
+The object currently exists as a database view. Its current production definition is versioned in:
 
-- Store the view definition in version-controlled database migration or SQL.
+- `backend/sql/mfactor_derived_views.sql`
+
+Collector should govern it as part of the data-provider contract:
+
 - Document the raw tables it depends on.
 - Add freshness/completeness checks after financial statement collection.
 - Keep the view shape stable for consumers, or provide a migration path when fields change.
@@ -194,9 +197,15 @@ The object should be treated as part of collector-owned normalized data, because
 - `saa.saa_monthly_prices`
 - `saa.saa_quarterly_prices`
 
-The objects currently exist as database views. Collector currently collects daily historical prices and should govern these views as deterministic aggregations over collector-managed daily price data.
+The objects currently exist as database views. Their current production definitions are versioned in:
+
+- `backend/sql/mfactor_derived_views.sql`
+
+Collector currently collects daily historical prices and should govern these views as deterministic aggregations over collector-managed daily price data.
 
 These should remain derived from collector-managed daily price data, not fetched independently unless the provider supplies a materially different canonical series. The view definitions and freshness checks should be versioned with collector data governance.
+
+Current production definitions use `saa_prices`, `YEAR(date)`, `MONTH(date)`, `QUARTER(date)`, and correlated subqueries. This is kept as a baseline, not an optimized target. Future optimization should evaluate rewriting these views or replacing them with scheduled derived tables.
 
 ### Index Constituents and Weights
 
@@ -283,7 +292,8 @@ The following collector schedules should exist once the missing data types are i
 
 ### Phase 2: Add Derived Objects
 
-- Add version-controlled collector-owned definitions for the existing `saa_financial_statements_combined`, `saa_monthly_prices`, and `saa_quarterly_prices` views.
+- Maintain version-controlled collector-owned definitions for the existing `saa_financial_statements_combined`, `saa_monthly_prices`, and `saa_quarterly_prices` views in `backend/sql/mfactor_derived_views.sql`.
+- Optimize `saa_monthly_prices` and `saa_quarterly_prices`, which currently use expensive date functions and correlated subqueries over `saa_prices`.
 - Ensure refresh ordering: raw collection first, derived refresh second.
 
 ### Phase 3: Add mfactor Reference Data
