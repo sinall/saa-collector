@@ -21,10 +21,14 @@ class DB(object):
             normal_fields = [f for f in normal_fields if f not in primary_keys]
         update_statements = []
         for field in normal_fields:
-            update_statements.append("{} = VALUES({})".format(field, field))
+            quoted_field = self.quote_identifier(field)
+            update_statements.append("{} = VALUES({})".format(quoted_field, quoted_field))
         update_statement = ", ".join(update_statements)
         sql = "INSERT INTO {} ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}".format(
-            table, ", ".join(fields), ", ".join(["%s"] * len(fields)), update_statement
+            self.quote_table_name(table),
+            ", ".join(self.quote_identifier(field) for field in fields),
+            ", ".join(["%s"] * len(fields)),
+            update_statement
         )
         cursor = con.cursor(prepared=True)
         try:
@@ -46,3 +50,12 @@ class DB(object):
         if isinstance(value, datetime):
             return value.strftime('%Y%m%d')
         return value
+
+    def quote_table_name(self, table):
+        return '.'.join(self.quote_identifier(part) for part in str(table).split('.'))
+
+    def quote_identifier(self, identifier):
+        identifier = str(identifier)
+        if identifier.startswith('`') and identifier.endswith('`'):
+            return identifier
+        return '`{}`'.format(identifier.replace('`', '``'))

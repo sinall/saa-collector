@@ -12,7 +12,7 @@ from saa_collector.third_party.tushare_api_client import get_tushare_client
 from saa_collector.utils.db import DB
 
 
-class IndexQuoteService:
+class IndexWeightService:
     DEFAULT_INDEXES = ['000906.XSHG']
 
     def __init__(self):
@@ -33,9 +33,12 @@ class IndexQuoteService:
             records = []
             for index in indexes:
                 records.extend(self.query_records(index, start_date, end_date))
+            stock_names = self.query_stock_names(cnx, [record['code'] for record in records])
+            for record in records:
+                record['display_name'] = stock_names.get(record['code'])
             self.save_records(records, cnx)
             self._logger.info(
-                'Saved %s records to saa_index_quotes; sample=%s',
+                'Saved %s records to saa_index_weights; sample=%s',
                 len(records),
                 format_sample_record(records),
             )
@@ -44,43 +47,48 @@ class IndexQuoteService:
 
     def query_records(self, index, start_date, end_date):
         tushare_code = self.to_tushare_index_code(index)
-        name = self.query_index_name(tushare_code)
         df = self.pro.query(
-            'index_daily',
-            ts_code=tushare_code,
+            'index_weight',
+            index_code=tushare_code,
             start_date=start_date.strftime('%Y%m%d'),
             end_date=end_date.strftime('%Y%m%d'),
         )
         if df.empty:
             return []
         return [
-            self.transform_record(row, name)
+            self.transform_record(row)
             for row in df.to_dict('records')
         ]
 
-    def query_index_name(self, tushare_code):
-        df = self.pro.query('index_basic', ts_code=tushare_code)
-        if df.empty:
-            return None
-        return df.iloc[0].get('name')
+    def query_stock_names(self, cnx, codes):
+        codes = sorted(set(code for code in codes if code))
+        if not codes:
+            return {}
+
+        placeholders = ','.join(['%s'] * len(codes))
+        cursor = cnx.cursor()
+        try:
+            cursor.execute(
+                'SELECT symbol, name FROM saa_stocks WHERE symbol IN ({})'.format(placeholders),
+                codes,
+            )
+            return {
+                symbol: name
+                for symbol, name in cursor.fetchall()
+            }
+        finally:
+            cursor.close()
 
     def save_records(self, records, cnx):
-        DB().to_sql(records, cnx, 'saa_index_quotes', ['code', 'date'])
+        DB().to_sql(records, cnx, 'saa_index_weights', ['index', 'date', 'code'])
 
-    def transform_record(self, row, name):
+    def transform_record(self, row):
         return {
-            'code': self.strip_index_suffix(row.get('ts_code')),
+            'index': self.to_joinquant_index_code(row.get('index_code')),
             'date': self.parse_tushare_date(row.get('trade_date')),
-            'name': name,
-            'open_price': self.nullable_value(row.get('open')),
-            'high_price': self.nullable_value(row.get('high')),
-            'low_price': self.nullable_value(row.get('low')),
-            'close_price': self.nullable_value(row.get('close')),
-            'turnover_volume': self.nullable_value(row.get('vol')),
-            'turnover_value': self.nullable_value(row.get('amount')),
-            'change_of': self.nullable_value(row.get('change')),
-            'change_pct': self.nullable_value(row.get('pct_chg')),
-            'prev_close_price': self.nullable_value(row.get('pre_close')),
+            'code': self.strip_suffix(row.get('con_code')),
+            'display_name': None,
+            'weight': self.nullable_value(row.get('weight')),
         }
 
     @classmethod
@@ -106,10 +114,20 @@ class IndexQuoteService:
         return index
 
     @staticmethod
-    def strip_index_suffix(index):
+    def to_joinquant_index_code(index):
         if not index:
             return index
-        return str(index).split('.')[0]
+        if index.endswith('.SH'):
+            return index.replace('.SH', '.XSHG')
+        if index.endswith('.SZ'):
+            return index.replace('.SZ', '.XSHE')
+        return index
+
+    @staticmethod
+    def strip_suffix(code):
+        if not code:
+            return code
+        return str(code).split('.')[0]
 
     @staticmethod
     def parse_tushare_date(value):

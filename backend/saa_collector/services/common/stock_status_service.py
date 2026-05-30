@@ -6,6 +6,7 @@ import mysql.connector
 from django.utils import timezone
 
 from saa_collector.services.common.config_service import ConfigService
+from saa_collector.services.common.logging_utils import format_sample_record
 from saa_collector.utils.db import DB
 
 
@@ -22,7 +23,12 @@ class StockStatusService:
         try:
             records = self.query_records(target_date, cnx)
             self.save_records(records, cnx)
-            self._logger.info('Saved %s records to saa_extras for date %s', len(records), target_date)
+            self._logger.info(
+                'Saved %s records to saa_extras for date %s; sample=%s',
+                len(records),
+                target_date,
+                format_sample_record(records),
+            )
         finally:
             cnx.close()
 

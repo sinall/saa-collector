@@ -39,3 +39,14 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         execute_collect(job)
 
         service_class.return_value.collect.assert_called_once()
+
+    @patch('saa_collector.services.common.index_weight_service.IndexWeightService')
+    def test_execute_collect_runs_index_weights_job(self, service_class):
+        job = CollectJob.objects.create(
+            data_type='index_weights',
+            config={'symbols': ['000906.XSHG'], 'params': {'start_date': '2026-05-29'}},
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect.assert_called_once()
