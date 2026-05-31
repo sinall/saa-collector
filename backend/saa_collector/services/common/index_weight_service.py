@@ -13,7 +13,7 @@ from saa_collector.utils.db import DB
 
 
 class IndexWeightService:
-    DEFAULT_INDEXES = ['000906.XSHG']
+    DEFAULT_INDEXES = ['000906']
 
     def __init__(self):
         self._logger = logging.getLogger()
@@ -84,7 +84,7 @@ class IndexWeightService:
 
     def transform_record(self, row):
         return {
-            'index': self.to_joinquant_index_code(row.get('index_code')),
+            'index': self.strip_suffix(row.get('index_code')),
             'date': self.parse_tushare_date(row.get('trade_date')),
             'code': self.strip_suffix(row.get('con_code')),
             'display_name': None,

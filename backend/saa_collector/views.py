@@ -493,6 +493,9 @@ class TypeBrowseDataView(APIView):
         'saa_stocks': {'date_column': None, 'order': 'symbol ASC'},
         'saa_latest_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_prices_ex': {'date_column': 'date', 'order': 'code ASC, date DESC'},
+        'saa_index_weights': {'date_column': 'date', 'order': '`index` ASC, date DESC', 'search_column': 'index', 'join_column': 'code'},
+        'saa_industries': {'date_column': 'start_date', 'order': '`index` ASC, start_date DESC'},
+        'saa_industry_stocks': {'date_column': 'date', 'order': 'industry_code ASC, date DESC', 'search_column': 'industry_code', 'join_column': 'code'},
         'saa_raw_balance_sheet': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_raw_income_statement': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_raw_cash_flow_statement': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
@@ -505,6 +508,8 @@ class TypeBrowseDataView(APIView):
     NEEDS_STOCK_NAME = {
         'saa_latest_prices',
         'saa_prices_ex',
+        'saa_index_weights',
+        'saa_industry_stocks',
         'saa_raw_balance_sheet',
         'saa_raw_income_statement',
         'saa_raw_cash_flow_statement',
@@ -518,6 +523,7 @@ class TypeBrowseDataView(APIView):
         page_size = int(request.query_params.get('page_size', 50))
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
+        keyword = request.query_params.get('keyword', '').strip()
         offset = (page - 1) * page_size
 
         config = self.TABLE_CONFIG.get(table_name)
@@ -526,6 +532,8 @@ class TypeBrowseDataView(APIView):
 
         date_column = config['date_column']
         order_clause = f"ORDER BY {config['order']}"
+        search_column = config.get('search_column')
+        join_column = config.get('join_column', 'symbol')
 
         with connection.cursor() as cursor:
             where_clauses = []
@@ -537,6 +545,12 @@ class TypeBrowseDataView(APIView):
             if date_column and end_date:
                 where_clauses.append(f"t.{date_column} <= %s")
                 params.append(end_date)
+            if keyword and search_column:
+                if search_column == 'index':
+                    where_clauses.append("t.`index` LIKE %s")
+                else:
+                    where_clauses.append(f"t.{search_column} LIKE %s")
+                params.append(f"%{keyword}%")
 
             where_clause = " AND ".join(where_clauses)
             if where_clause:
@@ -553,7 +567,7 @@ class TypeBrowseDataView(APIView):
                     f"""
                     SELECT t.*, s.name as stock_name
                     FROM {table_name} t
-                    LEFT JOIN saa_stocks s ON t.symbol = s.symbol
+                    LEFT JOIN saa_stocks s ON t.{join_column} = s.symbol
                     {where_clause}
                     {order_clause}
                     LIMIT %s OFFSET %s

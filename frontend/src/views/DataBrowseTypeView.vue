@@ -31,6 +31,17 @@
             style="width: 300px"
             @change="onDateRangeChange"
           />
+
+          <el-input
+            v-model="keyword"
+            :placeholder="selectedDataType === 'index_weights' ? '输入指数代码' : selectedDataType === 'industry_stocks' ? '输入行业代码' : '输入关键字'"
+            clearable
+            style="width: 220px"
+            @keyup.enter="onKeywordSearch"
+            @clear="onKeywordClear"
+          />
+
+          <el-button type="primary" @click="onKeywordSearch">查询</el-button>
           
           <el-button @click="showColumnSettings = true" link>
             <el-icon><Setting /></el-icon>
@@ -137,6 +148,9 @@ const DATA_TYPE_TO_TABLE: Record<string, string> = {
   capital: 'saa_capitals',
   dividend: 'saa_dividends',
   trade_days: 'saa_trade_days',
+  index_weights: 'saa_index_weights',
+  industries: 'saa_industries',
+  industry_stocks: 'saa_industry_stocks',
 }
 
 const displayConfigs = ref<Record<string, { table_label: string; config: { fields: DisplayFieldConfig[] } }>>({})
@@ -149,6 +163,7 @@ const router = useRouter()
 const route = useRoute()
 const selectedDataType = ref(route.params.type as string || 'info')
 const dateRange = ref<[Date, Date] | null>(null)
+const keyword = ref('')
 const loading = ref(false)
 const tableData = ref<Record<string, unknown>[]>([])
 const showColumnSettings = ref(false)
@@ -193,6 +208,10 @@ const createColDefFromConfig = (field: DisplayFieldConfig): ColDef => {
     }
   }
   if (field.name === 'stock_code' || field.name === 'symbol') {
+    colDef.cellStyle = { color: '#409eff', cursor: 'pointer' }
+    colDef.onCellClicked = (params) => onStockClick(params.value)
+  }
+  if (field.name === 'code' && ['historical_quote', 'index_weights', 'industry_stocks'].includes(selectedDataType.value)) {
     colDef.cellStyle = { color: '#409eff', cursor: 'pointer' }
     colDef.onCellClicked = (params) => onStockClick(params.value)
   }
@@ -276,6 +295,22 @@ const balanceSheetColumns: ColDef[] = [
 const tradeDaysColumns: ColDef[] = [
   { field: 'date', headerName: '日期', width: 150, pinned: 'left' },
   { field: 'is_open', headerName: '是否交易日', width: 120, valueFormatter: (p) => p.value === 1 ? '是' : '否' },
+]
+
+const indexWeightsColumns: ColDef[] = [
+  { field: 'index', headerName: '指数代码', width: 120, pinned: 'left' },
+  { field: 'date', headerName: '日期', width: 110, pinned: 'left' },
+  { field: 'stock_name', headerName: '股票名称', width: 120 },
+  { field: 'code', headerName: '股票代码', width: 100 },
+  { field: 'display_name', headerName: '显示名称', width: 120 },
+  { field: 'weight', headerName: '权重', width: 100, type: 'numericColumn', valueFormatter: (p) => p.value ? (p.value * 100).toFixed(2) + '%' : '-' },
+]
+
+const industryStocksColumns: ColDef[] = [
+  { field: 'industry_code', headerName: '行业代码', width: 120, pinned: 'left' },
+  { field: 'date', headerName: '日期', width: 110, pinned: 'left' },
+  { field: 'stock_name', headerName: '股票名称', width: 120 },
+  { field: 'code', headerName: '股票代码', width: 100 },
 ]
 
 const infoColumns: ColDef[] = [
@@ -489,6 +524,16 @@ const columnDefs = computed<ColDef[]>(() => {
       return dividendColumns
     case 'trade_days':
       return tradeDaysColumns
+    case 'index_weights':
+      return indexWeightsColumns
+    case 'industry_stocks':
+      return industryStocksColumns
+    case 'industries':
+      return [
+        { field: 'index', headerName: '行业代码', width: 120, pinned: 'left' },
+        { field: 'name', headerName: '行业名称', width: 160 },
+        { field: 'start_date', headerName: '开始日期', width: 120 },
+      ]
     default:
       return historicalQuoteColumns
   }
@@ -599,7 +644,14 @@ const loadData = async () => {
     const startDate = dateRange.value?.[0]?.toISOString().split('T')[0]
     const endDate = dateRange.value?.[1]?.toISOString().split('T')[0]
     
-    const response = await fetchTypeBrowseData(tableName, currentPage.value, pageSize.value, startDate, endDate)
+    const response = await fetchTypeBrowseData(
+      tableName,
+      currentPage.value,
+      pageSize.value,
+      startDate,
+      endDate,
+      keyword.value.trim() || undefined
+    )
     if (response.success && response.data) {
       tableData.value = response.data.results
       totalRecords.value = response.data.total
@@ -613,6 +665,17 @@ const loadData = async () => {
 
 const onDataTypeChange = () => {
   router.replace(`/data-browse/${selectedDataType.value}`)
+  currentPage.value = 1
+  keyword.value = ''
+  loadData()
+}
+
+const onKeywordSearch = () => {
+  currentPage.value = 1
+  loadData()
+}
+
+const onKeywordClear = () => {
   currentPage.value = 1
   loadData()
 }

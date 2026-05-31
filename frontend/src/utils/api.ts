@@ -670,11 +670,13 @@ export const fetchTypeBrowseData = async (
   page: number = 1,
   pageSize: number = 50,
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  keyword?: string
 ): Promise<ApiResponse<{ results: Record<string, unknown>[], total: number }>> => {
   const params: Record<string, unknown> = { page, page_size: pageSize }
   if (startDate) params.start_date = startDate
   if (endDate) params.end_date = endDate
+  if (keyword) params.keyword = keyword
   const response = await api.get(`/type-browse-data/${tableName}/`, { params })
   return response.data
 }

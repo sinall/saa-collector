@@ -49,21 +49,21 @@ class IndexWeightServiceTest(SimpleTestCase):
         self.assertEqual(pro.query.call_args.args[0], 'index_weight')
         self.assertEqual(pro.query.call_args.kwargs['index_code'], '000906.SH')
         self.assertIn(
-            "Saved 2 records to saa_index_weights; sample={'index': '000906.XSHG', "
+            "Saved 2 records to saa_index_weights; sample={'index': '000906', "
             "'date': '2026-05-29', 'code': '000001', 'display_name': '平安银行', 'weight': 0.76}",
             logs.output[0],
         )
         db_class.return_value.to_sql.assert_called_once_with(
             [
                 {
-                    'index': '000906.XSHG',
+                    'index': '000906',
                     'date': date(2026, 5, 29),
                     'code': '000001',
                     'display_name': '平安银行',
                     'weight': 0.76,
                 },
                 {
-                    'index': '000906.XSHG',
+                    'index': '000906',
                     'date': date(2026, 5, 29),
                     'code': '600000',
                     'display_name': '浦发银行',
