@@ -172,6 +172,22 @@ Configured but not currently executable as real collector jobs:
 
 For valuation, the executable collector job is the composite `valuation` data type, not the individual `valuation_board` or `valuation_industry` data types.
 
+## Production Schedule Coverage
+
+This table is the practical checklist for the `mfactor` dependency chain. It combines the `mfactor` need, the collector object, and whether a production schedule already exists.
+
+| mfactor need | `saa` object | `saa-collector` data type | Known production schedule | Coverage status | Next action |
+| --- | --- | --- | --- | --- | --- |
+| Trading calendar | `saa_trade_days` | `trade_days` | Verify existing schedule | Collector executor exists | Verify production schedule and freshness |
+| Security master | `saa_securities` / `saa_stocks` | `stock_info` | Verify existing schedule | Collector executor exists | Verify production schedule and keep `saa_securities` refresh in sync |
+| Latest prices | `saa_latest_prices` | `quote` | `最新行情采集` | Already in production | Keep schedule healthy for web and `mfactor` consumers |
+| Month-end historical prices | `saa_prices_ex` | `historical_quote` | `历史行情采集` | Already in production | Keep schedule and downstream monthly/quarterly views aligned |
+| Stock status metadata | `saa_extras` | `extras` | Not confirmed | Executor exists | Create or verify schedule |
+| Index quotes | `saa_index_quotes` | `index_quotes` | Not confirmed | Executor exists | Create or verify schedule |
+| Index constituents and weights | `saa_index_weights` | `index_weights` | Not confirmed | Executor exists | Create or verify schedule |
+| Industry dictionary | `saa_industries` | `industries` | Not confirmed | Executor exists | Create or verify schedule and refresh governance |
+| Industry constituents | `saa_industry_stocks` | `industry_stocks` | Not confirmed | Executor exists | Create or verify schedule |
+
 ## Missing Collector Capabilities For mfactor
 
 ### Derived Financial Statement View
