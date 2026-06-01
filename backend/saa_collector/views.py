@@ -122,7 +122,7 @@ class DataStatusView(APIView):
         data_types = [
             (key, config['label'], config['table'])
             for key, config in DATA_TYPE_CONFIG.items()
-            if config.get('show_completeness', True)
+            if config.get('table')
         ]
 
         data_types.sort(key=lambda x: DATA_TYPE_CONFIG[x[0]].get('order', 99))
@@ -2607,7 +2607,7 @@ class DataCompletenessHeatmapView(APIView):
         if not periods:
             return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
 
-        data_types = [key for key in DATA_TYPE_CONFIG.keys()]
+        data_types = [key for key in DATA_TYPE_CONFIG.keys() if key != 'tick']
         result = service.calculate_all(data_types, periods, frequency)
 
         return Response({

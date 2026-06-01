@@ -57,22 +57,25 @@ import { fetchDataStatus, type DataStatus } from '@/utils/api'
 import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
 import { useDataTypes } from '@/composables/useDataTypes'
 
-const { completenessTypes, loadDataTypes } = useDataTypes()
+const { dataTypes, loadDataTypes } = useDataTypes()
 const dataStatus = ref<DataStatus[]>([])
 
 onMounted(async () => {
   await loadDataTypes()
-  dataStatus.value = completenessTypes.value.map(dt => ({
-    data_type: dt.key,
-    data_type_display: dt.label,
-    count: 0,
-    earliest_date: null,
-    latest_date: null,
-    frequency: dt.frequency ?? null,
-    completeness: null,
-    loading: true,
-    error: false,
-  }))
+  dataStatus.value = dataTypes.value
+    .filter(dt => dt.table)
+    .map(dt => ({
+      data_type: dt.key,
+      data_type_display: dt.label,
+      count: 0,
+      earliest_date: null,
+      latest_date: null,
+      frequency: dt.frequency ?? null,
+      completeness: null,
+      loading: true,
+      error: false,
+      show_completeness: dt.show_completeness,
+    }))
   loadDataStatus()
 })
 

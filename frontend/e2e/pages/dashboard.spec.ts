@@ -36,6 +36,7 @@ test.describe('Dashboard Page', () => {
     await page.waitForSelector('.stats-card', { timeout: 10000 })
 
     const expectedDataTypes = [
+      '股票基本信息',
       '最新行情',
       '历史行情',
       '资产负债表',
@@ -47,7 +48,9 @@ test.describe('Dashboard Page', () => {
       '板块估值',
       '行业估值',
       '指数成分股权重',
-      '行业股票关系',
+      '量化行业分类',
+      '证监会行业分类',
+      '行业成分股',
     ]
 
     for (const typeName of expectedDataTypes) {
@@ -114,8 +117,9 @@ test.describe('Dashboard Page', () => {
       '板块估值',
       '行业估值',
       '指数成分股权重',
-      '行业信息',
-      '行业股票关系',
+      '量化行业分类',
+      '证监会行业分类',
+      '行业成分股',
     ]
 
     const yAxisLabels = await page.locator('.heatmap-container text').allTextContents()

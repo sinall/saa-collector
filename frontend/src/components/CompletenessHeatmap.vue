@@ -392,6 +392,10 @@ const renderChart = () => {
       boundaryGap: true,
       axisLine: { show: false },
       axisTick: { show: false },
+      axisLabel: {
+        interval: 0,
+        hideOverlap: false,
+      },
       splitArea: { show: false },
     },
     series: [
