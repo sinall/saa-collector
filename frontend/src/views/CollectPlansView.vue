@@ -143,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
@@ -164,6 +164,7 @@ const { dataTypes, loadDataTypes, getLabel } = useDataTypes()
 const router = useRouter()
 const plans = ref<CollectPlan[]>([])
 const loading = ref(false)
+const hasLoadedOnce = ref(false)
 const sourceFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -415,9 +416,19 @@ const createInstantPlan = async () => {
   }
 }
 
-onMounted(() => {
-  loadDataTypes()
-  fetchPlans()
+onMounted(async () => {
+  try {
+    await loadDataTypes()
+    await fetchPlans()
+  } finally {
+    hasLoadedOnce.value = true
+  }
+})
+
+onActivated(() => {
+  if (hasLoadedOnce.value) {
+    fetchPlans()
+  }
 })
 </script>
 

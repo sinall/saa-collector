@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
@@ -76,6 +76,7 @@ const router = useRouter()
 
 const schedules = ref<any[]>([])
 const loading = ref(false)
+const hasLoadedOnce = ref(false)
 
 const fetchSchedules = async () => {
   loading.value = true
@@ -147,9 +148,19 @@ const deleteSchedule = async (row: any) => {
   }
 }
 
-onMounted(() => {
-  loadDataTypes()
-  fetchSchedules()
+onMounted(async () => {
+  try {
+    await loadDataTypes()
+    await fetchSchedules()
+  } finally {
+    hasLoadedOnce.value = true
+  }
+})
+
+onActivated(() => {
+  if (hasLoadedOnce.value) {
+    fetchSchedules()
+  }
 })
 </script>
 
