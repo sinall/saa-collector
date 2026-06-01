@@ -42,7 +42,7 @@
           </template>
           <el-descriptions :column="4" border size="small">
             <el-descriptions-item label="数据类型">
-              <el-tag v-for="dt in report.data_types" :key="dt" size="small" style="margin-right: 4px;">
+              <el-tag v-for="dt in visibleReportDataTypes" :key="dt" size="small" style="margin-right: 4px;">
                 {{ getDataTypeLabel(dt) }}
               </el-tag>
             </el-descriptions-item>
@@ -102,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, onActivated } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
@@ -118,11 +118,13 @@ import { Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
 import IntegrityReportTreeFilter, { type FilterParams } from '@/components/IntegrityReportTreeFilter.vue'
+import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 
 import type { GridApi } from 'ag-grid-community'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
+const { getConfig, loadDataTypes } = useDataTypes()
 const report = ref<any>(null)
 const loading = ref(true)
 const generating = ref(false)
@@ -143,6 +145,13 @@ const currentFilter = ref<FilterParams>({
   status: '',
   stockCode: ''
 })
+
+const visibleReportDataTypes = computed(() =>
+  (report.value?.data_types || []).filter((dataType: string) => {
+    const config = getConfig(dataType)
+    return isDataTypeVisible(config, 'integrity_report')
+  })
+)
 
 const gridTheme = themeQuartz
 
@@ -405,11 +414,13 @@ const loadHeatmapData = async () => {
 }
 
 onMounted(() => {
+  loadDataTypes()
   pollReport()
   loadHeatmapData()
 })
 
 onActivated(() => {
+  loadDataTypes()
   loading.value = true
   pollReport()
   loadHeatmapData()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useDataTypes } from '@/composables/useDataTypes'
+import { useDataTypes, isDataTypeVisible, type DataTypeVisibilityContext } from '@/composables/useDataTypes'
 
 interface FilterParams {
   data_type: string
@@ -18,11 +18,13 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   showReportTypes?: boolean
   showDateRange?: boolean
+  visibilityContext?: DataTypeVisibilityContext
 }>(), {
   queryButtonText: '查询',
   loading: false,
   showReportTypes: false,
-  showDateRange: true
+  showDateRange: true,
+  visibilityContext: undefined
 })
 
 const emit = defineEmits<{
@@ -31,6 +33,12 @@ const emit = defineEmits<{
 }>()
 
 const { dataTypes, loadDataTypes } = useDataTypes()
+const availableDataTypes = computed(() => {
+  const context = props.visibilityContext
+  return context
+    ? dataTypes.value.filter(dt => isDataTypeVisible(dt, context))
+    : dataTypes.value
+})
 
 const panelCollapsed = ref(false)
 const stockExpanded = ref(true)
@@ -166,7 +174,7 @@ defineExpose({
         </div>
         <div v-if="dataTypeExpanded" class="section-content">
           <select v-model="selectedDataType">
-            <option v-for="dt in dataTypes" :key="dt.key" :value="dt.key">
+            <option v-for="dt in availableDataTypes" :key="dt.key" :value="dt.key">
               {{ dt.label }}
             </option>
           </select>

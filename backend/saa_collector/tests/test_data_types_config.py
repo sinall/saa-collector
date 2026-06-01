@@ -48,3 +48,17 @@ class DataTypesConfigTest(TestCase):
         self.assertEqual(data_types['index_quotes']['table'], 'saa_index_quotes')
         self.assertFalse(data_types['index_quotes']['stock_level'])
         self.assertTrue(data_types['index_quotes']['need_date'])
+
+    def test_internal_data_type_visibility_is_context_driven(self):
+        response = self.client.get('/api/data-types/')
+
+        self.assertEqual(response.status_code, 200)
+        data_types = {
+            item['key']: item
+            for item in response.data['data_types']
+        }
+        self.assertIn('tick', data_types)
+        self.assertIn('visibility', data_types['tick'])
+        self.assertFalse(data_types['tick']['visibility']['integrity_report'])
+        self.assertFalse(data_types['tick']['visibility']['collect'])
+        self.assertTrue(data_types['tick']['visibility']['schedule'])

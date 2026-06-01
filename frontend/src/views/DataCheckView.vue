@@ -5,6 +5,7 @@
       query-button-text="检查"
       :loading="loading"
       :show-report-types="false"
+      visibility-context="data_check"
       @query="handleQuery"
       @data-type-change="handleDataTypeChange"
     >
@@ -107,13 +108,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz, type ColDef } from 'ag-grid-community'
 import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import CollectorFilterPanel from '@/components/CollectorFilterPanel.vue'
+import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 import {
   checkDataCompleteness,
   createIntegrityReport,
@@ -123,6 +125,7 @@ import {
 } from '@/utils/api'
 
 const router = useRouter()
+const { getConfig, loadDataTypes } = useDataTypes()
 const filterPanelRef = ref<InstanceType<typeof CollectorFilterPanel> | null>(null)
 const loading = ref(false)
 const generating = ref(false)
@@ -240,6 +243,12 @@ const handleGenerateReport = async () => {
     return
   }
 
+  await loadDataTypes()
+  if (!isDataTypeVisible(getConfig(params.data_type), 'integrity_report')) {
+    ElMessage.warning('该数据类型不支持生成完整性报告')
+    return
+  }
+
   generating.value = true
   try {
     const data: IntegrityReportCreateParams = {
@@ -296,6 +305,10 @@ const generateReportName = (params: any) => {
   const date = new Date().toISOString().split('T')[0]
   return `${date} ${typeLabel}${freqLabel}完整性检查`
 }
+
+onMounted(() => {
+  loadDataTypes()
+})
 </script>
 
 <style scoped>

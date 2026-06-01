@@ -12,7 +12,7 @@ class DataCompletenessHeatmapViewTest(TestCase):
         self.client.force_authenticate(user=self.user)
 
     @patch('saa_collector.services.completeness_service.CompletenessService')
-    def test_heatmap_excludes_tick_data_type(self, service_class):
+    def test_heatmap_excludes_internal_data_types(self, service_class):
         service = service_class.return_value
         service.generate_periods.return_value = ['2026-05']
         service.calculate_all.return_value = {

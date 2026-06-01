@@ -106,7 +106,7 @@
         <el-form-item label="数据类型" required>
           <el-select v-model="instantForm.data_type" placeholder="请选择数据类型" style="width: 100%">
             <el-option
-              v-for="item in dataTypes"
+              v-for="item in instantCollectDataTypes"
               :key="item.key"
               :label="item.label"
               :value="item.key"
@@ -157,9 +157,10 @@ import {
   createCollectPlan
 } from '@/utils/api'
 import type { CollectPlan } from '@/utils/api'
-import { useDataTypes } from '@/composables/useDataTypes'
+import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 
 const { dataTypes, loadDataTypes, getLabel } = useDataTypes()
+const instantCollectDataTypes = computed(() => dataTypes.value.filter(dt => isDataTypeVisible(dt, 'collect_plan')))
 
 const router = useRouter()
 const plans = ref<CollectPlan[]>([])

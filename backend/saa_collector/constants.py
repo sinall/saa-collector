@@ -16,8 +16,27 @@
 - show_completeness: 是否在仪表盘显示完整性
 - need_date: 采集时是否需要日期参数
 - security_scope: 证券范围约束（如 'a_stock' 表示仅 A 股股票）
+- visibility: 不同业务上下文中的可见性（collect/collect_plan/schedule/data_check/integrity_report/dashboard）
 - order: 排序序号（越小越靠前）
 """
+
+DATA_TYPE_VISIBILITY_CONTEXTS = (
+    'collect',
+    'collect_plan',
+    'schedule',
+    'data_check',
+    'integrity_report',
+    'dashboard',
+)
+
+
+def is_data_type_visible(data_type: str, context: str) -> bool:
+    config = DATA_TYPE_CONFIG.get(data_type, {})
+    visibility = config.get('visibility') or {}
+    if context in visibility:
+        return bool(visibility[context])
+
+    return True
 
 DATA_TYPE_CONFIG = {
     'tick': {
@@ -29,6 +48,14 @@ DATA_TYPE_CONFIG = {
         'supports_integrity_check': False,
         'group': 'other',
         'show_completeness': False,
+        'visibility': {
+            'collect': False,
+            'collect_plan': False,
+            'data_check': False,
+            'integrity_report': False,
+            'dashboard': False,
+            'schedule': True,
+        },
         'need_date': False,
         'order': 0,
     },

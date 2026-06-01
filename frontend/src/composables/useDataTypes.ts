@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
-import { fetchDataTypesConfig } from '@/utils/api'
+import { fetchDataTypesConfig, type DataTypeVisibilityContext } from '@/utils/api'
+export type { DataTypeVisibilityContext } from '@/utils/api'
 
 export interface DataTypeConfig {
   key: string
@@ -9,6 +10,7 @@ export interface DataTypeConfig {
   stock_level: boolean
   group?: string
   show_completeness: boolean
+  visibility?: Partial<Record<DataTypeVisibilityContext, boolean>>
   need_date: boolean
   stock_column?: string
   supports_integrity_check: boolean
@@ -25,6 +27,19 @@ const dataTypes = ref<DataTypeConfig[]>([])
 const groups = ref<DataTypeGroup[]>([])
 const loaded = ref(false)
 const loading = ref(false)
+
+export function isDataTypeVisible(
+  config: DataTypeConfig | undefined,
+  context: DataTypeVisibilityContext
+): boolean {
+  if (!config) return false
+
+  if (config.visibility && context in config.visibility) {
+    return Boolean(config.visibility[context])
+  }
+
+  return true
+}
 
 export function useDataTypes() {
   async function loadDataTypes(forceReload = false): Promise<void> {

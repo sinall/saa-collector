@@ -163,7 +163,7 @@ Executor support for the mfactor source-data set now includes:
 - `industries`
 - `industry_stocks`
 - `csrc_industry_classifications`
-- `tick`
+- `tick` is an internal schedule-only data type used for task dispatch smoke tests and visibility checks; it does not belong to the `mfactor` source-data checklist
 
 Configured but not currently executable as real collector jobs:
 

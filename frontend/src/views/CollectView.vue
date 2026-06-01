@@ -5,6 +5,7 @@
       query-button-text="开始采集"
       :loading="collecting"
       :show-report-types="true"
+      visibility-context="collect"
       @query="handleCollect"
     />
     

@@ -25,9 +25,9 @@
             <el-row :gutter="20">
               <el-col :span="8">
                 <el-form-item label="数据类型">
-                  <el-select v-model="job.data_type">
+          <el-select v-model="job.data_type">
                     <el-option
-                      v-for="item in dataTypes"
+                      v-for="item in selectableDataTypes"
                       :key="item.key"
                       :label="item.label"
                       :value="item.key"
@@ -70,10 +70,11 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { fetchCollectPlan, createCollectPlan, updateCollectPlan } from '@/utils/api'
-import { useDataTypes } from '@/composables/useDataTypes'
+import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 import { ElMessage } from 'element-plus'
 
 const { dataTypes, loadDataTypes } = useDataTypes()
+const selectableDataTypes = computed(() => dataTypes.value.filter(dt => isDataTypeVisible(dt, 'collect_plan')))
 
 const router = useRouter()
 const route = useRoute()

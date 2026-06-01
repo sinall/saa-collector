@@ -15,7 +15,7 @@ class CollectScheduleTriggerAPITest(TestCase):
 
     @patch('saa_collector.views.dispatch_plan')
     def test_manual_trigger_returns_created_plan_for_requested_schedule(self, dispatch_plan):
-        tick_schedule = CollectSchedule.objects.create(
+        internal_schedule = CollectSchedule.objects.create(
             name='Tick数据采集',
             data_type='tick',
             symbols=[],
@@ -40,7 +40,7 @@ class CollectScheduleTriggerAPITest(TestCase):
         self.assertIn('财务报表采集(5月)', plan_data['name'])
         self.assertEqual(plan_data['source_schedule_id'], statement_schedule.id)
         self.assertEqual(plan_data['source_schedule_name'], '财务报表采集(5月)')
-        self.assertNotIn(tick_schedule.name, plan_data['name'])
+        self.assertNotIn(internal_schedule.name, plan_data['name'])
         dispatch_plan.assert_called_once()
 
     def test_update_csrc_industry_classification_schedule(self):

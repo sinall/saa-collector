@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useDataTypes } from '@/composables/useDataTypes'
+import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 
 interface FilterParams {
   data_types: string[]
@@ -23,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const { dataTypes, loadDataTypes } = useDataTypes()
+const reportDataTypes = computed(() => dataTypes.value.filter(dt => isDataTypeVisible(dt, 'integrity_report')))
 
 const panelCollapsed = ref(false)
 const frequencyExpanded = ref(true)
@@ -66,7 +67,7 @@ const toggleDataType = (type: string) => {
 }
 
 const selectAllDataTypes = () => {
-  selectedDataTypes.value = dataTypes.value.map(dt => dt.key)
+  selectedDataTypes.value = reportDataTypes.value.map(dt => dt.key)
 }
 
 const clearDataTypes = () => {
@@ -109,7 +110,7 @@ onMounted(() => {
         <h4 class="section-title">数据类型</h4>
         <div class="checkbox-grid">
           <label
-            v-for="dt in dataTypes"
+            v-for="dt in reportDataTypes"
             :key="dt.key"
             class="checkbox-item"
           >

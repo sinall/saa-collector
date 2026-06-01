@@ -69,6 +69,14 @@ export const login = async (username: string, password: string): Promise<{token:
   return response.data
 }
 
+export type DataTypeVisibilityContext =
+  | 'collect'
+  | 'collect_plan'
+  | 'schedule'
+  | 'data_check'
+  | 'integrity_report'
+  | 'dashboard'
+
 export interface DataTypeConfig {
   key: string
   label: string
@@ -77,6 +85,7 @@ export interface DataTypeConfig {
   stock_level: boolean
   group?: string
   show_completeness: boolean
+  visibility?: Partial<Record<DataTypeVisibilityContext, boolean>>
   need_date: boolean
   stock_column?: string
   supports_integrity_check: boolean

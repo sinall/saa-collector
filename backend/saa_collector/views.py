@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 from .constants import (
     DATA_TYPE_FREQUENCY,
     DATA_TYPE_CONFIG,
+    is_data_type_visible,
     TABLE_MAPPING,
     QUARTERLY_TYPES,
     YEARLY_TYPES,
@@ -1060,6 +1061,7 @@ class DataIntegrityReportListView(APIView):
         items_to_create = []
 
         data_types = report.data_types if report.data_types else ['trade_days', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital']
+        data_types = [dt for dt in data_types if is_data_type_visible(dt, 'integrity_report')]
 
         for data_type in data_types:
             if data_type == 'trade_days':
@@ -1675,7 +1677,10 @@ class DataIntegrityReportHeatmapView(APIView):
                 }
             })
 
-        data_types = report.data_types or []
+        data_types = [
+            dt for dt in (report.data_types or [])
+            if is_data_type_visible(dt, 'integrity_report')
+        ]
         result = service.calculate_all(data_types, periods, report.frequency)
 
         return Response({'success': True, 'data': result})
@@ -2607,7 +2612,7 @@ class DataCompletenessHeatmapView(APIView):
         if not periods:
             return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
 
-        data_types = [key for key in DATA_TYPE_CONFIG.keys() if key != 'tick']
+        data_types = [key for key in DATA_TYPE_CONFIG.keys() if is_data_type_visible(key, 'dashboard')]
         result = service.calculate_all(data_types, periods, frequency)
 
         return Response({
@@ -2830,6 +2835,7 @@ class DataTypesConfigView(APIView):
                 'stock_level': config.get('stock_level', True),
                 'group': config.get('group'),
                 'show_completeness': config.get('show_completeness', True),
+                'visibility': config.get('visibility', {}),
                 'need_date': config.get('need_date', True),
                 'stock_column': config.get('stock_column'),
                 'supports_integrity_check': config.get('supports_integrity_check', True),

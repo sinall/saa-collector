@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .constants import DATA_TYPE_CONFIG, is_data_type_visible
 from .collect_job_config import build_collect_job_config
 from .date_expressions import normalize_schedule_params, validate_schedule_params
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
@@ -114,7 +115,8 @@ class DataIntegrityReportSerializer(serializers.ModelSerializer):
         return obj.filters.get('stock_codes', [])
 
     def get_data_types(self, obj):
-        return obj.filters.get('data_types', [])
+        data_types = obj.filters.get('data_types', [])
+        return [dt for dt in data_types if is_data_type_visible(dt, 'integrity_report')]
 
     def get_frequency(self, obj):
         return obj.filters.get('frequency', 'monthly')
@@ -143,6 +145,12 @@ class DataIntegrityReportCreateSerializer(serializers.Serializer):
     )
     date_start = serializers.DateField(required=False, allow_null=True)
     date_end = serializers.DateField(required=False, allow_null=True)
+
+    def validate_data_types(self, value):
+        filtered = [dt for dt in value if is_data_type_visible(dt, 'integrity_report')]
+        if not filtered:
+            raise serializers.ValidationError('请选择至少一种可用于完整性报告的数据类型')
+        return filtered
 
     def create(self, validated_data):
         filters = {
