@@ -69,7 +69,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { fetchCollectPlan, createCollectPlan, updateCollectPlan } from '@/utils/api'
+import { fetchCollectPlan, createCollectPlan, updateCollectPlan, type CollectPlanJobPayload } from '@/utils/api'
 import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 import { ElMessage } from 'element-plus'
 
@@ -103,6 +103,20 @@ const removeJob = (index: number) => {
   form.value.jobs.splice(index, 1)
 }
 
+const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job: any) => ({
+  id: job.id ?? undefined,
+  data_type: job.data_type,
+  symbols: job.symbols_input
+    ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
+    : [],
+  start_date: job.date_start,
+  end_date: job.date_end
+}))
+
+const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
+  return job.config?.params?.[key] ?? job.config?.[key] ?? job.params?.[key] ?? null
+}
+
 const fetchPlan = async () => {
   if (!route.params.id) return
   loading.value = true
@@ -119,8 +133,8 @@ const fetchPlan = async () => {
       id: job.id,
       data_type: job.data_type,
       symbols_input: job.config?.symbols?.join('\n') || '',
-      date_start: job.config?.start_date || null,
-      date_end: job.config?.end_date || null
+      date_start: getJobParam(job, 'start_date'),
+      date_end: getJobParam(job, 'end_date')
     })) || []
   } finally {
     loading.value = false
@@ -138,19 +152,13 @@ const savePlan = async () => {
     if (isEdit.value) {
       await updateCollectPlan(Number(route.params.id), {
         name: form.value.name,
-        execution_mode: form.value.execution_mode as 'PARALLEL' | 'SEQUENTIAL'
+        execution_mode: form.value.execution_mode as 'PARALLEL' | 'SEQUENTIAL',
+        jobs: buildJobsPayload()
       })
       ElMessage.success('保存成功')
       router.push(`/collect-plans/${route.params.id}`)
     } else {
-      const jobs = form.value.jobs.map((job: any) => ({
-        data_type: job.data_type,
-        symbols: job.symbols_input
-          ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
-          : [],
-        start_date: job.date_start || undefined,
-        end_date: job.date_end || undefined
-      }))
+      const jobs = buildJobsPayload()
 
       const response = await createCollectPlan({
         name: form.value.name,

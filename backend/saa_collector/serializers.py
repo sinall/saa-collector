@@ -30,6 +30,7 @@ class CollectJobCreateSerializer(serializers.Serializer):
         help_text='报表类型列表 (balance_sheet, income, cash_flow, dividend)'
     )
 class InstantCollectJobSerializer(serializers.Serializer):
+    id = serializers.IntegerField(required=False)
     data_type = serializers.CharField(max_length=50, help_text='Data type to collect')
     symbols = serializers.ListField(
         child=serializers.CharField(max_length=20),
@@ -37,8 +38,8 @@ class InstantCollectJobSerializer(serializers.Serializer):
         default=list,
         help_text='Stock codes list, empty for all stocks'
     )
-    start_date = serializers.DateField(required=False, help_text='Start date')
-    end_date = serializers.DateField(required=False, help_text='End date')
+    start_date = serializers.DateField(required=False, allow_null=True, help_text='Start date')
+    end_date = serializers.DateField(required=False, allow_null=True, help_text='End date')
     report_types = serializers.ListField(
         child=serializers.CharField(max_length=50),
         required=False,
@@ -247,6 +248,12 @@ class CollectPlanCreateSerializer(serializers.Serializer):
 class CollectPlanUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200, required=False)
     execution_mode = serializers.ChoiceField(choices=['PARALLEL', 'SEQUENTIAL'], required=False)
+    jobs = serializers.ListField(
+        child=InstantCollectJobSerializer(),
+        required=False,
+        allow_empty=True,
+        help_text='Full list of collection jobs to keep on the plan'
+    )
 
 
 class CollectScheduleSerializer(serializers.ModelSerializer):

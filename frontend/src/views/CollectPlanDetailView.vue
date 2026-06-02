@@ -93,12 +93,12 @@
         </el-table-column>
         <el-table-column label="开始日期" width="120">
           <template #default="{ row }">
-            {{ row.config?.start_date || '-' }}
+            {{ getJobParam(row, 'start_date') || '-' }}
           </template>
         </el-table-column>
         <el-table-column label="结束日期" width="120">
           <template #default="{ row }">
-            {{ row.config?.end_date || '-' }}
+            {{ getJobParam(row, 'end_date') || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="status_display" label="状态" width="100">
@@ -123,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onActivated, onDeactivated, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchCollectPlan, fetchIntegrityReportSummary, continueCollectPlan, resetCollectPlan, stopCollectPlan, executeCollectPlan } from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -138,6 +138,10 @@ const stopping = ref(false)
 const continuing = ref(false)
 const resetting = ref(false)
 let pollTimer: number | null = null
+
+const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
+  return job.config?.params?.[key] ?? job.config?.[key] ?? job.params?.[key] ?? null
+}
 
 const clearPollTimer = () => {
   if (pollTimer) {
@@ -328,7 +332,7 @@ const goToReport = () => {
   }
 }
 
-onMounted(loadCurrentPlan)
+onActivated(loadCurrentPlan)
 
 watch(
   () => props.id,
@@ -338,6 +342,10 @@ watch(
 )
 
 onUnmounted(() => {
+  clearPollTimer()
+})
+
+onDeactivated(() => {
   clearPollTimer()
 })
 </script>

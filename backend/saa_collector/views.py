@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
-from django.db import connection
+from django.db import connection, transaction
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
@@ -2309,9 +2309,55 @@ class CollectPlanDetailView(APIView):
                 'error': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        for key, value in serializer.validated_data.items():
-            setattr(plan, key, value)
-        plan.save()
+        validated_data = dict(serializer.validated_data)
+        jobs_data = validated_data.pop('jobs', None)
+
+        existing_jobs = {}
+        if jobs_data is not None:
+            existing_jobs = {job.id: job for job in plan.jobs.all()}
+            for job_data in jobs_data:
+                job_id = job_data.get('id')
+                if job_id and job_id not in existing_jobs:
+                    return Response({
+                        'success': False,
+                        'error': '计划作业不存在或不属于当前计划'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            for key, value in validated_data.items():
+                setattr(plan, key, value)
+            plan.save()
+
+            if jobs_data is not None:
+                kept_job_ids = set()
+
+                for job_data in jobs_data:
+                    job_id = job_data.get('id')
+                    if job_id:
+                        job = existing_jobs[job_id]
+                    else:
+                        job = CollectJob(plan=plan)
+
+                    existing_config = job.config or {}
+                    existing_params = existing_config.get('params') or {}
+                    params = dict(existing_params)
+
+                    if 'start_date' in job_data:
+                        params['start_date'] = str(job_data['start_date']) if job_data.get('start_date') else None
+                    if 'end_date' in job_data:
+                        params['end_date'] = str(job_data['end_date']) if job_data.get('end_date') else None
+                    if 'report_types' in job_data:
+                        params['report_types'] = job_data.get('report_types') or []
+
+                    job.data_type = job_data['data_type']
+                    job.config = build_collect_job_config(
+                        symbols=job_data.get('symbols', existing_config.get('symbols', [])),
+                        params=params,
+                    )
+                    job.save()
+                    kept_job_ids.add(job.id)
+
+                plan.jobs.exclude(id__in=kept_job_ids).delete()
 
         return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
 

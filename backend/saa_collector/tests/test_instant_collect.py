@@ -45,6 +45,36 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(response.data['data']['name'], '空计划')
         self.assertEqual(len(response.data['data']['jobs']), 0)
 
+    def test_update_pending_plan_persists_job_date_config(self):
+        plan = CollectPlan.objects.create(name='日期编辑测试')
+        job = CollectJob.objects.create(
+            plan=plan,
+            data_type='quote',
+            config={'symbols': ['000001'], 'params': {}}
+        )
+
+        response = self.client.patch(f'/api/collect-plans/{plan.id}/', {
+            'name': '日期编辑测试-已更新',
+            'execution_mode': 'SEQUENTIAL',
+            'jobs': [{
+                'id': job.id,
+                'data_type': 'quote',
+                'symbols': ['000001'],
+                'start_date': '2024-01-01',
+                'end_date': '2024-12-31',
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['name'], '日期编辑测试-已更新')
+        self.assertEqual(response.data['data']['jobs'][0]['config']['params']['start_date'], '2024-01-01')
+        self.assertEqual(response.data['data']['jobs'][0]['config']['params']['end_date'], '2024-12-31')
+
+        job.refresh_from_db()
+        self.assertEqual(job.config['params']['start_date'], '2024-01-01')
+        self.assertEqual(job.config['params']['end_date'], '2024-12-31')
+
     @patch('saa_collector.tasks.execute_collect_plan.delay')
     def test_execute_plan_always_queues_with_celery(self, delay):
         delay.return_value.id = 'celery-task-1'

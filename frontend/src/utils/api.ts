@@ -779,6 +779,15 @@ export interface CollectPlan {
   }[]
 }
 
+export interface CollectPlanJobPayload {
+  id?: number | null
+  data_type: string
+  symbols?: string[]
+  start_date?: string | null
+  end_date?: string | null
+  report_types?: string[]
+}
+
 export interface CollectSchedule {
     id: number
     name: string
@@ -967,7 +976,11 @@ export const deleteCollectPlan = async (id: number): Promise<ApiResponse<null>> 
   return response.data
 }
 
-export const updateCollectPlan = async (id: number, data: { name?: string; execution_mode?: 'PARALLEL' | 'SEQUENTIAL' }): Promise<ApiResponse<CollectPlan>> => {
+export const updateCollectPlan = async (id: number, data: {
+  name?: string
+  execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
+  jobs?: CollectPlanJobPayload[]
+}): Promise<ApiResponse<CollectPlan>> => {
   const response = await api.patch(`/collect-plans/${id}/`, data)
   return response.data
 }
@@ -976,13 +989,7 @@ export const createCollectPlan = async (params: {
   name: string
   source_report?: number
   execution_mode?: 'PARALLEL' | 'SEQUENTIAL'
-  jobs?: Array<{
-    data_type: string
-    symbols?: string[]
-    start_date?: string
-    end_date?: string
-    report_types?: string[]
-  }>
+  jobs?: CollectPlanJobPayload[]
 }): Promise<ApiResponse<CollectPlan>> => {
   const response = await api.post('/collect-plans/', params)
   return response.data
