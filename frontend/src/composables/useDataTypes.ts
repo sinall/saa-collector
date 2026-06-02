@@ -7,6 +7,7 @@ export interface DataTypeConfig {
   label: string
   table: string | null
   frequency?: string | null
+  completeness_model?: string | null
   stock_level: boolean
   group?: string
   show_completeness: boolean

@@ -82,6 +82,7 @@ export interface DataTypeConfig {
   label: string
   table: string | null
   frequency?: string | null
+  completeness_model?: string | null
   stock_level: boolean
   group?: string
   show_completeness: boolean
@@ -270,6 +271,7 @@ export interface HeatmapDataType {
   key: string
   label: string
   frequency?: 'daily' | 'monthly' | 'quarterly' | 'yearly' | null
+  completeness_model?: string | null
 }
 
 export interface HeatmapResponse {
@@ -1432,7 +1434,7 @@ export const refreshReportMock = async (reportId: number): Promise<ApiResponse<a
 }
 
 export interface IntegrityReportHeatmapData {
-  data_types: { key: string; label: string; frequency?: string | null }[]
+  data_types: { key: string; label: string; frequency?: string | null; completeness_model?: string | null }[]
   periods: string[]
   matrix: Record<string, number[]>
 }

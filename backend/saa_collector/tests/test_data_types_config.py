@@ -49,6 +49,19 @@ class DataTypesConfigTest(TestCase):
         self.assertFalse(data_types['index_quotes']['stock_level'])
         self.assertTrue(data_types['index_quotes']['need_date'])
 
+    def test_completeness_model_is_exposed_for_heatmap_semantics(self):
+        response = self.client.get('/api/data-types/')
+
+        self.assertEqual(response.status_code, 200)
+        data_types = {
+            item['key']: item
+            for item in response.data['data_types']
+        }
+        self.assertEqual(data_types['trade_days']['completeness_model'], 'calendar')
+        self.assertEqual(data_types['stock_info']['completeness_model'], 'snapshot_security')
+        self.assertEqual(data_types['balance_sheet']['completeness_model'], 'periodic_security')
+        self.assertEqual(data_types['dividend']['completeness_model'], 'event_security')
+
     def test_internal_data_type_visibility_is_context_driven(self):
         response = self.client.get('/api/data-types/')
 
