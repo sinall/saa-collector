@@ -494,6 +494,7 @@ class TypeBrowseDataView(APIView):
         'saa_stocks': {'date_column': None, 'order': 'symbol ASC'},
         'saa_latest_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_prices_ex': {'date_column': 'date', 'order': 'code ASC, date DESC'},
+        'saa_index_quotes': {'date_column': 'date', 'order': 'code ASC, date DESC', 'search_column': 'code'},
         'saa_index_weights': {'date_column': 'date', 'order': '`index` ASC, date DESC', 'search_column': 'index', 'join_column': 'code'},
         'saa_industries': {'date_column': 'start_date', 'order': '`index` ASC, start_date DESC'},
         'saa_industry_stocks': {'date_column': 'date', 'order': 'industry_code ASC, date DESC', 'search_column': 'industry_code', 'join_column': 'code'},

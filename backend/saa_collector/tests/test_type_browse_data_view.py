@@ -45,6 +45,41 @@ class TypeBrowseDataViewTest(TestCase):
         self.assertIn('t.`index` LIKE %s', sql)
 
     @patch('saa_collector.views.connection')
+    def test_index_quotes_browse_filters_by_code_and_date(self, connection):
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.return_value = [1]
+        cursor.fetchall.return_value = [
+            ('000906', date(2026, 6, 1), '中证800', 5431.52),
+        ]
+        cursor.description = [
+            ('code',),
+            ('date',),
+            ('name',),
+            ('close_price',),
+        ]
+
+        response = self.client.get('/api/type-browse-data/saa_index_quotes/', {
+            'keyword': '000906',
+            'start_date': '2026-06-01',
+            'end_date': '2026-06-01',
+            'page': 1,
+            'page_size': 20,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['total'], 1)
+        self.assertEqual(response.data['data']['results'][0]['date'], '2026-06-01')
+
+        sql = connection.cursor.return_value.__enter__.return_value.execute.call_args_list[1].args[0]
+        params = connection.cursor.return_value.__enter__.return_value.execute.call_args_list[1].args[1]
+        self.assertIn('t.date >= %s', sql)
+        self.assertIn('t.date <= %s', sql)
+        self.assertIn('t.code LIKE %s', sql)
+        self.assertEqual(params[:3], ['2026-06-01', '2026-06-01', '%000906%'])
+
+    @patch('saa_collector.views.connection')
     def test_industry_stocks_browse_filters_by_industry_code_and_joins_stock_name(self, connection):
         cursor = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor

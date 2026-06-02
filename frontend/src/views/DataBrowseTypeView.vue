@@ -150,6 +150,7 @@ const DATA_TYPE_TO_TABLE: Record<string, string> = {
   capital: 'saa_capitals',
   dividend: 'saa_dividends',
   trade_days: 'saa_trade_days',
+  index_quotes: 'saa_index_quotes',
   index_weights: 'saa_index_weights',
   industries: 'saa_industries',
   industry_stocks: 'saa_industry_stocks',
@@ -306,6 +307,19 @@ const indexWeightsColumns: ColDef[] = [
   { field: 'code', headerName: '股票代码', width: 100 },
   { field: 'display_name', headerName: '显示名称', width: 120 },
   { field: 'weight', headerName: '权重', width: 100, type: 'numericColumn', valueFormatter: (p) => p.value ? (p.value * 100).toFixed(2) + '%' : '-' },
+]
+
+const indexQuotesColumns: ColDef[] = [
+  { field: 'code', headerName: '指数代码', width: 120, pinned: 'left' },
+  { field: 'name', headerName: '指数名称', width: 120, pinned: 'left' },
+  { field: 'date', headerName: '日期', width: 110, pinned: 'left' },
+  { field: 'open_price', headerName: '开盘价', width: 100, type: 'numericColumn' },
+  { field: 'high_price', headerName: '最高价', width: 100, type: 'numericColumn' },
+  { field: 'low_price', headerName: '最低价', width: 100, type: 'numericColumn' },
+  { field: 'close_price', headerName: '收盘价', width: 100, type: 'numericColumn' },
+  { field: 'change_pct', headerName: '涨跌幅', width: 100, type: 'numericColumn', valueFormatter: (p) => p.value ? `${(p.value as number).toFixed(2)}%` : '-' },
+  { field: 'turnover_volume', headerName: '成交量', width: 120, type: 'numericColumn', valueFormatter: (p) => formatVolume(p.value) },
+  { field: 'turnover_value', headerName: '成交额', width: 130, type: 'numericColumn', valueFormatter: (p) => formatAmount(p.value) },
 ]
 
 const industryStocksColumns: ColDef[] = [
@@ -526,6 +540,8 @@ const columnDefs = computed<ColDef[]>(() => {
       return dividendColumns
     case 'trade_days':
       return tradeDaysColumns
+    case 'index_quotes':
+      return indexQuotesColumns
     case 'index_weights':
       return indexWeightsColumns
     case 'industry_stocks':
