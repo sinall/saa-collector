@@ -45,6 +45,21 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(response.data['data']['name'], '空计划')
         self.assertEqual(len(response.data['data']['jobs']), 0)
 
+    def test_reject_plan_job_when_end_date_is_before_start_date(self):
+        response = self.client.post('/api/collect-plans/', {
+            'name': '非法日期计划',
+            'execution_mode': 'PARALLEL',
+            'jobs': [{
+                'data_type': 'quote',
+                'start_date': '2026-06-01',
+                'end_date': '2026-05-01',
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data['success'])
+        self.assertEqual(CollectPlan.objects.filter(name='非法日期计划').count(), 0)
+
     def test_update_pending_plan_persists_job_date_config(self):
         plan = CollectPlan.objects.create(name='日期编辑测试')
         job = CollectJob.objects.create(

@@ -46,6 +46,13 @@ class InstantCollectJobSerializer(serializers.Serializer):
         default=list,
         help_text='Report types (balance_sheet, income, cash_flow, dividend)'
     )
+
+    def validate(self, attrs):
+        start_date = attrs.get('start_date')
+        end_date = attrs.get('end_date')
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError('结束日期不能早于开始日期')
+        return attrs
 class DataStatusSerializer(serializers.Serializer):
     data_type = serializers.CharField()
     data_type_display = serializers.CharField()

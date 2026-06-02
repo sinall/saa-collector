@@ -37,12 +37,21 @@
               </el-col>
               <el-col :span="8">
                 <el-form-item label="开始日期">
-                  <el-date-picker v-model="job.date_start" type="date" value-format="YYYY-MM-DD" />
+                  <el-date-picker
+                    v-model="job.date_start"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
                 <el-form-item label="结束日期">
-                  <el-date-picker v-model="job.date_end" type="date" value-format="YYYY-MM-DD" />
+                  <el-date-picker
+                    v-model="job.date_end"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    :disabled-date="(date: Date) => isBeforeDate(date, job.date_start)"
+                  />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -117,6 +126,23 @@ const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
   return job.config?.params?.[key] ?? job.config?.[key] ?? job.params?.[key] ?? null
 }
 
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const isBeforeDate = (date: Date, minDate?: string | null) => {
+  return Boolean(minDate && formatDateKey(date) < minDate)
+}
+
+const hasInvalidJobDateRange = () => {
+  return form.value.jobs.some((job: any) => (
+    job.date_start && job.date_end && job.date_end < job.date_start
+  ))
+}
+
 const fetchPlan = async () => {
   if (!route.params.id) return
   loading.value = true
@@ -144,6 +170,10 @@ const fetchPlan = async () => {
 const savePlan = async () => {
   if (!form.value.name) {
     ElMessage.warning('请输入计划名称')
+    return
+  }
+  if (hasInvalidJobDateRange()) {
+    ElMessage.warning('结束日期不能早于开始日期')
     return
   }
 

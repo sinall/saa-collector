@@ -26,6 +26,7 @@
             v-model="dateRange"
             type="daterange"
             unlink-panels
+            value-format="YYYY-MM-DD"
             range-separator="至"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
@@ -163,7 +164,7 @@ const currentConfig = computed(() => displayConfigs.value[currentTable.value]?.c
 const router = useRouter()
 const route = useRoute()
 const selectedDataType = ref(route.params.type as string || 'info')
-const dateRange = ref<[Date, Date] | null>(null)
+const dateRange = ref<[string, string] | null>(null)
 const keyword = ref('')
 const loading = ref(false)
 const tableData = ref<Record<string, unknown>[]>([])
@@ -642,8 +643,8 @@ const loadData = async () => {
     const tableName = DATA_TYPE_TO_TABLE[selectedDataType.value]
     if (!tableName) return
     
-    const startDate = dateRange.value?.[0]?.toISOString().split('T')[0]
-    const endDate = dateRange.value?.[1]?.toISOString().split('T')[0]
+    const startDate = dateRange.value?.[0]
+    const endDate = dateRange.value?.[1]
     
     const response = await fetchTypeBrowseData(
       tableName,

@@ -128,6 +128,7 @@
             v-model="instantForm.dateRange"
             type="daterange"
             unlink-panels
+            value-format="YYYY-MM-DD"
             range-separator="至"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
@@ -178,7 +179,7 @@ const instantForm = ref({
   name: '',
   data_type: '',
   symbols: [] as string[],
-  dateRange: [] as Date[]
+  dateRange: [] as string[]
 })
 
 interface DisplayPlan {
@@ -399,8 +400,8 @@ const createInstantPlan = async () => {
     }
 
     if (instantForm.value.dateRange && instantForm.value.dateRange.length === 2) {
-      params.jobs[0].start_date = instantForm.value.dateRange[0]?.toISOString().split('T')[0]
-      params.jobs[0].end_date = instantForm.value.dateRange[1]?.toISOString().split('T')[0]
+      params.jobs[0].start_date = instantForm.value.dateRange[0]
+      params.jobs[0].end_date = instantForm.value.dateRange[1]
     }
 
     const response = await createCollectPlan(params)
