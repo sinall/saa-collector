@@ -14,7 +14,7 @@ class CompletenessService:
     """完整度计算服务"""
 
     DATA_TYPE_CONFIG = [
-        (key, config['label'], config['table'], config['date_column'], config['data_frequency'], config.get('stock_column', 'symbol'), config.get('stock_level', True))
+        (key, config)
         for key, config in DATA_TYPE_CONFIG.items()
     ]
 
@@ -115,9 +115,28 @@ class CompletenessService:
 
         matrix = {}
         with connection.cursor() as cursor:
-            for key, label, table_name, date_column, data_frequency, stock_column, stock_level in data_type_configs:
+            for key, config in data_type_configs:
+                label = config['label']
+                table_name = config['table']
+                date_column = config['date_column']
+                data_frequency = config['data_frequency']
+                stock_column = config.get('stock_column', 'symbol')
+                stock_level = config.get('stock_level', True)
+                completeness_model = config.get('completeness_model')
+
                 if date_column is None:
-                    matrix[key] = [1.0] * len(periods)
+                    if completeness_model == 'snapshot_security':
+                        matrix[key] = self._calculate_snapshot_security_completeness(
+                            cursor, table_name, periods, frequency, stock_column
+                        )
+                    else:
+                        matrix[key] = [1.0] * len(periods)
+                    continue
+
+                if completeness_model == 'event_security':
+                    matrix[key] = self._calculate_event_security_completeness(
+                        cursor, table_name, date_column, periods, frequency, stock_column
+                    )
                     continue
 
                 if not stock_level:
@@ -143,8 +162,13 @@ class CompletenessService:
             'frequency': frequency,
             'periods': periods,
             'data_types': [
-                {'key': key, 'label': label, 'frequency': data_freq}
-                for key, label, _, _, data_freq, _, _ in data_type_configs
+                {
+                    'key': key,
+                    'label': config['label'],
+                    'frequency': config.get('data_frequency'),
+                    'completeness_model': config.get('completeness_model'),
+                }
+                for key, config in data_type_configs
             ],
             'matrix': matrix,
         }
@@ -201,12 +225,38 @@ class CompletenessService:
 
     def _get_data_type_configs(self, data_types):
         """获取数据类型配置"""
-        config_dict = {key: (key, label, table, date_col, data_freq, stock_col, stock_level)
-                       for key, label, table, date_col, data_freq, stock_col, stock_level in self.DATA_TYPE_CONFIG}
+        config_dict = {key: (key, config) for key, config in self.DATA_TYPE_CONFIG}
 
         if data_types:
             return [config_dict[dt] for dt in data_types if dt in config_dict]
         return self.DATA_TYPE_CONFIG
+
+    def _calculate_snapshot_security_completeness(self, cursor, table_name, periods, frequency, stock_column='symbol'):
+        """计算证券主数据快照完整度。"""
+        if not table_name:
+            return [-1] * len(periods)
+
+        expected_counts = self._get_expected_stock_counts(cursor, periods, frequency)
+
+        stock_filter = ""
+        params = []
+        if self.stock_codes:
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            stock_filter = f" WHERE {stock_column} IN ({placeholders})"
+            params = self.stock_codes
+
+        cursor.execute(f"SELECT COUNT(DISTINCT {stock_column}) FROM {table_name}{stock_filter}", params)
+        actual_count = cursor.fetchone()[0] or 0
+
+        result = []
+        for period in periods:
+            expected_count = expected_counts.get(period, 0)
+            if expected_count <= 0:
+                result.append(-1)
+            else:
+                result.append(min(1.0, round(actual_count / expected_count, 2)))
+
+        return result
 
     def _load_non_stock_counts_by_period(self, cursor, table_name, date_column, periods, frequency):
         """一次性加载非股票级别数据的各周期计数"""
@@ -272,6 +322,55 @@ class CompletenessService:
 
         ratio = round(actual_count / expected_count, 2) if expected_count > 0 else 0.0
         return [ratio] * len(periods)
+
+    def _calculate_event_security_completeness(self, cursor, table_name, date_column, periods, frequency, stock_column='symbol'):
+        """计算事件型证券数据完整度；无事件期不等同于缺失。"""
+        if not periods:
+            return []
+
+        start_date, end_date = self._get_period_range(periods[0], frequency)
+        _, end_date = self._get_period_range(periods[-1], frequency)
+
+        stock_filter = ""
+        params = []
+        if self.stock_codes:
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            stock_filter = f" AND {stock_column} IN ({placeholders})"
+            params = self.stock_codes
+
+        if frequency == 'yearly':
+            query = f"""
+                SELECT YEAR({date_column}) as period, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
+                GROUP BY YEAR({date_column})
+            """
+            cursor.execute(query, [start_date, end_date] + params)
+            counts_by_period = {str(row[0]): row[1] for row in cursor.fetchall()}
+        elif frequency == 'quarterly':
+            query = f"""
+                SELECT CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column})) as period, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
+                GROUP BY CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column}))
+            """
+            cursor.execute(query, [start_date, end_date] + params)
+            counts_by_period = {row[0]: row[1] for row in cursor.fetchall()}
+        else:
+            date_format = self._get_date_format(frequency)
+            query = f"""
+                SELECT DATE_FORMAT({date_column}, %s) as period, COUNT(*) as cnt
+                FROM {table_name}
+                WHERE {date_column} >= %s AND {date_column} <= %s{stock_filter}
+                GROUP BY DATE_FORMAT({date_column}, %s)
+            """
+            cursor.execute(query, [date_format, start_date, end_date] + params + [date_format])
+            counts_by_period = {row[0]: row[1] for row in cursor.fetchall()}
+
+        return [
+            1.0 if counts_by_period.get(period, 0) > 0 else -1
+            for period in periods
+        ]
 
     def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency, stock_column='symbol'):
         """计算完整度（支持聚合）"""

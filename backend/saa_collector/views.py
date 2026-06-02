@@ -2832,6 +2832,7 @@ class DataTypesConfigView(APIView):
                 'label': config['label'],
                 'table': config['table'],
                 'frequency': config.get('data_frequency'),
+                'completeness_model': config.get('completeness_model'),
                 'stock_level': config.get('stock_level', True),
                 'group': config.get('group'),
                 'show_completeness': config.get('show_completeness', True),
