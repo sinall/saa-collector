@@ -5,6 +5,19 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   base: '/admin/collector/',
   plugins: [vue()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ['vue', 'vue-router'],
+          element: ['element-plus', '@element-plus/icons-vue'],
+          echarts: ['echarts'],
+          agGrid: ['ag-grid-community', 'ag-grid-vue3'],
+          http: ['axios'],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

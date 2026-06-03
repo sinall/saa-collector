@@ -1,18 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import auth from '@/utils/auth'
 import { getBasePath } from '@/utils/path-detector'
-import DashboardView from '@/views/DashboardView.vue'
-import LoginView from '@/views/LoginView.vue'
-import IntegrityReportsView from '@/views/IntegrityReportsView.vue'
-import IntegrityReportDetailView from '@/views/IntegrityReportDetailView.vue'
-import CollectSchedulesView from '@/views/CollectSchedulesView.vue'
-import CollectScheduleDetailView from '@/views/CollectScheduleDetailView.vue'
-import CollectScheduleEditView from '@/views/CollectScheduleEditView.vue'
-import CollectPlansView from '@/views/CollectPlansView.vue'
-import CollectPlanDetailView from '@/views/CollectPlanDetailView.vue'
-import CollectPlanEditView from '@/views/CollectPlanEditView.vue'
-import DataBrowseStockView from '@/views/DataBrowseStockView.vue'
-import DataBrowseTypeView from '@/views/DataBrowseTypeView.vue'
+
+const DashboardView = () => import('@/views/DashboardView.vue')
+const LoginView = () => import('@/views/LoginView.vue')
+const IntegrityReportsView = () => import('@/views/IntegrityReportsView.vue')
+const IntegrityReportDetailView = () => import('@/views/IntegrityReportDetailView.vue')
+const CollectSchedulesView = () => import('@/views/CollectSchedulesView.vue')
+const CollectScheduleDetailView = () => import('@/views/CollectScheduleDetailView.vue')
+const CollectScheduleEditView = () => import('@/views/CollectScheduleEditView.vue')
+const CollectPlansView = () => import('@/views/CollectPlansView.vue')
+const CollectPlanDetailView = () => import('@/views/CollectPlanDetailView.vue')
+const CollectPlanEditView = () => import('@/views/CollectPlanEditView.vue')
+const DataBrowseStockView = () => import('@/views/DataBrowseStockView.vue')
+const DataBrowseTypeView = () => import('@/views/DataBrowseTypeView.vue')
 
 const router = createRouter({
   history: createWebHistory(getBasePath()),

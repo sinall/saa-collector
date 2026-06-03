@@ -119,8 +119,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import CompletenessHeatmap from '@/components/CompletenessHeatmap.vue'
 import IntegrityReportTreeFilter, { type FilterParams } from '@/components/IntegrityReportTreeFilter.vue'
 import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
+import { ensureAgGridRegistered } from '@/utils/ag-grid'
 
 import type { GridApi } from 'ag-grid-community'
+
+ensureAgGridRegistered()
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()

@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import type { ECharts, EChartsOption } from 'echarts'
 import { fetchCompletenessHeatmap, type HeatmapResponse, type IntegrityReportHeatmapData } from '@/utils/api'
 
 type ExternalHeatmapData = HeatmapResponse | IntegrityReportHeatmapData
@@ -65,8 +65,16 @@ const loading = ref(false)
 const heatmapData = ref<HeatmapResponse | null>(null)
 const allPeriods = ref<string[]>([])
 const sliderRange = ref<[number, number]>([0, 0])
-let chartInstance: echarts.ECharts | null = null
+let echartsModule: typeof import('echarts') | null = null
+let chartInstance: ECharts | null = null
 let mergedCellsCache: MergedCell[] = []
+
+const loadEcharts = async () => {
+  if (!echartsModule) {
+    echartsModule = await import('echarts')
+  }
+  return echartsModule
+}
 
 const effectiveFrequency = computed(() => {
   return props.viewFrequency || selectedFrequency.value
@@ -133,7 +141,7 @@ const initFromData = async (data: ExternalHeatmapData, frequency: string) => {
     : [0, allPeriods.value.length - 1]
 
   await nextTick()
-  renderChart()
+  await renderChart()
   setTimeout(() => {
     chartInstance?.resize()
     updateSliderAlignment()
@@ -316,10 +324,12 @@ const calculateRowCompleteness = (yIndex: number): number => {
   return sum / rowCells.length
 }
 
-const renderChart = () => {
+const renderChart = async () => {
   if (!chartRef.value || !heatmapData.value) return
 
   if (!chartInstance) {
+    const echarts = await loadEcharts()
+    if (!chartRef.value) return
     chartInstance = echarts.init(chartRef.value)
   }
 
@@ -349,7 +359,7 @@ const renderChart = () => {
 
   const rowCompleteness = data_types.map((_, idx) => calculateRowCompleteness(idx))
 
-  const option: echarts.EChartsOption = {
+  const option: EChartsOption = {
     tooltip: {
       position: 'top',
       formatter: (params: any) => {
@@ -505,7 +515,7 @@ const onFrequencyChange = () => {
 }
 
 const onSliderChange = () => {
-  renderChart()
+  void renderChart()
 }
 
 const handleResize = () => {
@@ -539,7 +549,7 @@ onUnmounted(() => {
 })
 
 watch(heatmapData, () => {
-  renderChart()
+  void renderChart()
 })
 
 watch(() => props.externalData, (newData) => {

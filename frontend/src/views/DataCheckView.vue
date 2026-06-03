@@ -123,6 +123,9 @@ import {
   type SummaryItem,
   type IntegrityReportCreateParams
 } from '@/utils/api'
+import { ensureAgGridRegistered } from '@/utils/ag-grid'
+
+ensureAgGridRegistered()
 
 const router = useRouter()
 const { getConfig, loadDataTypes } = useDataTypes()

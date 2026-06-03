@@ -120,7 +120,7 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { AgGridVue } from 'ag-grid-vue3'
-import { ColDef } from 'ag-grid-community'
+import type { ColDef } from 'ag-grid-community'
 import { Setting } from '@element-plus/icons-vue'
 import {
   fetchDisplayConfig,
@@ -130,6 +130,9 @@ import {
   type DataTypeGroup,
 } from '@/utils/api'
 import { useDataTypes } from '@/composables/useDataTypes'
+import { ensureAgGridRegistered } from '@/utils/ag-grid'
+
+ensureAgGridRegistered()
 
 const { dataTypes, groups, groupedDataTypes, loadDataTypes } = useDataTypes()
 
