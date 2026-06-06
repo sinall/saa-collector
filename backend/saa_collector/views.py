@@ -159,7 +159,7 @@ class DataStatusView(APIView):
                             expected_periods = calculate_expected_periods(earliest_date, latest_date, frequency)
                             if expected_periods > 0:
                                 completeness = min(1.0, actual_periods / expected_periods)
-                    elif data_type == 'stock_info':
+                    elif data_type in ('stock_info', 'securities'):
                         earliest_date = None
                         latest_date = None
                         if EXPECTED_A_SHARE_STOCKS > 0:
@@ -195,6 +195,7 @@ class DataStatusView(APIView):
     def _get_date_column(self, table_name):
         date_columns = {
             'saa_stocks': None,
+            'saa_securities': None,
             'saa_trade_days': 'date',
             'saa_latest_prices': 'date',
 'saa_prices_ex': 'date',
@@ -337,6 +338,15 @@ class CollectStockInfoView(BaseCollectView):
         symbols = job.config.get('symbols') if job.config.get('symbols') else None
         service.collect(symbols)
         job.complete(success=True, message=f"Collected stock info for {len(job.config.get('symbols', [])) if job.config.get('symbols') else 'all'} symbols")
+
+
+class CollectSecuritiesView(BaseCollectView):
+    data_type = 'securities'
+
+    def _execute_collect(self, job):
+        from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
+        affected_rows = SecurityMasterRefreshService().refresh_from_stocks()
+        job.complete(success=True, message=f"Refreshed securities master: {affected_rows} affected rows")
 
 
 class CollectQuotesView(BaseCollectView):
@@ -492,6 +502,7 @@ class TypeBrowseDataView(APIView):
 
     TABLE_CONFIG = {
         'saa_stocks': {'date_column': None, 'order': 'symbol ASC'},
+        'saa_securities': {'date_column': None, 'order': 'code ASC', 'search_column': 'code'},
         'saa_latest_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_prices_ex': {'date_column': 'date', 'order': 'code ASC, date DESC'},
         'saa_index_quotes': {'date_column': 'date', 'order': 'code ASC, date DESC', 'search_column': 'code'},
@@ -2519,6 +2530,9 @@ class CollectPlanResetView(APIView):
         elif data_type == 'stock_info':
             service = factory.create_stock_info_service()
             service.collect(symbols)
+        elif data_type == 'securities':
+            from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
+            SecurityMasterRefreshService().refresh_from_stocks()
         elif data_type == 'quote':
             service = factory.create_quote_service()
             service.collect(symbols)
@@ -2673,6 +2687,7 @@ class DisplayFieldConfigView(APIView):
 
     TABLE_LABEL_MAP = {
         'saa_stocks': '基本信息',
+        'saa_securities': '证券主数据',
         'saa_latest_prices': '最新行情',
         'saa_prices_ex': '历史月行情',
         'saa_raw_balance_sheet': '资产负债表',
@@ -2689,6 +2704,7 @@ class DisplayFieldConfigView(APIView):
             'label': '基本信息',
             'items': [
                 {'key': 'info', 'label': '基本信息', 'table': 'saa_stocks'},
+                {'key': 'securities', 'label': '证券主数据', 'table': 'saa_securities'},
             ]
         },
         {
@@ -2778,6 +2794,7 @@ class StockDataView(APIView):
 
     DATE_COLUMN_MAP = {
         'saa_stocks': None,
+        'saa_securities': None,
         'saa_latest_prices': 'date',
         'saa_prices_ex': 'date',
         'saa_raw_balance_sheet': 'date',
@@ -3062,6 +3079,9 @@ class CollectScheduleTriggerView(APIView):
         elif data_type == 'stock_info':
             service = factory.create_stock_info_service()
             service.collect(symbols)
+        elif data_type == 'securities':
+            from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
+            SecurityMasterRefreshService().refresh_from_stocks()
         elif data_type == 'quote':
             service = factory.create_quote_service()
             service.collect(symbols)

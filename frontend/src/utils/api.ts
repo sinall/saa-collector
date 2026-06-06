@@ -172,6 +172,11 @@ export const collectStockInfo = async (symbols?: string[]): Promise<ApiResponse<
   return response.data
 }
 
+export const collectSecurities = async (): Promise<ApiResponse<CollectJob>> => {
+  const response = await api.post('/collect/securities/', {})
+  return response.data
+}
+
 export const collectQuotes = async (symbols?: string[]): Promise<ApiResponse<CollectJob>> => {
   const response = await api.post('/collect/quotes/', { symbols })
   return response.data
@@ -1441,7 +1446,7 @@ export const refreshReportMock = async (reportId: number): Promise<ApiResponse<a
 }
 
 export interface IntegrityReportHeatmapData {
-  data_types: { key: string; label: string; frequency?: string | null; completeness_model?: string | null }[]
+  data_types: HeatmapDataType[]
   periods: string[]
   matrix: Record<string, number[]>
 }
@@ -1529,6 +1534,19 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
         { name: 'legal_representative', label: '法人代表', visible: false, order: 11, width: 100 },
         { name: 'registered_capital', label: '注册资金', visible: false, order: 12, width: 120, format: 'money' },
         { name: 'website', label: '机构网址', visible: false, order: 13, width: 200 },
+      ]
+    }
+  },
+  'saa_securities': {
+    table_label: '证券主数据',
+    config: {
+      fields: [
+        { name: 'code', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'display_name', label: '显示名称', visible: true, order: 2, width: 120 },
+        { name: 'name', label: '名称', visible: true, order: 3, width: 120 },
+        { name: 'start_date', label: '上市日期', visible: true, order: 4, width: 110, format: 'date' },
+        { name: 'end_date', label: '退市日期', visible: true, order: 5, width: 110, format: 'date' },
+        { name: 'type', label: '证券类型', visible: true, order: 6, width: 90 },
       ]
     }
   },
@@ -1695,6 +1713,7 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
     order: 1,
     items: [
       { key: 'info', label: '基本信息', table: 'saa_stocks' },
+      { key: 'securities', label: '证券主数据', table: 'saa_securities' },
     ]
   },
   {
@@ -1815,6 +1834,17 @@ function generateMockStockData(tableName: string, symbol: string): Record<string
       legal_representative: '张三',
       registered_capital: 1000000000,
       website: 'https://example.com',
+    }]
+  }
+
+  if (tableName === 'saa_securities') {
+    return [{
+      code: symbol,
+      display_name: `${symbol}公司`,
+      name: symbol,
+      start_date: '2020-01-01',
+      end_date: '2200-01-01',
+      type: 'stock',
     }]
   }
 

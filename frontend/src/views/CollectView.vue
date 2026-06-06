@@ -70,6 +70,7 @@ import CollectorFilterPanel from '@/components/CollectorFilterPanel.vue'
 import {
   fetchCollectJobs,
   collectStockInfo,
+  collectSecurities,
   collectQuotes,
   collectHistoricalQuotes,
   collectStatements,
@@ -128,6 +129,9 @@ const handleCollect = async (params: FilterParams) => {
     switch (params.data_type) {
       case 'stock_info':
         response = await collectStockInfo(symbols)
+        break
+      case 'securities':
+        response = await collectSecurities()
         break
       case 'quote':
         response = await collectQuotes(symbols)

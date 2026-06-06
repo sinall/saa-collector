@@ -35,6 +35,7 @@ Completeness models SHALL describe what a heatmap cell means independently from 
 | `calendar` | Trading calendar data such as `trade_days` | Expected calendar/trading-day periods in the selected range |
 | `snapshot_security` | Security master data such as `stock_info` | Securities active in the cell period, bounded by listing and delisting dates when available |
 | `periodic_security` | Security-period records such as quotes, financial statements, capital, and index weights | Active securities expected for the configured report or quote period |
+| `trading_day_security` | Trading-day security records such as stock status snapshots | Securities active on each expected trading day |
 | `event_security` | Irregular security events such as dividends | Event presence in the cell period; absence of an event SHALL NOT be treated as missing security-period data |
 | `non_stock_periodic` | Date-based non-security records such as index, board, industry, or valuation series | Configured non-security objects or, when no object universe is configured, period presence |
 
@@ -51,6 +52,13 @@ Completeness models SHALL describe what a heatmap cell means independently from 
 - **THEN** a heatmap cell SHALL be complete when at least one event exists in the cell period
 - **AND** a period with no events SHALL be returned as not applicable rather than as a zero completeness value
 - **AND** the calculation SHALL NOT divide event records by all active securities because most active securities are not expected to have an event every period
+
+#### Scenario: Calculating trading-day security completeness
+- **WHEN** a data type uses the `trading_day_security` completeness model
+- **THEN** completeness SHALL use the active security universe on each trading day as the denominator
+- **AND** active security boundaries SHALL use `saa_securities.start_date` and `saa_securities.end_date`
+- **AND** matching target rows for the same security and trading day SHALL be used as the numerator
+- **AND** a period with no expected trading-day security rows SHALL be returned as not applicable
 
 #### Scenario: Calculating security master snapshot completeness
 - **WHEN** a data type uses the `snapshot_security` completeness model

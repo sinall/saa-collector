@@ -8,7 +8,7 @@
 - table: 数据库表名
 - date_column: 日期列名
 - data_frequency: 数据更新频率 (daily/weekly/monthly/quarterly/yearly/None)
-- completeness_model: 完整度热力图计算模型 (calendar/snapshot_security/periodic_security/event_security/non_stock_periodic)
+- completeness_model: 完整度热力图计算模型 (calendar/snapshot_security/periodic_security/trading_day_security/event_security/non_stock_periodic)
 - stock_level: 是否按股票级别检查数据完整性
 - label: 中文显示名称
 - stock_column: 股票代码列名（默认为 'symbol'）
@@ -86,6 +86,21 @@ DATA_TYPE_CONFIG = {
         'need_date': False,
         'order': 2,
     },
+    'securities': {
+        'table': 'saa_securities',
+        'date_column': None,
+        'data_frequency': None,
+        'completeness_model': 'snapshot_security',
+        'stock_level': True,
+        'label': '证券主数据',
+        'stock_column': 'code',
+        'supports_integrity_check': False,
+        'group': 'market',
+        'show_completeness': False,
+        'need_date': False,
+        'security_scope': 'a_stock',
+        'order': 3,
+    },
     'quote': {
         'table': 'saa_latest_prices',
         'date_column': None,
@@ -117,7 +132,7 @@ DATA_TYPE_CONFIG = {
         'table': 'saa_extras',
         'date_column': 'date',
         'data_frequency': 'daily',
-        'completeness_model': 'periodic_security',
+        'completeness_model': 'trading_day_security',
         'stock_level': True,
         'label': '股票状态',
         'stock_column': 'code',

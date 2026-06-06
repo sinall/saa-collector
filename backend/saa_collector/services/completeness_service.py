@@ -139,6 +139,12 @@ class CompletenessService:
                     )
                     continue
 
+                if completeness_model == 'trading_day_security':
+                    matrix[key] = self._calculate_trading_day_security_completeness(
+                        cursor, config, periods, frequency
+                    )
+                    continue
+
                 if not stock_level:
                     matrix[key] = self._calculate_non_stock_completeness(cursor, table_name, date_column, periods, frequency)
                     continue
@@ -372,6 +378,86 @@ class CompletenessService:
             for period in periods
         ]
 
+    def _calculate_trading_day_security_completeness(self, cursor, config, periods, frequency):
+        """计算交易日证券状态完整度。"""
+        if not periods:
+            return []
+
+        table_name = config['table']
+        date_column = config['date_column']
+        stock_column = config.get('stock_column', 'symbol')
+
+        start_date, end_date = self._get_period_range(periods[0], frequency)
+        _, end_date = self._get_period_range(periods[-1], frequency)
+
+        period_expression = self._get_period_sql_expression("td.date", frequency)
+        period_params = []
+        if frequency not in ('quarterly', 'yearly'):
+            period_params.append(self._get_date_format(frequency))
+
+        universe_filter = ""
+        stock_params = []
+        if self.stock_codes:
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            universe_filter = f" AND universe.code IN ({placeholders})"
+            stock_params = self.stock_codes
+
+        security_universe_sql = """
+            SELECT code, start_date, end_date
+            FROM saa_securities
+            WHERE type = 'stock'
+        """
+
+        expected_query = f"""
+            SELECT
+                {period_expression} AS period,
+                COUNT(*) AS expected_count
+            FROM saa_trade_days td
+            JOIN ({security_universe_sql}) universe
+              ON (universe.start_date IS NULL OR universe.start_date <= td.date)
+             AND (universe.end_date IS NULL OR universe.end_date >= td.date)
+            WHERE td.date >= %s
+              AND td.date <= %s{universe_filter}
+            GROUP BY period
+        """
+        cursor.execute(expected_query, period_params + [start_date, end_date] + stock_params)
+        expected_by_period = {
+            str(row[0]): row[1] or 0
+            for row in cursor.fetchall()
+        }
+
+        actual_query = f"""
+            SELECT
+                {period_expression} AS period,
+                COUNT(*) AS actual_count
+            FROM saa_trade_days td
+            JOIN ({security_universe_sql}) universe
+              ON (universe.start_date IS NULL OR universe.start_date <= td.date)
+             AND (universe.end_date IS NULL OR universe.end_date >= td.date)
+            JOIN {table_name} target
+              ON target.{stock_column} = universe.code
+             AND target.{date_column} = td.date
+            WHERE td.date >= %s
+              AND td.date <= %s{universe_filter}
+            GROUP BY period
+        """
+        cursor.execute(actual_query, period_params + [start_date, end_date] + stock_params)
+        actual_by_period = {
+            str(row[0]): row[1] or 0
+            for row in cursor.fetchall()
+        }
+
+        result = []
+        for period in periods:
+            expected_count = expected_by_period.get(period, 0)
+            if expected_count <= 0:
+                result.append(-1)
+            else:
+                actual_count = actual_by_period.get(period, 0)
+                result.append(round(actual_count / expected_count, 2))
+
+        return result
+
     def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency, stock_column='symbol'):
         """计算完整度（支持聚合）"""
         if not periods:
@@ -526,6 +612,9 @@ class CompletenessService:
                 return month in (3, 6, 9, 12)
             return True
 
+        if data_frequency == 'monthly':
+            return frequency != 'daily'
+
         if data_frequency == 'yearly':
             return True
 
@@ -562,6 +651,14 @@ class CompletenessService:
             'yearly': '%Y',
         }
         return formats.get(frequency, '%Y-%m')
+
+    def _get_period_sql_expression(self, column, frequency):
+        """获取 MySQL 周期表达式。"""
+        if frequency == 'yearly':
+            return f"YEAR({column})"
+        if frequency == 'quarterly':
+            return f"CONCAT(YEAR({column}), '-Q', QUARTER({column}))"
+        return f"DATE_FORMAT({column}, %s)"
 
     def _get_period_range(self, period, frequency):
         """获取周期的日期范围"""

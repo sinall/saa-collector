@@ -231,6 +231,9 @@ def execute_collect(job):
                 symbols,
                 lambda symbol: service.collect([symbol], progress_enabled=False),
             )
+        elif data_type == 'securities':
+            from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
+            SecurityMasterRefreshService().refresh_from_stocks()
         elif data_type == 'quote':
             service = factory.create_quote_service()
             service.collect(symbols)

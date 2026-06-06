@@ -32,6 +32,7 @@ urlpatterns = [
     path('collect-schedules/<int:pk>/trigger/', views.CollectScheduleTriggerView.as_view(), name='collect-schedule-trigger'),
 
     path('collect/stock-info/', views.CollectStockInfoView.as_view(), name='collect-stock-info'),
+    path('collect/securities/', views.CollectSecuritiesView.as_view(), name='collect-securities'),
     path('collect/quotes/', views.CollectQuotesView.as_view(), name='collect-quotes'),
     path('collect/historical-quotes/', views.CollectHistoricalQuotesView.as_view(), name='collect-historical-quotes'),
     path('collect/statements/', views.CollectStatementsView.as_view(), name='collect-statements'),

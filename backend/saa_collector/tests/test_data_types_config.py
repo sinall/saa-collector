@@ -34,7 +34,23 @@ class DataTypesConfigTest(TestCase):
         self.assertEqual(data_types['extras']['label'], '股票状态')
         self.assertEqual(data_types['extras']['table'], 'saa_extras')
         self.assertEqual(data_types['extras']['stock_column'], 'code')
+        self.assertEqual(data_types['extras']['frequency'], 'daily')
+        self.assertEqual(data_types['extras']['completeness_model'], 'trading_day_security')
         self.assertTrue(data_types['extras']['need_date'])
+
+    def test_securities_data_type_exposes_security_master_refresh(self):
+        response = self.client.get('/api/data-types/')
+
+        self.assertEqual(response.status_code, 200)
+        data_types = {
+            item['key']: item
+            for item in response.data['data_types']
+        }
+        self.assertEqual(data_types['securities']['label'], '证券主数据')
+        self.assertEqual(data_types['securities']['table'], 'saa_securities')
+        self.assertEqual(data_types['securities']['stock_column'], 'code')
+        self.assertFalse(data_types['securities']['need_date'])
+        self.assertFalse(data_types['securities']['show_completeness'])
 
     def test_index_quotes_data_type_is_available_for_mfactor_benchmark_quotes(self):
         response = self.client.get('/api/data-types/')
