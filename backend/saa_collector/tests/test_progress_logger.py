@@ -94,7 +94,7 @@ class ProgressLoggerTest(unittest.TestCase):
         self.assertEqual('1991-01-29', listing_times['000002'])
         self.assertEqual(1, cursor.execute.call_count)
         cursor.execute.assert_called_once_with(
-            'SELECT symbol, listing_time FROM saa_stocks WHERE symbol IN (%s,%s)',
+            'SELECT symbol, listing_date FROM saa_stocks WHERE symbol IN (%s,%s)',
             ('000001', '000002'),
         )
 

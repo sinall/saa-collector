@@ -56,7 +56,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
                 'exchange': exchange_dict[match.group(1)],
                 'board': board_dict[match.group(2)],
                 'issue_quantity': record['F007N'],
-                'listing_time': record['F006D'],
+                'listing_date': record['F006D'],
             }
             stock_info_dict[stock_info['symbol']] = stock_info
 

@@ -18,9 +18,12 @@ class SecurityMasterRefreshServiceTest(TestCase):
         sql = cursor.execute.call_args.args[0]
         self.assertIn('INSERT INTO saa_securities', sql)
         self.assertIn('FROM saa_stocks s', sql)
+        self.assertIn('s.listing_date AS start_date', sql)
+        self.assertIn('s.delisting_date AS end_date', sql)
         self.assertIn("s.type = 'STOCK'", sql)
         self.assertIn("s.market = 'A'", sql)
         self.assertIn("name = COALESCE(NULLIF(name, ''), VALUES(name))", sql)
+        self.assertIn("end_date = COALESCE(VALUES(end_date), end_date)", sql)
         connection.commit.assert_called_once()
         cursor.close.assert_called_once()
         connection.close.assert_not_called()

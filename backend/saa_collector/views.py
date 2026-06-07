@@ -443,14 +443,14 @@ class StockListView(APIView):
         with connection.cursor() as cursor:
             if keyword:
                 cursor.execute(
-                    "SELECT symbol, name, industry_classification_id, listing_time FROM saa_stocks "
+                    "SELECT symbol, name, industry_classification_id, listing_date FROM saa_stocks "
                     "WHERE symbol LIKE %s OR name LIKE %s "
                     "ORDER BY symbol LIMIT 100",
                     [f'{keyword}%', f'%{keyword}%']
                 )
             else:
                 cursor.execute(
-                    "SELECT symbol, name, industry_classification_id, listing_time FROM saa_stocks "
+                    "SELECT symbol, name, industry_classification_id, listing_date FROM saa_stocks "
                     "ORDER BY symbol LIMIT 100"
                 )
 
@@ -475,7 +475,7 @@ class StockDetailView(APIView):
     def get(self, request, symbol):
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT symbol, name, industry_classification_id, listing_time FROM saa_stocks "
+                "SELECT symbol, name, industry_classification_id, listing_date FROM saa_stocks "
                 "WHERE symbol = %s",
                 [symbol]
             )
@@ -762,28 +762,28 @@ class DataCompletenessCheckView(APIView):
                 short_symbols = list(symbol_map.keys())
                 placeholders = ','.join(['%s'] * len(short_symbols))
                 cursor.execute(f"""
-                    SELECT symbol, name, listing_time
+                    SELECT symbol, name, listing_date
                     FROM saa_stocks
                     WHERE symbol IN ({placeholders})
-                      AND listing_time IS NOT NULL
-                      AND listing_time <= %s
+                      AND listing_date IS NOT NULL
+                      AND listing_date <= %s
                 """, short_symbols + [end_date])
             else:
                 cursor.execute("""
-                    SELECT symbol, name, listing_time
+                    SELECT symbol, name, listing_date
                     FROM saa_stocks
-                    WHERE listing_time IS NOT NULL
-                      AND listing_time <= %s
+                    WHERE listing_date IS NOT NULL
+                      AND listing_date <= %s
                 """, [end_date])
                 symbol_map = None
 
             stocks = []
             for row in cursor.fetchall():
-                listing_time = row[2]
-                if hasattr(listing_time, 'strftime'):
-                    listing_date_str = listing_time.strftime('%Y-%m-%d')
+                listing_date = row[2]
+                if hasattr(listing_date, 'strftime'):
+                    listing_date_str = listing_date.strftime('%Y-%m-%d')
                 else:
-                    listing_date_str = str(listing_time)
+                    listing_date_str = str(listing_date)
 
                 short_symbol = row[0]
                 full_symbol = symbol_map.get(short_symbol, short_symbol) if symbol_map else short_symbol
@@ -1097,16 +1097,16 @@ class DataIntegrityReportListView(APIView):
                 symbols = report.stock_codes
                 placeholders = ','.join(['%s'] * len(symbols))
                 cursor.execute(f"""
-                    SELECT symbol, listing_time FROM saa_stocks
+                    SELECT symbol, listing_date FROM saa_stocks
                     WHERE symbol IN ({placeholders})
-                      AND listing_time IS NOT NULL
-                      AND listing_time <= %s
+                      AND listing_date IS NOT NULL
+                      AND listing_date <= %s
                 """, symbols + [report.date_end])
             else:
                 cursor.execute("""
-                    SELECT symbol, listing_time FROM saa_stocks
-                    WHERE listing_time IS NOT NULL
-                      AND listing_time <= %s
+                    SELECT symbol, listing_date FROM saa_stocks
+                    WHERE listing_date IS NOT NULL
+                      AND listing_date <= %s
                 """, [report.date_end])
 
             return {row[0]: row[1] for row in cursor.fetchall()}

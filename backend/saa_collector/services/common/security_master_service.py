@@ -28,8 +28,8 @@ class SecurityMasterRefreshService:
                     s.symbol AS code,
                     s.name AS display_name,
                     s.symbol AS name,
-                    s.listing_time AS start_date,
-                    DATE('2200-01-01') AS end_date,
+                    s.listing_date AS start_date,
+                    s.delisting_date AS end_date,
                     LOWER(s.type) AS type
                 FROM saa_stocks s
                 WHERE s.type = 'STOCK'
@@ -39,7 +39,7 @@ class SecurityMasterRefreshService:
                     display_name = VALUES(display_name),
                     name = COALESCE(NULLIF(name, ''), VALUES(name)),
                     start_date = COALESCE(VALUES(start_date), start_date),
-                    end_date = COALESCE(end_date, VALUES(end_date)),
+                    end_date = COALESCE(VALUES(end_date), end_date),
                     type = VALUES(type)
                 """
             )

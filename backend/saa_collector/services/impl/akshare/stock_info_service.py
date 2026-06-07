@@ -52,7 +52,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
                 'name': name,
                 'exchange': str(StockUtils.to_exchange(symbol)),
                 'board': str(StockUtils.to_board(symbol, name)),
-                'listing_time': "{}-{}-{}".format(list_date[:4], list_date[4:6], list_date[6:]),
+                'listing_date': "{}-{}-{}".format(list_date[:4], list_date[4:6], list_date[6:]),
             }
             stock_info_dict[stock_info['symbol']] = stock_info
         return list(stock_info_dict.values())

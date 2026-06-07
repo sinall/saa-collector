@@ -28,6 +28,20 @@ class CompletenessServiceTest(TestCase):
 
         self.assertEqual(result['matrix']['dividend'], [1.0, -1])
 
+    def test_expected_stock_counts_use_listing_and_delisting_dates(self):
+        cursor = Mock()
+        cursor.fetchall.return_value = [
+            (date(2020, 1, 1), date(2200, 1, 1)),
+            (date(2020, 1, 1), date(2020, 12, 31)),
+            (date(2021, 1, 1), date(2200, 1, 1)),
+        ]
+
+        service = CompletenessService(date_end=date(2021, 12, 31))
+        result = service._get_expected_stock_counts(cursor, ['2020', '2021'], 'yearly')
+
+        self.assertEqual(result, {'2020': 2, '2021': 2})
+        cursor.execute.assert_called_once_with("SELECT listing_date, delisting_date FROM saa_stocks")
+
     @patch('saa_collector.services.completeness_service.connection')
     def test_trading_day_security_completeness_uses_trade_day_security_universe(self, connection):
         cursor = Mock()

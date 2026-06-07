@@ -141,10 +141,10 @@ class Statement(Basic):
     def get_financial_data_existence(self, symbols, start_date):
         try:
             conn = mysql.connector.connect(**self.db_config)
-            where_stocks = Statement.build_where_clause(symbols, "listing_time", start_date)
-            stocks_df = pd.read_sql(f"SELECT symbol, listing_time FROM saa_stocks {where_stocks}", conn)
-            stocks_df['listing_time'] = Statement.clean_date_column(stocks_df['listing_time'])
-            stocks_df = stocks_df.dropna(subset=['listing_time'])
+            where_stocks = Statement.build_where_clause(symbols, "listing_date", start_date)
+            stocks_df = pd.read_sql(f"SELECT symbol, listing_date FROM saa_stocks {where_stocks}", conn)
+            stocks_df['listing_date'] = Statement.clean_date_column(stocks_df['listing_date'])
+            stocks_df = stocks_df.dropna(subset=['listing_date'])
 
             where_reports = Statement.build_where_clause(symbols, "date", start_date)
             query = f"""
@@ -166,17 +166,17 @@ class Statement(Basic):
             ).reset_index()
             existence_df.columns = ['symbol', 'date', 'balance_sheet', 'cash_flow', 'income_statement']
 
-            min_date = stocks_df['listing_time'].min()
+            min_date = stocks_df['listing_date'].min()
             max_date = datetime.now().date()
             all_quarter_dates = Statement.generate_quarterly_dates(min_date, max_date)
 
             all_combinations = []
             for idx, stock in stocks_df.iterrows():
                 symbol = stock['symbol']
-                listing_time = stock['listing_time']
+                listing_date = stock['listing_date']
 
                 for q_date in all_quarter_dates:
-                    if q_date >= listing_time:
+                    if q_date >= listing_date:
                         all_combinations.append({'symbol': symbol, 'date': q_date})
 
             all_combinations_df = pd.DataFrame(all_combinations)

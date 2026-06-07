@@ -195,13 +195,13 @@ class CompletenessCalculator:
         with connection.cursor() as cursor:
             if self.stock_codes:
                 cursor.execute("""
-                    SELECT listing_time FROM saa_stocks
-                    WHERE symbol IN %s AND listing_time IS NOT NULL
+                    SELECT listing_date FROM saa_stocks
+                    WHERE symbol IN %s AND listing_date IS NOT NULL
                 """, [self.stock_codes])
             else:
                 cursor.execute("""
-                    SELECT listing_time FROM saa_stocks
-                    WHERE listing_time IS NOT NULL
+                    SELECT listing_date FROM saa_stocks
+                    WHERE listing_date IS NOT NULL
                 """)
             
             self._listing_dates = [row[0] for row in cursor.fetchall() if row[0]]
@@ -291,12 +291,12 @@ class CompletenessCalculator:
             if self.stock_codes:
                 cursor.execute("""
                     SELECT COUNT(*) FROM saa_stocks
-                    WHERE symbol IN %s AND listing_time IS NOT NULL
+                    WHERE symbol IN %s AND listing_date IS NOT NULL
                 """, [self.stock_codes])
             else:
                 cursor.execute("""
                     SELECT COUNT(*) FROM saa_stocks
-                    WHERE listing_time IS NOT NULL AND listing_time <= %s
+                    WHERE listing_date IS NOT NULL AND listing_date <= %s
                 """, [self.date_end])
             
             return cursor.fetchone()[0] or 0

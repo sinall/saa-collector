@@ -21,24 +21,24 @@ class CompletenessService:
     def __init__(self, stock_codes=None, date_end=None):
         self.stock_codes = stock_codes
         self.date_end = date_end or date.today()
-        self._stock_listing_times = None
+        self._stock_active_ranges = None
         self._non_stock_counts_cache = {}
 
-    def _load_stock_listing_times(self, cursor):
-        if self._stock_listing_times is not None:
-            return self._stock_listing_times
+    def _load_stock_active_ranges(self, cursor):
+        if self._stock_active_ranges is not None:
+            return self._stock_active_ranges
 
         params = []
         if self.stock_codes:
             placeholders = ','.join(['%s'] * len(self.stock_codes))
-            query = f"SELECT listing_time FROM saa_stocks WHERE symbol IN ({placeholders})"
+            query = f"SELECT listing_date, delisting_date FROM saa_stocks WHERE symbol IN ({placeholders})"
             cursor.execute(query, self.stock_codes)
         else:
-            query = "SELECT listing_time FROM saa_stocks"
+            query = "SELECT listing_date, delisting_date FROM saa_stocks"
             cursor.execute(query)
 
-        self._stock_listing_times = [row[0] for row in cursor.fetchall()]
-        return self._stock_listing_times
+        self._stock_active_ranges = cursor.fetchall()
+        return self._stock_active_ranges
 
     def _get_period_end_date(self, period, frequency):
         """
@@ -80,14 +80,15 @@ class CompletenessService:
         Returns:
             dict: {period: expected_count}
         """
-        listing_times = self._load_stock_listing_times(cursor)
+        active_ranges = self._load_stock_active_ranges(cursor)
 
         result = {}
         for period in periods:
             period_end = self._get_period_end_date(period, frequency)
             count = sum(
-                1 for listing_time in listing_times
-                if listing_time is None or listing_time <= period_end
+                1 for listing_date, delisting_date in active_ranges
+                if (listing_date is None or listing_date <= period_end)
+                and (delisting_date is None or delisting_date >= period_end)
             )
             result[period] = max(count, 1)
 

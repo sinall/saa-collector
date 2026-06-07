@@ -132,7 +132,7 @@ class StockInfoServiceImpl(StockInfoService, BasicStockService):
             'name': raw_record['name'],
             'exchange': EXCHANGE_DICT[raw_record['exchange']],
             'board': BOARD_DICT[raw_record['market']],
-            'listing_time': "{}-{}-{}".format(list_date[:4], list_date[4:6], list_date[6:]),
+            'listing_date': "{}-{}-{}".format(list_date[:4], list_date[4:6], list_date[6:]),
         }
 
         try:

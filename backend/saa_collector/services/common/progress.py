@@ -210,7 +210,7 @@ def load_listing_times(symbols):
     try:
         placeholders = ','.join(['%s'] * len(symbols))
         query = (
-            'SELECT symbol, listing_time FROM saa_stocks '
+            'SELECT symbol, listing_date FROM saa_stocks '
             'WHERE symbol IN ({})'
         ).format(placeholders)
         cursor = cnx.cursor()
