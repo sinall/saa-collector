@@ -33,6 +33,12 @@ jobs:
         username: ${{ secrets.ALIYUN_ACR_USERNAME }}
         password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
 
+    - name: Image metadata
+      id: image_meta
+      run: |
+        echo "short_sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+        echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
     - name: Build and push frontend
       uses: docker/build-push-action@v5
       with:
@@ -40,4 +46,10 @@ jobs:
         push: true
         tags: |
           ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ github.run_number }}
+          ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:sha-${{ steps.image_meta.outputs.short_sha }}
           ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
+        labels: |
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          org.opencontainers.image.version=${{ github.run_number }}
+          org.opencontainers.image.created=${{ steps.image_meta.outputs.created }}
