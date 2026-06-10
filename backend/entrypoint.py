@@ -22,6 +22,10 @@ def cleanup_interrupted_collect_tasks():
 
 def main():
     service = os.getenv("SERVICE", "gunicorn")
+    if service == "runserver":
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
+    else:
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 
     if service == "runserver":
         cmd = [
@@ -49,6 +53,12 @@ def main():
             "-A", "config",
             "beat",
             "--loglevel", os.getenv("CELERY_LOG_LEVEL", "INFO"),
+        ]
+    elif service == "sql-migrate":
+        cmd = [
+            "python",
+            "manage.py",
+            "migrate_sql",
         ]
     else:
         cmd = [

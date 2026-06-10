@@ -1,8 +1,41 @@
-ALTER TABLE saa_stocks
-    CHANGE COLUMN listing_time listing_date date DEFAULT NULL;
+SET @stocks_listing_time_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'saa_stocks'
+      AND COLUMN_NAME = 'listing_time'
+);
+SET @stocks_listing_date_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'saa_stocks'
+      AND COLUMN_NAME = 'listing_date'
+);
+SET @stocks_listing_sql := CASE
+    WHEN @stocks_listing_date_exists = 1 THEN 'SELECT 1'
+    WHEN @stocks_listing_time_exists = 1 THEN 'ALTER TABLE saa_stocks CHANGE COLUMN listing_time listing_date date DEFAULT NULL'
+    ELSE 'ALTER TABLE saa_stocks ADD COLUMN listing_date date DEFAULT NULL'
+END;
+PREPARE stocks_listing_stmt FROM @stocks_listing_sql;
+EXECUTE stocks_listing_stmt;
+DEALLOCATE PREPARE stocks_listing_stmt;
 
-ALTER TABLE saa_stocks
-    ADD COLUMN delisting_date date NOT NULL DEFAULT '2200-01-01' AFTER listing_date;
+SET @stocks_delisting_date_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'saa_stocks'
+      AND COLUMN_NAME = 'delisting_date'
+);
+SET @stocks_delisting_sql := IF(
+    @stocks_delisting_date_exists = 0,
+    'ALTER TABLE saa_stocks ADD COLUMN delisting_date date NOT NULL DEFAULT ''2200-01-01'' AFTER listing_date',
+    'SELECT 1'
+);
+PREPARE stocks_delisting_stmt FROM @stocks_delisting_sql;
+EXECUTE stocks_delisting_stmt;
+DEALLOCATE PREPARE stocks_delisting_stmt;
 
 UPDATE saa_stocks stocks
 JOIN saa_securities securities
@@ -11,11 +44,44 @@ SET stocks.listing_date = COALESCE(securities.start_date, stocks.listing_date),
     stocks.delisting_date = COALESCE(securities.end_date, stocks.delisting_date)
 WHERE securities.type = 'stock';
 
-ALTER TABLE saa_stock_descriptions_cache
-    CHANGE COLUMN listing_time listing_date date DEFAULT NULL;
+SET @cache_listing_time_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'saa_stock_descriptions_cache'
+      AND COLUMN_NAME = 'listing_time'
+);
+SET @cache_listing_date_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'saa_stock_descriptions_cache'
+      AND COLUMN_NAME = 'listing_date'
+);
+SET @cache_listing_sql := CASE
+    WHEN @cache_listing_date_exists = 1 THEN 'SELECT 1'
+    WHEN @cache_listing_time_exists = 1 THEN 'ALTER TABLE saa_stock_descriptions_cache CHANGE COLUMN listing_time listing_date date DEFAULT NULL'
+    ELSE 'ALTER TABLE saa_stock_descriptions_cache ADD COLUMN listing_date date DEFAULT NULL'
+END;
+PREPARE cache_listing_stmt FROM @cache_listing_sql;
+EXECUTE cache_listing_stmt;
+DEALLOCATE PREPARE cache_listing_stmt;
 
-ALTER TABLE saa_stock_descriptions_cache
-    ADD COLUMN delisting_date date NOT NULL DEFAULT '2200-01-01' AFTER listing_date;
+SET @cache_delisting_date_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'saa_stock_descriptions_cache'
+      AND COLUMN_NAME = 'delisting_date'
+);
+SET @cache_delisting_sql := IF(
+    @cache_delisting_date_exists = 0,
+    'ALTER TABLE saa_stock_descriptions_cache ADD COLUMN delisting_date date NOT NULL DEFAULT ''2200-01-01'' AFTER listing_date',
+    'SELECT 1'
+);
+PREPARE cache_delisting_stmt FROM @cache_delisting_sql;
+EXECUTE cache_delisting_stmt;
+DEALLOCATE PREPARE cache_delisting_stmt;
 
 UPDATE saa_stock_descriptions_cache cache
 JOIN saa_stocks stocks

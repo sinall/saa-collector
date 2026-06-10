@@ -375,7 +375,24 @@ CREATE TABLE IF NOT EXISTS authtoken_token (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-### 3. UCenter 后台配置
+### 3. SQL Schema Migrations
+
+Collector 维护的 MySQL 变更通过 `python manage.py migrate_sql` 执行。
+
+- 迁移文件优先放在 `backend/sql/migrations/*.sql`
+- 兼容旧约定的根目录 `backend/upgrade_*.sql` 也会被扫描
+- 文件按路径排序后依次执行
+- 已执行过的迁移会记录在 `collector_sql_migrations`，因此这个命令可以在部署流程里重复执行，但只会应用尚未记录的文件
+- 迁移容器使用同一份镜像和数据库配置，保证发布时的行为和应用版本一致
+
+本地或容器内手工执行：
+
+```bash
+cd backend
+python manage.py migrate_sql
+```
+
+### 4. UCenter 后台配置
 
 1. 登录 UCenter 管理后台：`https://www.iguuu.com/discuz/uc_server`
 2. 应用管理 → 添加应用
