@@ -5,6 +5,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+ENV SAA_SQL_MIGRATION_SEARCH=sql/migrations:*.sql,.:upgrade_*.sql
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
