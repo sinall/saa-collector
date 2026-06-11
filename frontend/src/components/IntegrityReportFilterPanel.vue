@@ -1,13 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
+import {
+  fetchCompletenessHeatmapScopes,
+  fetchCompletenessHeatmapScopeSymbols,
+  type HeatmapScopeOption
+} from '@/utils/api'
 
 interface FilterParams {
   data_types: string[]
   frequency: string
   symbols: string[]
+  stock_scope_key: string
+  stock_scope_label: string
   start_date?: string
   end_date?: string
+}
+
+type StockScopeOption = HeatmapScopeOption | {
+  key: 'manual'
+  label: string
+  type: 'manual'
 }
 
 const props = withDefaults(defineProps<{
@@ -29,6 +43,7 @@ const panelCollapsed = ref(false)
 const frequencyExpanded = ref(true)
 const stockExpanded = ref(true)
 const dateExpanded = ref(true)
+const resolvingScope = ref(false)
 
 const frequencies = [
   { value: 'daily', label: '日度' },
@@ -40,7 +55,10 @@ const frequencies = [
 
 const selectedDataTypes = ref<string[]>(['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow'])
 const selectedFrequency = ref('monthly')
-const stockMode = ref<'all' | 'manual'>('all')
+const selectedStockScope = ref('all')
+const scopeOptions = ref<HeatmapScopeOption[]>([
+  { key: 'all', label: '全市场', type: 'all' }
+])
 const manualStocks = ref('')
 const startDate = ref('2009-01-01')
 const endDate = ref(new Date().toISOString().split('T')[0])
@@ -48,13 +66,37 @@ const endDate = ref(new Date().toISOString().split('T')[0])
 const today = new Date().toISOString().split('T')[0]
 
 const selectedStocks = computed(() => {
-  if (stockMode.value === 'all') {
+  if (selectedStockScope.value !== 'manual') {
     return []
   }
   return manualStocks.value
     .split(/[,\s\n]+/)
     .map(s => s.trim())
     .filter(s => s.length > 0)
+})
+
+const stockScopeOptions = computed<StockScopeOption[]>(() => [
+  ...scopeOptions.value,
+  { key: 'manual', label: '指定股票', type: 'manual' },
+])
+
+const selectedScopeOption = computed(() => {
+  return stockScopeOptions.value.find(scope => scope.key === selectedStockScope.value)
+})
+
+const selectedScopeSummary = computed(() => {
+  if (selectedStockScope.value === 'manual') {
+    return selectedStocks.value.length > 0 ? `已选 ${selectedStocks.value.length} 只` : '请输入股票代码'
+  }
+
+  const option = selectedScopeOption.value
+  if (!option || option.type !== 'index') {
+    return '全市场'
+  }
+
+  const count = option.constituent_count ?? 0
+  const dateText = option.latest_date ? `，${option.latest_date}` : ''
+  return `${count} 只成分股${dateText}`
 })
 
 const toggleDataType = (type: string) => {
@@ -74,11 +116,56 @@ const clearDataTypes = () => {
   selectedDataTypes.value = []
 }
 
-const handleQuery = () => {
+const loadStockScopes = async () => {
+  try {
+    const response = await fetchCompletenessHeatmapScopes()
+    if (response.success && response.data && response.data.length > 0) {
+      scopeOptions.value = response.data
+      if (!stockScopeOptions.value.some(scope => scope.key === selectedStockScope.value)) {
+        selectedStockScope.value = 'all'
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load stock scopes:', error)
+  }
+}
+
+const resolveSymbolsForSelectedScope = async (): Promise<string[]> => {
+  if (selectedStockScope.value === 'manual') {
+    return [...selectedStocks.value]
+  }
+  if (selectedStockScope.value === 'all') {
+    return []
+  }
+
+  resolvingScope.value = true
+  try {
+    const response = await fetchCompletenessHeatmapScopeSymbols(selectedStockScope.value)
+    if (response.success && response.data) {
+      return response.data.symbols
+    }
+    throw new Error(response.error || 'Failed to resolve stock scope')
+  } finally {
+    resolvingScope.value = false
+  }
+}
+
+const handleQuery = async () => {
+  let symbols: string[]
+  try {
+    symbols = await resolveSymbolsForSelectedScope()
+  } catch (error) {
+    console.error('Failed to resolve stock scope:', error)
+    ElMessage.error('股票范围解析失败')
+    return
+  }
+
   const params: FilterParams = {
     data_types: [...selectedDataTypes.value],
     frequency: selectedFrequency.value,
-    symbols: stockMode.value === 'manual' ? [...selectedStocks.value] : [],
+    symbols,
+    stock_scope_key: selectedStockScope.value,
+    stock_scope_label: selectedScopeOption.value?.label || '全市场',
   }
 
   if (startDate.value) {
@@ -93,6 +180,7 @@ const handleQuery = () => {
 
 onMounted(() => {
   loadDataTypes()
+  loadStockScopes()
 })
 </script>
 
@@ -144,26 +232,19 @@ onMounted(() => {
           <span class="toggle-icon">{{ stockExpanded ? '▼' : '▶' }}</span>
         </div>
         <div v-if="stockExpanded" class="section-content">
-          <div class="radio-group">
-            <label>
-              <input type="radio" value="all" v-model="stockMode" />
-              全部股票
-            </label>
-            <label>
-              <input type="radio" value="manual" v-model="stockMode" />
-              指定股票
-            </label>
-          </div>
+          <select v-model="selectedStockScope" class="scope-select">
+            <option v-for="scope in stockScopeOptions" :key="scope.key" :value="scope.key">
+              {{ scope.label }}
+            </option>
+          </select>
+          <div class="selection-count">{{ selectedScopeSummary }}</div>
 
-          <template v-if="stockMode === 'manual'">
+          <template v-if="selectedStockScope === 'manual'">
             <textarea
               v-model="manualStocks"
               placeholder="例如: 000001, 600000&#10;每行一个或逗号分隔"
               rows="3"
             />
-            <div class="selection-count">
-              {{ selectedStocks.length > 0 ? `已选 ${selectedStocks.length} 只` : '请输入股票代码' }}
-            </div>
           </template>
         </div>
       </section>
@@ -186,9 +267,9 @@ onMounted(() => {
         <button
           @click="handleQuery"
           class="query-btn"
-          :disabled="loading || selectedDataTypes.length === 0"
+          :disabled="loading || resolvingScope || selectedDataTypes.length === 0"
         >
-          {{ loading ? '生成中...' : queryButtonText }}
+          {{ loading || resolvingScope ? '生成中...' : queryButtonText }}
         </button>
       </div>
     </div>

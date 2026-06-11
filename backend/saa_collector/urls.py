@@ -8,6 +8,8 @@ urlpatterns = [
     path('data-completeness/', views.DataCompletenessView.as_view(), name='data-completeness'),
     path('data-completeness/check/', views.DataCompletenessCheckView.as_view(), name='data-completeness-check'),
     path('data-completeness/heatmap/', views.DataCompletenessHeatmapView.as_view(), name='data-completeness-heatmap'),
+    path('data-completeness/heatmap/scopes/', views.DataCompletenessHeatmapScopesView.as_view(), name='data-completeness-heatmap-scopes'),
+    path('data-completeness/heatmap/scope-symbols/', views.DataCompletenessHeatmapScopeSymbolsView.as_view(), name='data-completeness-heatmap-scope-symbols'),
 
     path('integrity-reports/', views.DataIntegrityReportListView.as_view(), name='integrity-report-list'),
     path('integrity-reports/<int:pk>/', views.DataIntegrityReportDetailView.as_view(), name='integrity-report-detail'),

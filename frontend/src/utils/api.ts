@@ -4,7 +4,7 @@ import router from '@/router'
 
 const api = axios.create({
   baseURL: import.meta.env.BASE_URL + 'api',
-  timeout: 30000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   }
@@ -285,9 +285,32 @@ export interface HeatmapResponse {
     end: string
   }
   frequency: string
+  scope?: {
+    key: string
+    label: string
+  }
   periods: string[]
   data_types: HeatmapDataType[]
   matrix: Record<string, number[]>
+}
+
+export interface HeatmapScopeOption {
+  key: string
+  label: string
+  type: 'all' | 'index'
+  index?: string
+  latest_date?: string
+  constituent_count?: number
+}
+
+export interface HeatmapScopeSymbols {
+  key: string
+  label: string
+  type: 'all' | 'index'
+  index?: string
+  latest_date?: string
+  constituent_count: number
+  symbols: string[]
 }
 
 function generateMockHeatmapData(frequency: string): HeatmapResponse {
@@ -389,8 +412,21 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
   }
 }
 
-export const fetchCompletenessHeatmap = async (frequency: string = 'monthly'): Promise<ApiResponse<HeatmapResponse>> => {
-  const response = await api.get('/data-completeness/heatmap/', { params: { frequency } })
+export const fetchCompletenessHeatmap = async (
+  frequency: string = 'monthly',
+  scope: string = 'all'
+): Promise<ApiResponse<HeatmapResponse>> => {
+  const response = await api.get('/data-completeness/heatmap/', { params: { frequency, scope } })
+  return response.data
+}
+
+export const fetchCompletenessHeatmapScopes = async (): Promise<ApiResponse<HeatmapScopeOption[]>> => {
+  const response = await api.get('/data-completeness/heatmap/scopes/')
+  return response.data
+}
+
+export const fetchCompletenessHeatmapScopeSymbols = async (scope: string): Promise<ApiResponse<HeatmapScopeSymbols>> => {
+  const response = await api.get('/data-completeness/heatmap/scope-symbols/', { params: { scope } })
   return response.data
 }
 

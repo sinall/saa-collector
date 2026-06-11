@@ -8,6 +8,7 @@ from saa_collector.sql_migrations import (
     build_mysql_connector_config,
     discover_sql_migration_files,
     parse_sql_migration_search,
+    split_sql_statements,
     _migration_checksum,
 )
 
@@ -62,6 +63,16 @@ class SqlMigrationSearchTest(TestCase):
 
 
 class SqlMigrationApplyTest(TestCase):
+    def test_split_sql_statements_ignores_semicolons_inside_quotes(self):
+        self.assertEqual(
+            [
+                "SELECT 'a;b';",
+                'SELECT `semi;colon` FROM t;',
+                'SELECT 1',
+            ],
+            split_sql_statements("SELECT 'a;b'; SELECT `semi;colon` FROM t; SELECT 1"),
+        )
+
     def test_build_mysql_connector_config_maps_standard_database_settings(self):
         config = build_mysql_connector_config(
             {
@@ -115,8 +126,8 @@ class SqlMigrationApplyTest(TestCase):
         self.assertEqual(4, connection.cursor.call_count)
         self.assertEqual(2, first_cursor.execute.call_count)
         self.assertEqual(2, second_cursor.execute.call_count)
-        self.assertTrue(first_cursor.execute.call_args_list[0].kwargs.get('multi'))
-        self.assertTrue(second_cursor.execute.call_args_list[0].kwargs.get('multi'))
+        self.assertFalse(first_cursor.execute.call_args_list[0].kwargs)
+        self.assertFalse(second_cursor.execute.call_args_list[0].kwargs)
         self.assertIn('INSERT INTO `collector_sql_migrations`', first_cursor.execute.call_args_list[1].args[0])
         self.assertIn('INSERT INTO `collector_sql_migrations`', second_cursor.execute.call_args_list[1].args[0])
         self.assertEqual(

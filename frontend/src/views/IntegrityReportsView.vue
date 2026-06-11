@@ -117,9 +117,12 @@ const generateReportName = (params: any) => {
     'yearly': '年度'
   }
   const freqLabel = freqNames[params.frequency] || params.frequency
+  const scopeLabel = params.stock_scope_key && params.stock_scope_key !== 'all'
+    ? `${params.stock_scope_label || params.stock_scope_key} `
+    : ''
 
   const date = new Date().toISOString().split('T')[0]
-  return `${date} ${typeLabel}${freqLabel}完整性检查`
+  return `${date} ${scopeLabel}${typeLabel}${freqLabel}完整性检查`
 }
 
 const viewReport = (id: number) => {

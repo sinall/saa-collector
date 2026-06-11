@@ -22,12 +22,16 @@ class CompletenessService:
         for key, config in DATA_TYPE_CONFIG.items()
     ]
 
-    def __init__(self, stock_codes=None, date_end=None):
+    def __init__(self, stock_codes=None, index_code=None, date_end=None):
         self.stock_codes = stock_codes
+        self.index_code = index_code
         self.date_end = date_end or date.today()
         self._stock_active_ranges = None
         self._expected_stock_counts_cache = {}
         self._non_stock_counts_cache = {}
+        self._period_anchor_trade_days_cache = {}
+        self._index_constituents_cache = {}
+        self._index_period_specs_cache = {}
 
     def _load_stock_active_ranges(self, cursor):
         if self._stock_active_ranges is not None:
@@ -88,6 +92,19 @@ class CompletenessService:
         cache_key = (frequency, tuple(periods))
         if cache_key in self._expected_stock_counts_cache:
             return self._expected_stock_counts_cache[cache_key]
+
+        if self.index_code:
+            start_date, end_date = self._get_period_range(periods[0], frequency)
+            _, end_date = self._get_period_range(periods[-1], frequency)
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            result = {
+                period: len(index_constituents_by_period.get(period, set()))
+                for period in periods
+            }
+            self._expected_stock_counts_cache[cache_key] = result
+            return result
 
         active_ranges = self._load_stock_active_ranges(cursor)
 
@@ -287,6 +304,23 @@ class CompletenessService:
 
         expected_counts = self._get_expected_stock_counts(cursor, periods, frequency)
 
+        if self.index_code:
+            start_date, end_date = self._get_period_range(periods[0], frequency)
+            _, end_date = self._get_period_range(periods[-1], frequency)
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            cursor.execute(f"SELECT DISTINCT {stock_column} FROM {table_name}")
+            actual_codes = {row[0] for row in cursor.fetchall()}
+            return [
+                self._ratio_for_constituents(
+                    actual_codes,
+                    index_constituents_by_period.get(period, set()),
+                    expected_counts.get(period, 0),
+                )
+                for period in periods
+            ]
+
         stock_filter = ""
         params = []
         if self.stock_codes:
@@ -362,6 +396,29 @@ class CompletenessService:
 
     def _calculate_point_completeness(self, cursor, table_name, date_column, periods, frequency, stock_column='symbol'):
         """计算非周期性数据的完整度"""
+        if self.index_code:
+            expected_counts = self._get_expected_stock_counts(cursor, periods, frequency)
+            start_date, end_date = self._get_period_range(periods[0], frequency)
+            _, end_date = self._get_period_range(periods[-1], frequency)
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            result = []
+            for period in periods:
+                constituents = index_constituents_by_period.get(period, set())
+                expected_count = expected_counts.get(period, 0)
+                if expected_count <= 0 or not constituents:
+                    result.append(-1)
+                    continue
+                placeholders = ','.join(['%s'] * len(constituents))
+                cursor.execute(
+                    f"SELECT COUNT(DISTINCT {stock_column}) FROM {table_name} WHERE {stock_column} IN ({placeholders})",
+                    sorted(constituents),
+                )
+                actual_count = cursor.fetchone()[0] or 0
+                result.append(round(actual_count / expected_count, 2))
+            return result
+
         cursor.execute(f"SELECT COUNT(DISTINCT {stock_column}) FROM {table_name}")
         actual_count = cursor.fetchone()[0] or 0
 
@@ -379,6 +436,26 @@ class CompletenessService:
 
         start_date, end_date = self._get_period_range(periods[0], frequency)
         _, end_date = self._get_period_range(periods[-1], frequency)
+
+        if self.index_code:
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            period_specs = self._build_index_period_specs(cursor, periods, frequency, start_date, end_date)
+            counts_by_period = self._load_index_period_counts_python(
+                cursor,
+                table_name,
+                date_column,
+                stock_column,
+                period_specs,
+                index_constituents_by_period,
+                frequency,
+            )
+            return [
+                1.0 if counts_by_period.get(period, 0) > 0 else -1
+                if index_constituents_by_period.get(period, set()) else -1
+                for period in periods
+            ]
 
         stock_filter = ""
         params = []
@@ -433,10 +510,15 @@ class CompletenessService:
         start_date, end_date = self._get_period_range(periods[0], frequency)
         _, end_date = self._get_period_range(periods[-1], frequency)
 
-        period_expression = self._get_period_sql_expression("td.date", frequency)
-        period_params = []
-        if frequency not in ('quarterly', 'yearly'):
-            period_params.append(self._get_date_format(frequency))
+        anchor_trade_days = self._get_period_anchor_trade_days(cursor, periods, frequency, start_date, end_date)
+        if not anchor_trade_days:
+            return [-1] * len(periods)
+
+        period_date_values = [
+            (period, anchor_trade_days[period])
+            for period in periods
+            if period in anchor_trade_days
+        ]
 
         universe_filter = ""
         stock_params = []
@@ -451,30 +533,57 @@ class CompletenessService:
             WHERE type = 'stock'
         """
 
-        expected_by_period = self._load_trading_day_security_expected_counts(
-            cursor, periods, frequency, start_date, end_date
-        )
+        if self.index_code:
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            expected_by_period = {
+                period: len(index_constituents_by_period.get(period, set()))
+                for period in periods
+            }
+        else:
+            index_constituents_by_period = None
+            expected_by_period = self._load_trading_day_security_expected_counts(
+                cursor, periods, frequency, start_date, end_date
+            )
 
-        actual_query = f"""
-            SELECT
-                {period_expression} AS period,
-                COUNT(DISTINCT target.{stock_column}) AS actual_count
-            FROM saa_trade_days td
-            JOIN ({security_universe_sql}) universe
-              ON (universe.start_date IS NULL OR universe.start_date <= td.date)
-             AND (universe.end_date IS NULL OR universe.end_date >= td.date)
-            JOIN {table_name} target
-              ON target.{stock_column} = universe.code
-             AND target.{date_column} = td.date
-            WHERE td.date >= %s
-              AND td.date <= %s{universe_filter}
-            GROUP BY period
-        """
-        cursor.execute(actual_query, period_params + [start_date, end_date] + stock_params)
-        actual_by_period = {
-            str(row[0]): row[1] or 0
-            for row in cursor.fetchall()
-        }
+        actual_by_period = {}
+        if period_date_values:
+            if index_constituents_by_period is not None:
+                period_specs = self._build_index_period_specs(cursor, periods, frequency, start_date, end_date)
+                actual_by_period = self._load_index_anchor_date_counts_python(
+                    cursor,
+                    table_name,
+                    date_column,
+                    stock_column,
+                    period_specs,
+                    index_constituents_by_period,
+                )
+            else:
+                values_sql = ''.join(['SELECT %s AS period, %s AS anchor_date'] + [' UNION ALL SELECT %s, %s'] * (len(period_date_values) - 1))
+                values_params = []
+                for period, anchor_date in period_date_values:
+                    values_params.extend([period, anchor_date])
+
+                actual_query = f"""
+                    SELECT
+                        anchors.period,
+                        COUNT(DISTINCT target.{stock_column}) AS actual_count
+                    FROM ({values_sql}) anchors
+                    JOIN ({security_universe_sql}) universe
+                      ON (universe.start_date IS NULL OR universe.start_date <= anchors.anchor_date)
+                     AND (universe.end_date IS NULL OR universe.end_date >= anchors.anchor_date)
+                    JOIN {table_name} target
+                      ON target.{stock_column} = universe.code
+                     AND target.{date_column} = anchors.anchor_date
+                    WHERE 1 = 1{universe_filter}
+                    GROUP BY anchors.period
+                """
+                cursor.execute(actual_query, values_params + stock_params)
+                actual_by_period = {
+                    str(row[0]): row[1] or 0
+                    for row in cursor.fetchall()
+                }
 
         result = []
         for period in periods:
@@ -487,8 +596,12 @@ class CompletenessService:
 
         return result
 
-    def _load_trading_day_security_expected_counts(self, cursor, periods, frequency, start_date, end_date):
-        """计算交易日证券状态的预期数量，避免数据库执行大区间 JOIN。"""
+    def _get_period_anchor_trade_days(self, cursor, periods, frequency, start_date, end_date):
+        """返回每个展示周期最后一个交易日。"""
+        cache_key = (frequency, tuple(periods), str(start_date), str(end_date))
+        if cache_key in self._period_anchor_trade_days_cache:
+            return self._period_anchor_trade_days_cache[cache_key]
+
         cursor.execute(
             """
                 SELECT date
@@ -499,11 +612,300 @@ class CompletenessService:
             """,
             [start_date, end_date],
         )
-        trade_days = [
-            self._coerce_date(row[0])
-            for row in cursor.fetchall()
-        ]
-        if not trade_days:
+        period_set = set(periods)
+        anchors = {}
+        for row in cursor.fetchall():
+            trade_day = self._coerce_date(row[0])
+            period = self._get_period_label_for_date(trade_day, frequency)
+            if period in period_set:
+                anchors[period] = trade_day
+
+        self._period_anchor_trade_days_cache[cache_key] = anchors
+        return anchors
+
+    def _load_index_constituents_by_period(self, cursor, periods, frequency, start_date, end_date):
+        """按周期锚点交易日加载当时最新的指数成分股。"""
+        if not self.index_code:
+            return {}
+
+        cache_key = (self.index_code, frequency, tuple(periods), str(start_date), str(end_date))
+        if cache_key in self._index_constituents_cache:
+            return self._index_constituents_cache[cache_key]
+
+        anchor_trade_days = self._get_period_anchor_trade_days(cursor, periods, frequency, start_date, end_date)
+        if not anchor_trade_days:
+            self._index_constituents_cache[cache_key] = {}
+            return {}
+
+        max_anchor_date = max(anchor_trade_days.values())
+        cursor.execute(
+            """
+                SELECT DISTINCT date
+                FROM saa_index_weights
+                WHERE `index` = %s
+                  AND date <= %s
+                ORDER BY date
+            """,
+            [self.index_code, max_anchor_date],
+        )
+        index_dates = [self._coerce_date(row[0]) for row in cursor.fetchall()]
+        if not index_dates:
+            self._index_constituents_cache[cache_key] = {period: set() for period in periods}
+            return self._index_constituents_cache[cache_key]
+
+        selected_index_date_by_period = {}
+        index_date_pos = 0
+        for period in periods:
+            anchor_date = anchor_trade_days.get(period)
+            if not anchor_date:
+                continue
+            while index_date_pos + 1 < len(index_dates) and index_dates[index_date_pos + 1] <= anchor_date:
+                index_date_pos += 1
+            if index_dates[index_date_pos] <= anchor_date:
+                selected_index_date_by_period[period] = index_dates[index_date_pos]
+
+        selected_index_dates = sorted(set(selected_index_date_by_period.values()))
+        if not selected_index_dates:
+            self._index_constituents_cache[cache_key] = {period: set() for period in periods}
+            return self._index_constituents_cache[cache_key]
+
+        placeholders = ','.join(['%s'] * len(selected_index_dates))
+        cursor.execute(
+            f"""
+                SELECT date, code
+                FROM saa_index_weights
+                WHERE `index` = %s
+                  AND date IN ({placeholders})
+            """,
+            [self.index_code] + selected_index_dates,
+        )
+        constituents_by_index_date = {}
+        for index_date, code in cursor.fetchall():
+            constituents_by_index_date.setdefault(self._coerce_date(index_date), set()).add(code)
+
+        result = {}
+        for period in periods:
+            index_date = selected_index_date_by_period.get(period)
+            result[period] = set(constituents_by_index_date.get(index_date, set()))
+
+        self._index_constituents_cache[cache_key] = result
+        return result
+
+    def _build_index_period_specs(self, cursor, periods, frequency, start_date, end_date, aggregate_frequency=None):
+        """Build period metadata for batched index-scope SQL."""
+        if not self.index_code:
+            return []
+
+        cache_key = (
+            self.index_code,
+            frequency,
+            tuple(periods),
+            str(start_date),
+            str(end_date),
+            aggregate_frequency,
+        )
+        if cache_key in self._index_period_specs_cache:
+            return self._index_period_specs_cache[cache_key]
+
+        anchor_trade_days = self._get_period_anchor_trade_days(cursor, periods, frequency, start_date, end_date)
+        if not anchor_trade_days:
+            self._index_period_specs_cache[cache_key] = []
+            return []
+
+        max_anchor_date = max(anchor_trade_days.values())
+        cursor.execute(
+            """
+                SELECT DISTINCT date
+                FROM saa_index_weights
+                WHERE `index` = %s
+                  AND date <= %s
+                ORDER BY date
+            """,
+            [self.index_code, max_anchor_date],
+        )
+        index_dates = [self._coerce_date(row[0]) for row in cursor.fetchall()]
+        if not index_dates:
+            self._index_period_specs_cache[cache_key] = []
+            return []
+
+        specs = []
+        index_date_pos = 0
+        for period in periods:
+            anchor_date = anchor_trade_days.get(period)
+            if not anchor_date:
+                continue
+            while index_date_pos + 1 < len(index_dates) and index_dates[index_date_pos + 1] <= anchor_date:
+                index_date_pos += 1
+            index_date = index_dates[index_date_pos]
+            if index_date > anchor_date:
+                continue
+            if aggregate_frequency:
+                period_start, period_end = self._get_aggregate_date_range(
+                    self._get_aggregate_key(period, aggregate_frequency),
+                    aggregate_frequency,
+                )
+            else:
+                period_start, period_end = self._get_period_range(period, frequency)
+            specs.append((period, period_start, period_end, anchor_date, index_date))
+        self._index_period_specs_cache[cache_key] = specs
+        return specs
+
+    def _period_specs_values_sql(self, period_specs, include_range=True, include_anchor=False):
+        """Return a derived-table SQL fragment and params for small period specs."""
+        if not period_specs:
+            return "", []
+
+        selects = []
+        params = []
+        for period, period_start, period_end, anchor_date, index_date in period_specs:
+            columns = ["%s AS period"]
+            params.append(period)
+            if include_range:
+                columns.extend(["%s AS period_start", "%s AS period_end"])
+                params.extend([period_start, period_end])
+            if include_anchor:
+                columns.append("%s AS anchor_date")
+                params.append(anchor_date)
+            columns.append("%s AS index_date")
+            params.append(index_date)
+            selects.append("SELECT " + ", ".join(columns))
+
+        return " UNION ALL ".join(selects), params
+
+    def _load_index_period_counts_python(
+        self,
+        cursor,
+        table_name,
+        date_column,
+        stock_column,
+        period_specs,
+        index_constituents_by_period,
+        frequency,
+        aggregate_frequency=None,
+    ):
+        """Count index-scoped rows in Python to avoid slow large derived-table joins."""
+        if not period_specs:
+            return {}
+
+        if table_name == 'saa_index_weights':
+            return {
+                period: len(index_constituents_by_period.get(period, set()))
+                if period_start <= index_date <= period_end else 0
+                for period, period_start, period_end, _, index_date in period_specs
+            }
+
+        period_by_label = {period: period for period, *_ in period_specs}
+        period_codes = {
+            period: set()
+            for period in period_by_label
+            if index_constituents_by_period.get(period, set())
+        }
+        if not period_codes:
+            return {}
+
+        union_codes = sorted(set().union(*(index_constituents_by_period[period] for period in period_codes)))
+        if not union_codes:
+            return {}
+
+        min_date = min(period_start for _, period_start, _, _, _ in period_specs)
+        max_date = max(period_end for _, _, period_end, _, _ in period_specs)
+        placeholders = ','.join(['%s'] * len(union_codes))
+        cursor.execute(
+            f"""
+                SELECT DISTINCT {stock_column}, {date_column}
+                FROM {table_name}
+                WHERE {date_column} >= %s
+                  AND {date_column} <= %s
+                  AND {stock_column} IN ({placeholders})
+            """,
+            [min_date, max_date] + union_codes,
+        )
+        if aggregate_frequency:
+            codes_by_aggregate = {}
+            for code, value_date in cursor.fetchall():
+                value_date = self._coerce_date(value_date)
+                aggregate_key = self._get_aggregate_key(
+                    self._get_period_label_for_date(value_date, frequency),
+                    aggregate_frequency,
+                )
+                codes_by_aggregate.setdefault(aggregate_key, set()).add(code)
+
+            return {
+                period: len(codes_by_aggregate.get(self._get_aggregate_key(period, aggregate_frequency), set()).intersection(
+                    index_constituents_by_period.get(period, set())
+                ))
+                for period in period_codes
+            }
+
+        codes_by_period = {}
+        for code, value_date in cursor.fetchall():
+            period = self._get_period_label_for_date(self._coerce_date(value_date), frequency)
+            if period in period_codes:
+                codes_by_period.setdefault(period, set()).add(code)
+
+        return {
+            period: len(codes_by_period.get(period, set()).intersection(index_constituents_by_period.get(period, set())))
+            for period in period_codes
+        }
+
+    def _load_index_anchor_date_counts_python(
+        self,
+        cursor,
+        table_name,
+        date_column,
+        stock_column,
+        period_specs,
+        index_constituents_by_period,
+    ):
+        """Count index-scoped rows on each period anchor date."""
+        if not period_specs:
+            return {}
+
+        periods_by_anchor = {}
+        for period, _, _, anchor_date, _ in period_specs:
+            if index_constituents_by_period.get(period, set()):
+                periods_by_anchor.setdefault(anchor_date, []).append(period)
+        if not periods_by_anchor:
+            return {}
+
+        union_codes = sorted(set().union(*(index_constituents_by_period[period] for periods in periods_by_anchor.values() for period in periods)))
+        if not union_codes:
+            return {}
+
+        date_placeholders = ','.join(['%s'] * len(periods_by_anchor))
+        code_placeholders = ','.join(['%s'] * len(union_codes))
+        anchor_dates = sorted(periods_by_anchor)
+        cursor.execute(
+            f"""
+                SELECT DISTINCT {stock_column}, {date_column}
+                FROM {table_name}
+                WHERE {date_column} IN ({date_placeholders})
+                  AND {stock_column} IN ({code_placeholders})
+            """,
+            anchor_dates + union_codes,
+        )
+
+        codes_by_anchor = {}
+        for code, value_date in cursor.fetchall():
+            codes_by_anchor.setdefault(self._coerce_date(value_date), set()).add(code)
+
+        counts = {}
+        for anchor_date, anchor_periods in periods_by_anchor.items():
+            actual_codes = codes_by_anchor.get(anchor_date, set())
+            for period in anchor_periods:
+                counts[period] = len(actual_codes.intersection(index_constituents_by_period.get(period, set())))
+        return counts
+
+    def _ratio_for_constituents(self, actual_codes, constituents, expected_count):
+        if expected_count <= 0 or not constituents:
+            return -1
+        actual_count = len(actual_codes.intersection(constituents))
+        return min(1.0, round(actual_count / expected_count, 2))
+
+    def _load_trading_day_security_expected_counts(self, cursor, periods, frequency, start_date, end_date):
+        """计算交易日证券状态的预期数量，避免数据库执行大区间 JOIN。"""
+        anchor_trade_days = self._get_period_anchor_trade_days(cursor, periods, frequency, start_date, end_date)
+        if not anchor_trade_days:
             return {}
 
         stock_filter = ""
@@ -538,7 +940,7 @@ class CompletenessService:
         start_index = 0
         end_index = 0
 
-        for trade_day in trade_days:
+        for period, trade_day in sorted(anchor_trade_days.items(), key=lambda item: item[1]):
             while start_index < len(starts) and starts[start_index] <= trade_day:
                 active_count += 1
                 start_index += 1
@@ -546,7 +948,6 @@ class CompletenessService:
                 active_count -= 1
                 end_index += 1
 
-            period = self._get_period_label_for_date(trade_day, frequency)
             if period in period_set:
                 expected_by_period[period] = active_count
 
@@ -601,6 +1002,31 @@ class CompletenessService:
         applicable_periods = [periods[i] for i in applicable_indices]
         start_date, end_date = self._get_period_range(applicable_periods[0], frequency)
         _, end_date = self._get_period_range(applicable_periods[-1], frequency)
+
+        if self.index_code and table_name != 'saa_trade_days':
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            period_specs = self._build_index_period_specs(cursor, applicable_periods, frequency, start_date, end_date)
+            period_counts = self._load_index_period_counts_python(
+                cursor,
+                table_name,
+                date_column,
+                stock_column,
+                period_specs,
+                index_constituents_by_period,
+                frequency,
+            )
+            for i in applicable_indices:
+                period = periods[i]
+                constituents = index_constituents_by_period.get(period, set())
+                expected_count = expected_counts.get(period, 0)
+                if expected_count <= 0 or not constituents:
+                    result[i] = -1
+                    continue
+                actual_count = period_counts.get(period, 0)
+                result[i] = round(actual_count / expected_count, 2)
+            return result
 
         date_format = self._get_date_format(frequency)
 
@@ -658,6 +1084,44 @@ class CompletenessService:
 
         start_date, end_date = self._get_period_range(periods[0], frequency)
         _, end_date = self._get_period_range(periods[-1], frequency)
+
+        if self.index_code:
+            index_constituents_by_period = self._load_index_constituents_by_period(
+                cursor, periods, frequency, start_date, end_date
+            )
+            period_specs = self._build_index_period_specs(
+                cursor,
+                periods,
+                frequency,
+                start_date,
+                end_date,
+                aggregate_frequency=data_frequency,
+            )
+            period_counts = self._load_index_period_counts_python(
+                cursor,
+                table_name,
+                date_column,
+                stock_column,
+                period_specs,
+                index_constituents_by_period,
+                frequency,
+                aggregate_frequency=data_frequency,
+            )
+            result = [0.0] * len(periods)
+            for agg_key, indices in aggregate_keys.items():
+                for i in indices:
+                    period = periods[i]
+                    if not self._is_period_applicable(period, frequency, data_frequency):
+                        result[i] = -1
+                        continue
+                    constituents = index_constituents_by_period.get(period, set())
+                    expected_count = expected_counts.get(period, 0)
+                    if expected_count <= 0 or not constituents:
+                        result[i] = -1
+                        continue
+                    actual_count = period_counts.get(period, 0)
+                    result[i] = round(actual_count / expected_count, 2)
+            return result
 
         stock_filter = ""
         params = []
@@ -744,6 +1208,21 @@ class CompletenessService:
             quarter = (month - 1) // 3 + 1
             return f"{year}-Q{quarter}"
         return period
+
+    def _get_aggregate_date_range(self, aggregate_key, data_frequency):
+        if data_frequency == 'yearly':
+            year = int(aggregate_key)
+            return date(year, 1, 1), date(year, 12, 31)
+        if data_frequency == 'quarterly':
+            year = int(aggregate_key[:4])
+            quarter = int(aggregate_key[6])
+            start_month = (quarter - 1) * 3 + 1
+            end_month = quarter * 3
+            _, end_day = monthrange(year, end_month)
+            return date(year, start_month, 1), date(year, end_month, end_day)
+        year, month = int(aggregate_key[:4]), int(aggregate_key[5:7])
+        _, end_day = monthrange(year, month)
+        return date(year, month, 1), date(year, month, end_day)
 
     def _get_period_key(self, period, frequency):
         """获取周期键"""

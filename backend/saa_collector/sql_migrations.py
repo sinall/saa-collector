@@ -90,6 +90,43 @@ def _migration_checksum(sql_text: str) -> str:
     return hashlib.sha256(sql_text.encode('utf-8')).hexdigest()
 
 
+def split_sql_statements(sql_text: str) -> list[str]:
+    statements: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    escape = False
+
+    for char in sql_text:
+        current.append(char)
+
+        if quote:
+            if escape:
+                escape = False
+                continue
+            if char == '\\':
+                escape = True
+                continue
+            if char == quote:
+                quote = None
+            continue
+
+        if char in ("'", '"', '`'):
+            quote = char
+            continue
+
+        if char == ';':
+            statement = ''.join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+
+    tail = ''.join(current).strip()
+    if tail:
+        statements.append(tail)
+
+    return statements
+
+
 def ensure_sql_migration_history_table(connection) -> None:
     cursor = connection.cursor()
     try:
@@ -146,10 +183,8 @@ def apply_sql_migrations(
             print(f"__sql_migration_start__ file={migration_path.name}")
             cursor = connection.cursor()
             try:
-                result = cursor.execute(sql_text, multi=True)
-                if result is not None:
-                    for _ in result:
-                        pass
+                for statement in split_sql_statements(sql_text):
+                    cursor.execute(statement)
                 cursor.execute(
                     f"""
                     INSERT INTO `{SQL_MIGRATION_HISTORY_TABLE}` (`filename`, `checksum`)

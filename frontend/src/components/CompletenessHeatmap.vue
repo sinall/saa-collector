@@ -2,18 +2,32 @@
   <div class="heatmap-container">
     <div class="heatmap-header">
       <span class="title">数据完整度热力图</span>
-      <el-select
-        v-if="!hideFrequencySelector"
-        v-model="selectedFrequency"
-        placeholder="选择频度"
-        style="width: 100px"
-        @change="onFrequencyChange"
-      >
-        <el-option label="日度" value="daily" />
-        <el-option label="月度" value="monthly" />
-        <el-option label="季度" value="quarterly" />
-        <el-option label="年度" value="yearly" />
-      </el-select>
+      <div v-if="!hideFrequencySelector" class="heatmap-controls">
+        <el-select
+          v-model="selectedScope"
+          placeholder="选择范围"
+          style="width: 130px"
+          @change="onScopeChange"
+        >
+          <el-option
+            v-for="scope in scopeOptions"
+            :key="scope.key"
+            :label="scope.label"
+            :value="scope.key"
+          />
+        </el-select>
+        <el-select
+          v-model="selectedFrequency"
+          placeholder="选择频度"
+          style="width: 100px"
+          @change="onFrequencyChange"
+        >
+          <el-option label="日度" value="daily" />
+          <el-option label="月度" value="monthly" />
+          <el-option label="季度" value="quarterly" />
+          <el-option label="年度" value="yearly" />
+        </el-select>
+      </div>
     </div>
 
     <div v-loading="loading" class="heatmap-chart" ref="chartRef"></div>
@@ -36,7 +50,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ECharts, EChartsOption } from 'echarts'
-import { fetchCompletenessHeatmap, type HeatmapResponse, type IntegrityReportHeatmapData } from '@/utils/api'
+import {
+  fetchCompletenessHeatmap,
+  fetchCompletenessHeatmapScopes,
+  type HeatmapResponse,
+  type HeatmapScopeOption,
+  type IntegrityReportHeatmapData
+} from '@/utils/api'
 
 type ExternalHeatmapData = HeatmapResponse | IntegrityReportHeatmapData
 
@@ -60,7 +80,38 @@ const props = withDefaults(defineProps<{
 })
 
 const chartRef = ref<HTMLElement>()
-const selectedFrequency = ref('monthly')
+const DEFAULT_FREQUENCY = 'monthly'
+const DEFAULT_SCOPE = 'all'
+const HEATMAP_FREQUENCY_STORAGE_KEY = 'collector:heatmap:frequency'
+const HEATMAP_SCOPE_STORAGE_KEY = 'collector:heatmap:scope'
+const VALID_FREQUENCIES = new Set(['daily', 'monthly', 'quarterly', 'yearly'])
+
+const readStoredValue = (key: string, fallback: string): string => {
+  try {
+    return window.localStorage.getItem(key) || fallback
+  } catch {
+    return fallback
+  }
+}
+
+const writeStoredValue = (key: string, value: string) => {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // Ignore unavailable localStorage, for example private browsing restrictions.
+  }
+}
+
+const readStoredFrequency = (): string => {
+  const frequency = readStoredValue(HEATMAP_FREQUENCY_STORAGE_KEY, DEFAULT_FREQUENCY)
+  return VALID_FREQUENCIES.has(frequency) ? frequency : DEFAULT_FREQUENCY
+}
+
+const selectedFrequency = ref(readStoredFrequency())
+const selectedScope = ref(readStoredValue(HEATMAP_SCOPE_STORAGE_KEY, DEFAULT_SCOPE))
+const scopeOptions = ref<HeatmapScopeOption[]>([
+  { key: DEFAULT_SCOPE, label: '全市场', type: 'all' }
+])
 const loading = ref(false)
 const heatmapData = ref<HeatmapResponse | null>(null)
 const allPeriods = ref<string[]>([])
@@ -160,7 +211,7 @@ const loadHeatmapData = async () => {
 
   loading.value = true
   try {
-    const response = await fetchCompletenessHeatmap(selectedFrequency.value)
+    const response = await fetchCompletenessHeatmap(selectedFrequency.value, selectedScope.value)
     if (response.success && response.data) {
       initFromData(response.data, selectedFrequency.value)
     }
@@ -168,6 +219,25 @@ const loadHeatmapData = async () => {
     console.error('Failed to load heatmap data:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const loadHeatmapScopes = async () => {
+  if (props.externalData || props.hideFrequencySelector) {
+    return
+  }
+
+  try {
+    const response = await fetchCompletenessHeatmapScopes()
+    if (response.success && response.data && response.data.length > 0) {
+      scopeOptions.value = response.data
+      if (!scopeOptions.value.some(scope => scope.key === selectedScope.value)) {
+        selectedScope.value = DEFAULT_SCOPE
+        writeStoredValue(HEATMAP_SCOPE_STORAGE_KEY, DEFAULT_SCOPE)
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load heatmap scopes:', error)
   }
 }
 
@@ -511,6 +581,12 @@ const renderChart = async () => {
 }
 
 const onFrequencyChange = () => {
+  writeStoredValue(HEATMAP_FREQUENCY_STORAGE_KEY, selectedFrequency.value)
+  loadHeatmapData()
+}
+
+const onScopeChange = () => {
+  writeStoredValue(HEATMAP_SCOPE_STORAGE_KEY, selectedScope.value)
   loadHeatmapData()
 }
 
@@ -538,7 +614,8 @@ const updateSliderAlignment = () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadHeatmapScopes()
   loadHeatmapData()
   window.addEventListener('resize', handleResize)
 })
@@ -583,6 +660,12 @@ watch(() => props.viewFrequency, (newFreq) => {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
+}
+
+.heatmap-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .heatmap-chart {

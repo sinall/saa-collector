@@ -2663,21 +2663,33 @@ class CollectPlanResetView(APIView):
 class DataCompletenessHeatmapView(APIView):
     permission_classes = [IsAuthenticated]
 
+    INDEX_SCOPE_LABELS = {
+        '000906': '中证800',
+    }
+
     def get(self, request):
         from .services.completeness_service import CompletenessService
         from .constants import DATA_TYPE_CONFIG
 
         frequency = request.query_params.get('frequency', 'monthly')
-        cache_key = f"collector:heatmap:{frequency}:{timezone.localdate().isoformat()}"
+        scope_key = request.query_params.get('scope', 'all')
+        scope = self._resolve_scope(scope_key)
+        if scope is None:
+            return Response({'success': False, 'error': 'Invalid scope'}, status=400)
+
+        cache_key = f"collector:heatmap:{frequency}:{scope['key']}:{timezone.localdate().isoformat()}"
         cached_result = cache.get(cache_key)
         if cached_result is not None:
-            logger.info("heatmap request cache_hit frequency=%s", frequency)
+            logger.info("heatmap request cache_hit frequency=%s scope=%s", frequency, scope['key'])
             return Response({
                 'success': True,
                 'data': cached_result
             })
 
-        service = CompletenessService()
+        service = CompletenessService(
+            stock_codes=scope['stock_codes'],
+            index_code=scope['index_code'],
+        )
         periods = service.generate_periods(frequency)
 
         if not periods:
@@ -2686,17 +2698,23 @@ class DataCompletenessHeatmapView(APIView):
         data_types = [key for key in DATA_TYPE_CONFIG.keys() if is_data_type_visible(key, 'dashboard')]
         started_at = time.monotonic()
         logger.info(
-            "heatmap request start frequency=%s periods=%s data_types=%s",
+            "heatmap request start frequency=%s scope=%s periods=%s data_types=%s",
             frequency,
+            scope['key'],
             len(periods),
             len(data_types),
         )
         result = service.calculate_all(data_types, periods, frequency)
+        result['scope'] = {
+            'key': scope['key'],
+            'label': scope['label'],
+        }
         cache.set(cache_key, result, timeout=300)
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         logger.info(
-            "heatmap request done frequency=%s periods=%s data_types=%s elapsed_ms=%s",
+            "heatmap request done frequency=%s scope=%s periods=%s data_types=%s elapsed_ms=%s",
             frequency,
+            scope['key'],
             len(periods),
             len(data_types),
             elapsed_ms,
@@ -2705,6 +2723,158 @@ class DataCompletenessHeatmapView(APIView):
         return Response({
             'success': True,
             'data': result
+        })
+
+    def _resolve_scope(self, scope_key):
+        if scope_key in (None, '', 'all'):
+            return {
+                'key': 'all',
+                'label': '全市场',
+                'stock_codes': None,
+                'index_code': None,
+            }
+
+        if not scope_key.startswith('index:'):
+            return None
+
+        index_code = scope_key.split(':', 1)[1].strip()
+        if not index_code:
+            return None
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                    SELECT COUNT(DISTINCT code)
+                    FROM saa_index_weights
+                    WHERE `index` = %s
+                      AND date = (
+                          SELECT MAX(date)
+                          FROM saa_index_weights
+                          WHERE `index` = %s
+                      )
+                    ORDER BY code
+                """,
+                [index_code, index_code],
+            )
+            row = cursor.fetchone()
+            constituent_count = row[0] if row else 0
+
+        if not constituent_count:
+            return None
+
+        label = self.INDEX_SCOPE_LABELS.get(index_code, index_code)
+        return {
+            'key': f'index:{index_code}',
+            'label': label,
+            'stock_codes': None,
+            'index_code': index_code,
+        }
+
+
+class DataCompletenessHeatmapScopesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        scopes = [
+            {
+                'key': 'all',
+                'label': '全市场',
+                'type': 'all',
+            }
+        ]
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                    SELECT w.`index`, latest.max_date, COUNT(DISTINCT w.code) AS constituent_count
+                    FROM saa_index_weights w
+                    JOIN (
+                        SELECT `index`, MAX(date) AS max_date
+                        FROM saa_index_weights
+                        GROUP BY `index`
+                    ) latest
+                      ON latest.`index` = w.`index`
+                     AND latest.max_date = w.date
+                    GROUP BY w.`index`, latest.max_date
+                    ORDER BY w.`index`
+                """
+            )
+            rows = cursor.fetchall()
+
+        for index_code, latest_date, constituent_count in rows:
+            scopes.append({
+                'key': f'index:{index_code}',
+                'label': DataCompletenessHeatmapView.INDEX_SCOPE_LABELS.get(index_code, index_code),
+                'type': 'index',
+                'index': index_code,
+                'latest_date': latest_date.isoformat() if hasattr(latest_date, 'isoformat') else latest_date,
+                'constituent_count': constituent_count,
+            })
+
+        return Response({
+            'success': True,
+            'data': scopes,
+        })
+
+
+class DataCompletenessHeatmapScopeSymbolsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        scope_key = request.query_params.get('scope', 'all')
+        if scope_key in (None, '', 'all'):
+            return Response({
+                'success': True,
+                'data': {
+                    'key': 'all',
+                    'label': '全市场',
+                    'type': 'all',
+                    'constituent_count': 0,
+                    'symbols': [],
+                },
+            })
+
+        if not scope_key.startswith('index:'):
+            return Response({'success': False, 'error': 'Invalid scope'}, status=400)
+
+        index_code = scope_key.split(':', 1)[1].strip()
+        if not index_code:
+            return Response({'success': False, 'error': 'Invalid scope'}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                    SELECT DISTINCT w.code, latest.max_date
+                    FROM saa_index_weights w
+                    JOIN (
+                        SELECT MAX(date) AS max_date
+                        FROM saa_index_weights
+                        WHERE `index` = %s
+                    ) latest
+                      ON latest.max_date = w.date
+                    WHERE w.`index` = %s
+                    ORDER BY w.code
+                """,
+                [index_code, index_code],
+            )
+            rows = cursor.fetchall()
+
+        if not rows:
+            return Response({'success': False, 'error': 'Invalid scope'}, status=400)
+
+        latest_date = rows[0][1]
+        symbols = [row[0] for row in rows]
+        return Response({
+            'success': True,
+            'data': {
+                'key': f'index:{index_code}',
+                'label': DataCompletenessHeatmapView.INDEX_SCOPE_LABELS.get(index_code, index_code),
+                'type': 'index',
+                'index': index_code,
+                'latest_date': latest_date.isoformat() if hasattr(latest_date, 'isoformat') else latest_date,
+                'constituent_count': len(symbols),
+                'symbols': symbols,
+            },
         })
 
 
