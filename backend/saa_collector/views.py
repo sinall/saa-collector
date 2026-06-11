@@ -1,10 +1,12 @@
 import json
 import logging
 import threading
+import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from django.db import connection, transaction
 from django.views.decorators.csrf import csrf_exempt
@@ -2666,6 +2668,14 @@ class DataCompletenessHeatmapView(APIView):
         from .constants import DATA_TYPE_CONFIG
 
         frequency = request.query_params.get('frequency', 'monthly')
+        cache_key = f"collector:heatmap:{frequency}:{timezone.localdate().isoformat()}"
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            logger.info("heatmap request cache_hit frequency=%s", frequency)
+            return Response({
+                'success': True,
+                'data': cached_result
+            })
 
         service = CompletenessService()
         periods = service.generate_periods(frequency)
@@ -2674,7 +2684,23 @@ class DataCompletenessHeatmapView(APIView):
             return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
 
         data_types = [key for key in DATA_TYPE_CONFIG.keys() if is_data_type_visible(key, 'dashboard')]
+        started_at = time.monotonic()
+        logger.info(
+            "heatmap request start frequency=%s periods=%s data_types=%s",
+            frequency,
+            len(periods),
+            len(data_types),
+        )
         result = service.calculate_all(data_types, periods, frequency)
+        cache.set(cache_key, result, timeout=300)
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        logger.info(
+            "heatmap request done frequency=%s periods=%s data_types=%s elapsed_ms=%s",
+            frequency,
+            len(periods),
+            len(data_types),
+            elapsed_ms,
+        )
 
         return Response({
             'success': True,

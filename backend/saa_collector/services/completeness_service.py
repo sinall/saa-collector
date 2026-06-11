@@ -3,11 +3,15 @@
 
 提供统一的完整度计算逻辑，供仪表盘热力图和完整性报告热力图使用。
 """
-from datetime import date, timedelta
+import logging
+import time
+from datetime import date, datetime, timedelta
 from django.db import connection
 from calendar import monthrange
 
 from ..constants import DATA_TYPE_CONFIG, EARLIEST_YEAR
+
+logger = logging.getLogger(__name__)
 
 
 class CompletenessService:
@@ -22,6 +26,7 @@ class CompletenessService:
         self.stock_codes = stock_codes
         self.date_end = date_end or date.today()
         self._stock_active_ranges = None
+        self._expected_stock_counts_cache = {}
         self._non_stock_counts_cache = {}
 
     def _load_stock_active_ranges(self, cursor):
@@ -80,6 +85,10 @@ class CompletenessService:
         Returns:
             dict: {period: expected_count}
         """
+        cache_key = (frequency, tuple(periods))
+        if cache_key in self._expected_stock_counts_cache:
+            return self._expected_stock_counts_cache[cache_key]
+
         active_ranges = self._load_stock_active_ranges(cursor)
 
         result = {}
@@ -92,6 +101,7 @@ class CompletenessService:
             )
             result[period] = max(count, 1)
 
+        self._expected_stock_counts_cache[cache_key] = result
         return result
 
     def calculate_all(self, data_types, periods, frequency):
@@ -117,6 +127,7 @@ class CompletenessService:
         matrix = {}
         with connection.cursor() as cursor:
             for key, config in data_type_configs:
+                started_at = time.monotonic()
                 label = config['label']
                 table_name = config['table']
                 date_column = config['date_column']
@@ -125,40 +136,71 @@ class CompletenessService:
                 stock_level = config.get('stock_level', True)
                 completeness_model = config.get('completeness_model')
 
-                if date_column is None:
-                    if completeness_model == 'snapshot_security':
-                        matrix[key] = self._calculate_snapshot_security_completeness(
-                            cursor, table_name, periods, frequency, stock_column
-                        )
-                    else:
-                        matrix[key] = [1.0] * len(periods)
-                    continue
-
-                if completeness_model == 'event_security':
-                    matrix[key] = self._calculate_event_security_completeness(
-                        cursor, table_name, date_column, periods, frequency, stock_column
-                    )
-                    continue
-
-                if completeness_model == 'trading_day_security':
-                    matrix[key] = self._calculate_trading_day_security_completeness(
-                        cursor, config, periods, frequency
-                    )
-                    continue
-
-                if not stock_level:
-                    matrix[key] = self._calculate_non_stock_completeness(cursor, table_name, date_column, periods, frequency)
-                    continue
-
-                if data_frequency is None:
-                    matrix[key] = self._calculate_point_completeness(cursor, table_name, date_column, periods, frequency, stock_column)
-                    continue
+                logger.info(
+                    "heatmap data_type start key=%s label=%s table=%s frequency=%s periods=%s "
+                    "data_frequency=%s completeness_model=%s stock_level=%s",
+                    key,
+                    label,
+                    table_name,
+                    frequency,
+                    len(periods),
+                    data_frequency,
+                    completeness_model,
+                    stock_level,
+                )
 
                 try:
-                    matrix[key] = self._calculate_completeness(
-                        cursor, table_name, date_column, periods, frequency, data_frequency, stock_column
+                    if date_column is None:
+                        if completeness_model == 'snapshot_security':
+                            matrix[key] = self._calculate_snapshot_security_completeness(
+                                cursor, table_name, periods, frequency, stock_column
+                            )
+                        else:
+                            matrix[key] = [1.0] * len(periods)
+                        continue
+
+                    if completeness_model == 'event_security':
+                        matrix[key] = self._calculate_event_security_completeness(
+                            cursor, table_name, date_column, periods, frequency, stock_column
+                        )
+                        continue
+
+                    if completeness_model == 'trading_day_security':
+                        matrix[key] = self._calculate_trading_day_security_completeness(
+                            cursor, config, periods, frequency
+                        )
+                        continue
+
+                    if not stock_level:
+                        matrix[key] = self._calculate_non_stock_completeness(cursor, table_name, date_column, periods, frequency)
+                        continue
+
+                    if data_frequency is None:
+                        matrix[key] = self._calculate_point_completeness(cursor, table_name, date_column, periods, frequency, stock_column)
+                        continue
+
+                    try:
+                        matrix[key] = self._calculate_completeness(
+                            cursor, table_name, date_column, periods, frequency, data_frequency, stock_column
+                        )
+                    except Exception:
+                        logger.exception("heatmap data_type failed key=%s table=%s", key, table_name)
+                        matrix[key] = [0.0] * len(periods)
+                finally:
+                    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                    values = matrix.get(key, [])
+                    logger.info(
+                        "heatmap data_type done key=%s table=%s frequency=%s periods=%s "
+                        "values=%s elapsed_ms=%s",
+                        key,
+                        table_name,
+                        frequency,
+                        len(periods),
+                        len(values),
+                        elapsed_ms,
                     )
-                except Exception as e:
+
+                if key not in matrix:
                     matrix[key] = [0.0] * len(periods)
 
         start_date = periods[0] if periods else ''
@@ -409,28 +451,14 @@ class CompletenessService:
             WHERE type = 'stock'
         """
 
-        expected_query = f"""
-            SELECT
-                {period_expression} AS period,
-                COUNT(*) AS expected_count
-            FROM saa_trade_days td
-            JOIN ({security_universe_sql}) universe
-              ON (universe.start_date IS NULL OR universe.start_date <= td.date)
-             AND (universe.end_date IS NULL OR universe.end_date >= td.date)
-            WHERE td.date >= %s
-              AND td.date <= %s{universe_filter}
-            GROUP BY period
-        """
-        cursor.execute(expected_query, period_params + [start_date, end_date] + stock_params)
-        expected_by_period = {
-            str(row[0]): row[1] or 0
-            for row in cursor.fetchall()
-        }
+        expected_by_period = self._load_trading_day_security_expected_counts(
+            cursor, periods, frequency, start_date, end_date
+        )
 
         actual_query = f"""
             SELECT
                 {period_expression} AS period,
-                COUNT(*) AS actual_count
+                COUNT(DISTINCT target.{stock_column}) AS actual_count
             FROM saa_trade_days td
             JOIN ({security_universe_sql}) universe
               ON (universe.start_date IS NULL OR universe.start_date <= td.date)
@@ -458,6 +486,91 @@ class CompletenessService:
                 result.append(round(actual_count / expected_count, 2))
 
         return result
+
+    def _load_trading_day_security_expected_counts(self, cursor, periods, frequency, start_date, end_date):
+        """计算交易日证券状态的预期数量，避免数据库执行大区间 JOIN。"""
+        cursor.execute(
+            """
+                SELECT date
+                FROM saa_trade_days
+                WHERE date >= %s
+                  AND date <= %s
+                ORDER BY date
+            """,
+            [start_date, end_date],
+        )
+        trade_days = [
+            self._coerce_date(row[0])
+            for row in cursor.fetchall()
+        ]
+        if not trade_days:
+            return {}
+
+        stock_filter = ""
+        params = [end_date, start_date]
+        if self.stock_codes:
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            stock_filter = f" AND code IN ({placeholders})"
+            params.extend(self.stock_codes)
+
+        cursor.execute(
+            f"""
+                SELECT code, start_date, end_date
+                FROM saa_securities
+                WHERE type = 'stock'
+                  AND (start_date IS NULL OR start_date <= %s)
+                  AND (end_date IS NULL OR end_date >= %s){stock_filter}
+            """,
+            params,
+        )
+        starts = []
+        ends = []
+        for _, security_start, security_end in cursor.fetchall():
+            starts.append(self._coerce_date(security_start, date.min))
+            ends.append(self._coerce_date(security_end, date.max))
+
+        starts.sort()
+        ends.sort()
+
+        period_set = set(periods)
+        expected_by_period = {period: 0 for period in periods}
+        active_count = 0
+        start_index = 0
+        end_index = 0
+
+        for trade_day in trade_days:
+            while start_index < len(starts) and starts[start_index] <= trade_day:
+                active_count += 1
+                start_index += 1
+            while end_index < len(ends) and ends[end_index] < trade_day:
+                active_count -= 1
+                end_index += 1
+
+            period = self._get_period_label_for_date(trade_day, frequency)
+            if period in period_set:
+                expected_by_period[period] = active_count
+
+        return expected_by_period
+
+    def _coerce_date(self, value, default=None):
+        if value is None:
+            return default
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if hasattr(value, 'date'):
+            return value.date()
+        return date.fromisoformat(str(value)[:10])
+
+    def _get_period_label_for_date(self, value, frequency):
+        if frequency == 'daily':
+            return value.strftime('%Y-%m-%d')
+        if frequency == 'quarterly':
+            return f"{value.year}-Q{((value.month - 1) // 3) + 1}"
+        if frequency == 'yearly':
+            return str(value.year)
+        return value.strftime('%Y-%m')
 
     def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency, stock_column='symbol'):
         """计算完整度（支持聚合）"""
