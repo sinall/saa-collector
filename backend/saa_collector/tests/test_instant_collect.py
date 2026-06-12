@@ -33,6 +33,24 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(len(response.data['data']['jobs']), 1)
         self.assertEqual(response.data['data']['jobs'][0]['data_type'], 'quote')
 
+    def test_create_plan_job_persists_skip_existing(self):
+        response = self.client.post('/api/collect-plans/', {
+            'name': '跳过已有数据计划',
+            'execution_mode': 'PARALLEL',
+            'jobs': [{
+                'data_type': 'historical_quote',
+                'symbols': ['000001', '000002'],
+                'start_date': '2024-01-01',
+                'end_date': '2024-12-31',
+                'skip_existing': True,
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        job_config = response.data['data']['jobs'][0]['config']
+        self.assertTrue(job_config['params']['skip_existing'])
+        self.assertTrue(CollectJob.objects.get().config['params']['skip_existing'])
+
     def test_create_plan_without_jobs(self):
         """Test creating a plan without jobs (backward compatibility)"""
         response = self.client.post('/api/collect-plans/', {
@@ -89,6 +107,27 @@ class InstantCollectAPITest(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.config['params']['start_date'], '2024-01-01')
         self.assertEqual(job.config['params']['end_date'], '2024-12-31')
+
+    def test_update_pending_plan_persists_skip_existing(self):
+        plan = CollectPlan.objects.create(name='跳过已有数据编辑测试')
+        job = CollectJob.objects.create(
+            plan=plan,
+            data_type='historical_quote',
+            config={'symbols': ['000001'], 'params': {'skip_existing': False}}
+        )
+
+        response = self.client.patch(f'/api/collect-plans/{plan.id}/', {
+            'jobs': [{
+                'id': job.id,
+                'data_type': 'historical_quote',
+                'symbols': ['000001'],
+                'skip_existing': True,
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        job.refresh_from_db()
+        self.assertTrue(job.config['params']['skip_existing'])
 
     @patch('saa_collector.tasks.execute_collect_plan.delay')
     def test_execute_plan_always_queues_with_celery(self, delay):

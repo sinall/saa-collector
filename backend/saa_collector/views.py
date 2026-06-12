@@ -2362,6 +2362,8 @@ class CollectPlanDetailView(APIView):
                         params['end_date'] = str(job_data['end_date']) if job_data.get('end_date') else None
                     if 'report_types' in job_data:
                         params['report_types'] = job_data.get('report_types') or []
+                    if 'skip_existing' in job_data:
+                        params['skip_existing'] = job_data.get('skip_existing', False)
 
                     job.data_type = job_data['data_type']
                     job.config = build_collect_job_config(

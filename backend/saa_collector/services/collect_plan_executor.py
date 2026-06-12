@@ -2,7 +2,7 @@ import logging
 import threading
 import ctypes
 import gc
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from django import db
 from django.db import connection, transaction
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 REMAINING_SYMBOLS_KEY = 'remaining_symbols'
 COMPLETED_SYMBOLS_KEY = 'completed_symbols'
 FAILED_SYMBOLS_KEY = 'failed_symbols'
+SKIP_EXISTING_SUMMARY_KEY = 'skip_existing_summary'
 
 
 class PlanExecutionStopped(RuntimeError):
@@ -226,6 +227,9 @@ def execute_collect(job):
         elif data_type == 'stock_info':
             service = factory.create_stock_info_service()
             symbols = build_symbols_for_service(service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             execute_resumable_symbol_loop(
                 job,
                 symbols,
@@ -236,12 +240,27 @@ def execute_collect(job):
             SecurityMasterRefreshService().refresh_from_stocks()
         elif data_type == 'quote':
             service = factory.create_quote_service()
+            symbols = build_symbols_for_service(service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             service.collect(symbols)
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
+            symbols = build_symbols_for_service(service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'extras':
             from saa_collector.services.common.stock_status_service import StockStatusService
+            if should_skip_existing_job(job) and stock_status_target_date_is_complete(end_date or start_date):
+                record_skip_existing_summary(job.id, None, 0, 0, 'target-date-complete')
+                logger.info(
+                    'Skipping extras collect: target date already complete date=%s',
+                    end_date or start_date,
+                )
+                return
             service = StockStatusService()
             service.collect(end_date or start_date)
         elif data_type == 'index_quotes':
@@ -263,6 +282,9 @@ def execute_collect(job):
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             remaining_symbols = initialize_symbol_progress(job.id, symbols)
             if not remaining_symbols:
                 logger.info('Skipping financial statements collect: all %d symbols completed', len(symbols))
@@ -298,6 +320,9 @@ def execute_collect(job):
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             report_types = params.get('report_types', [])
             if report_types:
                 logger.info(
@@ -339,6 +364,9 @@ def execute_collect(job):
         elif data_type == 'capital':
             service = factory.create_capital_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             execute_resumable_symbol_loop(
                 job,
                 symbols,
@@ -348,6 +376,9 @@ def execute_collect(job):
         elif data_type == 'main_business':
             service = factory.create_statement_service()
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
             execute_resumable_symbol_loop(
                 job,
                 symbols,
@@ -440,6 +471,233 @@ def build_symbols_for_service(service, symbols):
     if symbols is None:
         return service.build_symbols(symbols)
     return sorted(symbols)
+
+
+def should_skip_existing_job(job):
+    config = job.config or {}
+    params = config.get('params') or {}
+    return bool(config.get('skip_existing') or params.get('skip_existing'))
+
+
+def filter_existing_symbols_for_job(job, symbols, start_date, end_date):
+    if not should_skip_existing_job(job):
+        return symbols
+    if not symbols:
+        return symbols
+
+    kept_symbols, skipped_count, reason = find_symbols_missing_data(
+        job.data_type,
+        symbols,
+        start_date,
+        end_date,
+    )
+    record_skip_existing_summary(job.id, len(symbols), len(kept_symbols), skipped_count, reason)
+    if skipped_count:
+        logger.info(
+            'Applied skip-existing filter: data_type=%s requested=%d kept=%d skipped=%d reason=%s',
+            job.data_type,
+            len(symbols),
+            len(kept_symbols),
+            skipped_count,
+            reason,
+        )
+    if not kept_symbols:
+        logger.info(
+            'Skipping %s collect: all %d symbols already have target data',
+            job.data_type,
+            len(symbols),
+        )
+    return kept_symbols
+
+
+def record_skip_existing_summary(job_id, requested_count, kept_count, skipped_count, reason):
+    job = CollectJob.objects.get(id=job_id)
+    config = dict(job.config or {})
+    config[SKIP_EXISTING_SUMMARY_KEY] = {
+        'requested_symbols': requested_count,
+        'kept_symbols': kept_count,
+        'skipped_symbols': skipped_count,
+        'reason': reason,
+        'checked_at': timezone.now().isoformat(),
+    }
+    job.config = config
+    job.save(update_fields=['config'])
+
+
+def find_symbols_missing_data(data_type, symbols, start_date, end_date):
+    config = DATA_TYPE_CONFIG.get(data_type) or {}
+    table_name = config.get('table')
+    if not table_name:
+        return symbols, 0, 'unsupported-data-type'
+
+    stock_column = config.get('stock_column') or 'symbol'
+    date_column = config.get('date_column')
+    unique_symbols = sorted(unique_list(symbols))
+    if not date_column:
+        existing_symbols = query_existing_symbols(table_name, stock_column, unique_symbols)
+        kept_symbols = [symbol for symbol in unique_symbols if symbol not in existing_symbols]
+        return kept_symbols, len(unique_symbols) - len(kept_symbols), 'snapshot-symbol-missing'
+
+    if start_date is None or end_date is None:
+        return unique_symbols, 0, 'date-range-required'
+
+    frequency = get_skip_existing_frequency(config)
+    expected_periods = generate_skip_existing_periods(start_date, end_date, frequency)
+    if not expected_periods:
+        return unique_symbols, 0, 'no-expected-periods'
+
+    existing_periods = query_existing_symbol_periods(
+        table_name,
+        stock_column,
+        date_column,
+        unique_symbols,
+        start_date,
+        end_date,
+        frequency,
+    )
+    kept_symbols = [
+        symbol for symbol in unique_symbols
+        if not expected_periods.issubset(existing_periods.get(symbol, set()))
+    ]
+    return kept_symbols, len(unique_symbols) - len(kept_symbols), f'{frequency}-period-missing'
+
+
+def get_skip_existing_frequency(config):
+    data_frequency = config.get('data_frequency')
+    if data_frequency in ('yearly', 'quarterly', 'monthly', 'weekly', 'daily'):
+        return data_frequency
+    return 'monthly'
+
+
+def generate_skip_existing_periods(start_date, end_date, frequency):
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime):
+        end_date = end_date.date()
+    if not isinstance(start_date, date) or not isinstance(end_date, date):
+        return set()
+
+    periods = set()
+    if frequency == 'yearly':
+        for year in range(start_date.year, end_date.year + 1):
+            periods.add(str(year))
+    elif frequency == 'quarterly':
+        year = start_date.year
+        quarter = (start_date.month - 1) // 3 + 1
+        while True:
+            period_start = date(year, (quarter - 1) * 3 + 1, 1)
+            if period_start > end_date:
+                break
+            periods.add(f'{year}-Q{quarter}')
+            quarter += 1
+            if quarter > 4:
+                quarter = 1
+                year += 1
+    elif frequency == 'monthly':
+        year = start_date.year
+        month = start_date.month
+        while True:
+            period_start = date(year, month, 1)
+            if period_start > end_date:
+                break
+            periods.add(f'{year}-{month:02d}')
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+    elif frequency == 'daily':
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT date FROM saa_trade_days
+                WHERE date BETWEEN %s AND %s
+                """,
+                [start_date, end_date],
+            )
+            periods = {str(row[0]) for row in cursor.fetchall()}
+    else:
+        current = start_date
+        while current <= end_date:
+            periods.add(current.isoformat())
+            current += timedelta(days=1)
+    return periods
+
+
+def query_existing_symbols(table_name, stock_column, symbols):
+    if not symbols:
+        return set()
+    placeholders = ','.join(['%s'] * len(symbols))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT DISTINCT {stock_column}
+            FROM {table_name}
+            WHERE {stock_column} IN ({placeholders})
+            """,
+            symbols,
+        )
+        return {row[0] for row in cursor.fetchall()}
+
+
+def query_existing_symbol_periods(table_name, stock_column, date_column, symbols, start_date, end_date, frequency):
+    if not symbols:
+        return {}
+
+    if frequency == 'yearly':
+        select_expr = f"YEAR({date_column})"
+    elif frequency == 'quarterly':
+        select_expr = f"CONCAT(YEAR({date_column}), '-Q', QUARTER({date_column}))"
+    elif frequency == 'monthly':
+        select_expr = f"DATE_FORMAT({date_column}, '%Y-%m')"
+    else:
+        select_expr = date_column
+
+    result = {}
+    batch_size = 500
+    for index in range(0, len(symbols), batch_size):
+        batch = symbols[index:index + batch_size]
+        placeholders = ','.join(['%s'] * len(batch))
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT DISTINCT {stock_column}, {select_expr} AS period
+                FROM {table_name}
+                WHERE {stock_column} IN ({placeholders})
+                  AND {date_column} BETWEEN %s AND %s
+                """,
+                list(batch) + [start_date, end_date],
+            )
+            for symbol, period in cursor.fetchall():
+                result.setdefault(symbol, set()).add(str(period))
+    return result
+
+
+def stock_status_target_date_is_complete(target_date):
+    if target_date is None:
+        return False
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT symbol)
+            FROM saa_stocks
+            WHERE type = 'STOCK'
+              AND market = 'A'
+              AND symbol IS NOT NULL
+            """
+        )
+        expected = cursor.fetchone()[0] or 0
+        if expected == 0:
+            return False
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT code)
+            FROM saa_extras
+            WHERE date = %s
+            """,
+            [target_date],
+        )
+        actual = cursor.fetchone()[0] or 0
+        return actual >= expected
 
 
 def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, start_date=None):

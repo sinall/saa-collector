@@ -828,6 +828,7 @@ export interface CollectPlanJobPayload {
   start_date?: string | null
   end_date?: string | null
   report_types?: string[]
+  skip_existing?: boolean
 }
 
 export interface CollectSchedule {

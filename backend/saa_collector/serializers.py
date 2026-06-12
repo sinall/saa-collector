@@ -46,6 +46,11 @@ class InstantCollectJobSerializer(serializers.Serializer):
         default=list,
         help_text='Report types (balance_sheet, income, cash_flow, dividend)'
     )
+    skip_existing = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text='Skip symbols whose target data already exists before calling external data sources'
+    )
 
     def validate(self, attrs):
         start_date = attrs.get('start_date')
@@ -247,6 +252,7 @@ class CollectPlanCreateSerializer(serializers.Serializer):
                         'start_date': str(job_data['start_date']) if job_data.get('start_date') else None,
                         'end_date': str(job_data['end_date']) if job_data.get('end_date') else None,
                         'report_types': job_data.get('report_types', []),
+                        'skip_existing': job_data.get('skip_existing', False),
                     },
                 )
             )

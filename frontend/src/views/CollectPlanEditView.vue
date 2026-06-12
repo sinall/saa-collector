@@ -58,6 +58,13 @@
             <el-form-item label="股票代码">
               <el-input v-model="job.symbols_input" type="textarea" placeholder="每行一个股票代码，留空则全量" :rows="3" />
             </el-form-item>
+            <el-form-item label="已有数据">
+              <el-switch
+                v-model="job.skip_existing"
+                active-text="跳过"
+                inactive-text="重采"
+              />
+            </el-form-item>
             <el-button type="danger" link @click="removeJob(index)">删除此作业</el-button>
           </el-card>
         </div>
@@ -104,7 +111,8 @@ const addJob = () => {
     data_type: 'quote',
     symbols_input: '',
     date_start: null,
-    date_end: null
+    date_end: null,
+    skip_existing: true
   })
 }
 
@@ -119,7 +127,8 @@ const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job
     ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
     : [],
   start_date: job.date_start,
-  end_date: job.date_end
+  end_date: job.date_end,
+  skip_existing: Boolean(job.skip_existing)
 }))
 
 const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
@@ -160,7 +169,8 @@ const fetchPlan = async () => {
       data_type: job.data_type,
       symbols_input: job.config?.symbols?.join('\n') || '',
       date_start: getJobParam(job, 'start_date'),
-      date_end: getJobParam(job, 'end_date')
+      date_end: getJobParam(job, 'end_date'),
+      skip_existing: Boolean(job.config?.params?.skip_existing ?? job.config?.skip_existing)
     })) || []
   } finally {
     loading.value = false

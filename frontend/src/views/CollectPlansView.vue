@@ -135,6 +135,13 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="已有数据">
+          <el-switch
+            v-model="instantForm.skip_existing"
+            active-text="跳过"
+            inactive-text="重采"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="instantCollectVisible = false">取消</el-button>
@@ -179,7 +186,8 @@ const instantForm = ref({
   name: '',
   data_type: '',
   symbols: [] as string[],
-  dateRange: [] as string[]
+  dateRange: [] as string[],
+  skip_existing: true
 })
 
 interface DisplayPlan {
@@ -374,7 +382,8 @@ const showInstantCollectDialog = () => {
     name: '',
     data_type: '',
     symbols: [],
-    dateRange: []
+    dateRange: [],
+    skip_existing: true
   }
   instantCollectVisible.value = true
 }
@@ -396,6 +405,7 @@ const createInstantPlan = async () => {
       jobs: [{
         data_type: instantForm.value.data_type,
         symbols: instantForm.value.symbols,
+        skip_existing: instantForm.value.skip_existing,
       }]
     }
 
