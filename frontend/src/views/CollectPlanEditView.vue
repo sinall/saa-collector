@@ -25,7 +25,7 @@
             <el-row :gutter="20">
               <el-col :span="8">
                 <el-form-item label="数据类型">
-          <el-select v-model="job.data_type">
+                  <el-select v-model="job.data_type">
                     <el-option
                       v-for="item in selectableDataTypes"
                       :key="item.key"
@@ -55,6 +55,12 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <el-form-item v-if="job.data_type === 'extras'" label="补全周期">
+              <el-radio-group v-model="job.data_frequency">
+                <el-radio-button value="daily">按天</el-radio-button>
+                <el-radio-button value="monthly">月度</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
             <el-form-item label="股票代码">
               <el-input v-model="job.symbols_input" type="textarea" placeholder="每行一个股票代码，留空则全量" :rows="3" />
             </el-form-item>
@@ -112,6 +118,7 @@ const addJob = () => {
     symbols_input: '',
     date_start: null,
     date_end: null,
+    data_frequency: 'daily',
     skip_existing: true
   })
 }
@@ -128,6 +135,7 @@ const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job
     : [],
   start_date: job.date_start,
   end_date: job.date_end,
+  data_frequency: job.data_frequency,
   skip_existing: Boolean(job.skip_existing)
 }))
 
@@ -170,6 +178,7 @@ const fetchPlan = async () => {
       symbols_input: job.config?.symbols?.join('\n') || '',
       date_start: getJobParam(job, 'start_date'),
       date_end: getJobParam(job, 'end_date'),
+      data_frequency: job.config?.params?.data_frequency || job.config?.data_frequency || 'daily',
       skip_existing: Boolean(job.config?.params?.skip_existing ?? job.config?.skip_existing)
     })) || []
   } finally {

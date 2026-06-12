@@ -2364,11 +2364,19 @@ class CollectPlanDetailView(APIView):
                         params['report_types'] = job_data.get('report_types') or []
                     if 'skip_existing' in job_data:
                         params['skip_existing'] = job_data.get('skip_existing', False)
+                    if 'data_frequency' in job_data:
+                        params['data_frequency'] = job_data.get('data_frequency', 'daily')
+                    if 'stock_scope' in job_data:
+                        params['stock_scope'] = job_data.get('stock_scope', 'ALL')
+                    if 'stock_list_code' in job_data:
+                        params['stock_list_code'] = job_data.get('stock_list_code') or None
 
                     job.data_type = job_data['data_type']
                     job.config = build_collect_job_config(
                         symbols=job_data.get('symbols', existing_config.get('symbols', [])),
                         params=params,
+                        stock_scope=job_data.get('stock_scope', existing_config.get('stock_scope', 'ALL')),
+                        stock_list_code=job_data.get('stock_list_code', existing_config.get('stock_list_code')),
                     )
                     job.save()
                     kept_job_ids.add(job.id)

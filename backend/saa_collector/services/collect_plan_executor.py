@@ -15,6 +15,7 @@ from saa_collector.date_expressions import (
     resolve_schedule_date_range,
 )
 from saa_collector.models import CollectJob, CollectPlan, DataIntegrityItem
+from saa_collector.services.common.index_scope_utils import resolve_index_constituent_payloads_by_dates
 from saa_collector.services.collect_execution_context import (
     get_collect_execution_context,
     reset_collect_execution_context,
@@ -188,6 +189,8 @@ def execute_collect(job):
     if end_value not in (None, ''):
         params = dict(params, end_date=end_value)
     calendar_service = None
+    stock_scope = get_job_stock_scope(job)
+    index_code = get_job_index_code(job)
 
     def refresh_trade_calendar(latest_trade_day, base_date):
         nonlocal calendar_service
@@ -226,6 +229,8 @@ def execute_collect(job):
             service.collect(start_date, end_date)
         elif data_type == 'stock_info':
             service = factory.create_stock_info_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, timezone.localdate()) or []
             symbols = build_symbols_for_service(service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -240,6 +245,8 @@ def execute_collect(job):
             SecurityMasterRefreshService().refresh_from_stocks()
         elif data_type == 'quote':
             service = factory.create_quote_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = build_symbols_for_service(service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -247,6 +254,8 @@ def execute_collect(job):
             service.collect(symbols)
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = build_symbols_for_service(service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -254,15 +263,35 @@ def execute_collect(job):
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'extras':
             from saa_collector.services.common.stock_status_service import StockStatusService
-            if should_skip_existing_job(job) and stock_status_target_date_is_complete(end_date or start_date):
-                record_skip_existing_summary(job.id, None, 0, 0, 'target-date-complete')
-                logger.info(
-                    'Skipping extras collect: target date already complete date=%s',
-                    end_date or start_date,
-                )
-                return
+            data_frequency = str(params.get('data_frequency') or 'daily').lower()
+            target_dates = resolve_stock_status_target_dates(start_date, end_date, data_frequency)
+            if should_skip_existing_job(job):
+                with connection.cursor() as cursor:
+                    scoped_symbols_by_date = resolve_index_constituent_payloads_by_dates(
+                        cursor,
+                        index_code,
+                        target_dates,
+                    ) if stock_scope == 'INDEX' else {target_date: (None, symbols) for target_date in target_dates}
+                target_dates = [
+                    target_date for target_date in target_dates
+                    if not stock_status_target_date_is_complete(target_date, scoped_symbols_by_date.get(target_date, (None, None))[1])
+                ]
+                if not target_dates:
+                    logger.info(
+                        'Skipping extras collect: all target dates already complete range=%s..%s frequency=%s',
+                        start_date,
+                        end_date,
+                        data_frequency,
+                    )
+                    return
             service = StockStatusService()
-            service.collect(end_date or start_date)
+            if stock_scope == 'INDEX':
+                with connection.cursor() as cursor:
+                    scoped_symbols_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, target_dates)
+                for target_date in target_dates:
+                    service.collect(target_dates=[target_date], symbols=scoped_symbols_by_date.get(target_date, (None, None))[1])
+            else:
+                service.collect(target_dates=target_dates, symbols=symbols)
         elif data_type == 'index_quotes':
             from saa_collector.services.common.index_quote_service import IndexQuoteService
             service = IndexQuoteService()
@@ -278,9 +307,13 @@ def execute_collect(job):
         elif data_type == 'industry_stocks':
             from saa_collector.services.common.sw_industry_service import SwIndustryService
             service = SwIndustryService()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             service.collect_industry_stocks(symbols, end_date or start_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -319,6 +352,8 @@ def execute_collect(job):
                 )
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
             service = factory.create_statement_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -363,6 +398,8 @@ def execute_collect(job):
                 )
         elif data_type == 'capital':
             service = factory.create_capital_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -375,6 +412,8 @@ def execute_collect(job):
             )
         elif data_type == 'main_business':
             service = factory.create_statement_service()
+            if stock_scope == 'INDEX':
+                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
             symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
             if not symbols:
@@ -471,6 +510,39 @@ def build_symbols_for_service(service, symbols):
     if symbols is None:
         return service.build_symbols(symbols)
     return sorted(symbols)
+
+
+def resolve_job_symbols(job, symbols):
+    if get_job_stock_scope(job) == 'ALL':
+        return None
+
+    if symbols is None:
+        return None
+
+    return symbols
+
+
+def get_job_stock_scope(job):
+    config = job.config or {}
+    params = normalize_schedule_params(config.get('params', {}))
+    return str(config.get('stock_scope') or params.get('stock_scope') or '').upper()
+
+
+def get_job_index_code(job):
+    config = job.config or {}
+    params = normalize_schedule_params(config.get('params', {}))
+    return config.get('stock_list_code') or params.get('stock_list_code')
+
+
+def resolve_index_scope_symbols_at(job, as_of_date):
+    if get_job_stock_scope(job) != 'INDEX':
+        return None
+    index_code = get_job_index_code(job)
+    if not index_code or as_of_date is None:
+        return []
+    with connection.cursor() as cursor:
+        payload = resolve_index_constituent_payloads_by_dates(cursor, index_code, [as_of_date]).get(as_of_date, (None, set()))
+        return sorted(payload[1])
 
 
 def should_skip_existing_job(job):
@@ -672,32 +744,99 @@ def query_existing_symbol_periods(table_name, stock_column, date_column, symbols
     return result
 
 
-def stock_status_target_date_is_complete(target_date):
+def stock_status_target_date_is_complete(target_date, symbols=None):
     if target_date is None:
         return False
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT COUNT(DISTINCT symbol)
-            FROM saa_stocks
-            WHERE type = 'STOCK'
-              AND market = 'A'
-              AND symbol IS NOT NULL
-            """
-        )
-        expected = cursor.fetchone()[0] or 0
+        if symbols is not None:
+            unique_symbols = sorted({symbol for symbol in symbols if symbol})
+            if not unique_symbols:
+                return False
+            placeholders = ','.join(['%s'] * len(unique_symbols))
+            cursor.execute(
+                f"""
+                SELECT COUNT(DISTINCT code)
+                FROM saa_extras
+                WHERE date = %s
+                  AND code IN ({placeholders})
+                """,
+                [target_date] + unique_symbols,
+            )
+            expected = len(unique_symbols)
+        else:
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT symbol)
+                FROM saa_stocks
+                WHERE type = 'STOCK'
+                  AND market = 'A'
+                  AND symbol IS NOT NULL
+                """
+            )
+            expected = cursor.fetchone()[0] or 0
         if expected == 0:
             return False
-        cursor.execute(
-            """
-            SELECT COUNT(DISTINCT code)
-            FROM saa_extras
-            WHERE date = %s
-            """,
-            [target_date],
-        )
+        if symbols is not None:
+            placeholders = ','.join(['%s'] * len(unique_symbols))
+            cursor.execute(
+                f"""
+                SELECT COUNT(DISTINCT code)
+                FROM saa_extras
+                WHERE date = %s
+                  AND code IN ({placeholders})
+                """,
+                [target_date] + unique_symbols,
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT code)
+                FROM saa_extras
+                WHERE date = %s
+                """,
+                [target_date],
+            )
         actual = cursor.fetchone()[0] or 0
         return actual >= expected
+
+
+def resolve_stock_status_target_dates(start_date, end_date, frequency):
+    if start_date is None and end_date is None:
+        return [timezone.localdate()]
+    if start_date is None:
+        start_date = end_date
+    if end_date is None:
+        end_date = start_date
+    if start_date is None or end_date is None:
+        return []
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime):
+        end_date = end_date.date()
+    if start_date > end_date:
+        return []
+
+    if frequency == 'monthly':
+        query = """
+            SELECT MAX(date) AS date
+            FROM saa_trade_days
+            WHERE date BETWEEN %s AND %s
+            GROUP BY YEAR(date), MONTH(date)
+            ORDER BY date
+        """
+    else:
+        query = """
+            SELECT date
+            FROM saa_trade_days
+            WHERE date BETWEEN %s AND %s
+            ORDER BY date
+        """
+
+    with connection.cursor() as cursor:
+        cursor.execute(query, [start_date, end_date])
+        if frequency == 'monthly':
+            return [row[0] for row in cursor.fetchall() if row and row[0]]
+        return [row[0] for row in cursor.fetchall() if row and row[0]]
 
 
 def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, start_date=None):

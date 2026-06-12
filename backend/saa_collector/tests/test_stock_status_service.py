@@ -39,3 +39,28 @@ class StockStatusServiceTest(SimpleTestCase):
         )
         cursor.close.assert_called_once()
         connection.close.assert_called_once()
+
+    @patch('saa_collector.services.common.stock_status_service.ConfigService')
+    @patch('saa_collector.services.common.stock_status_service.mysql.connector.connect')
+    @patch('saa_collector.services.common.stock_status_service.DB')
+    def test_collect_saves_range_snapshots_for_selected_symbols(self, db_class, connect, config_service_class):
+        config_service_class.return_value.get_db_config.return_value = {'host': 'db'}
+        cursor = Mock()
+        cursor.fetchall.return_value = [
+            ('000001', '平安银行'),
+        ]
+        connection = Mock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+
+        service = StockStatusService()
+        service.collect(
+            target_dates=[date(2026, 5, 29), date(2026, 6, 30)],
+            symbols=['000001'],
+        )
+
+        self.assertEqual(db_class.return_value.to_sql.call_count, 2)
+        first_call = db_class.return_value.to_sql.call_args_list[0].args[0]
+        second_call = db_class.return_value.to_sql.call_args_list[1].args[0]
+        self.assertEqual(first_call, [{'code': '000001', 'date': date(2026, 5, 29), 'is_st': 0}])
+        self.assertEqual(second_call, [{'code': '000001', 'date': date(2026, 6, 30), 'is_st': 0}])

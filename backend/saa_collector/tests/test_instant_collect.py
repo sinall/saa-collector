@@ -39,7 +39,9 @@ class InstantCollectAPITest(TestCase):
             'execution_mode': 'PARALLEL',
             'jobs': [{
                 'data_type': 'historical_quote',
+                'stock_scope': 'ALL',
                 'symbols': ['000001', '000002'],
+                'data_frequency': 'monthly',
                 'start_date': '2024-01-01',
                 'end_date': '2024-12-31',
                 'skip_existing': True,
@@ -49,7 +51,28 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(response.status_code, 201)
         job_config = response.data['data']['jobs'][0]['config']
         self.assertTrue(job_config['params']['skip_existing'])
+        self.assertEqual(job_config['params']['data_frequency'], 'monthly')
+        self.assertEqual(job_config['stock_scope'], 'ALL')
         self.assertTrue(CollectJob.objects.get().config['params']['skip_existing'])
+
+    def test_create_plan_job_persists_index_scope(self):
+        response = self.client.post('/api/collect-plans/', {
+            'name': '指数范围计划',
+            'execution_mode': 'PARALLEL',
+            'jobs': [{
+                'data_type': 'quote',
+                'stock_scope': 'INDEX',
+                'stock_list_code': '000906',
+                'symbols': [],
+                'data_frequency': 'daily',
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        job_config = response.data['data']['jobs'][0]['config']
+        self.assertEqual(job_config['stock_scope'], 'INDEX')
+        self.assertEqual(job_config['stock_list_code'], '000906')
+        self.assertEqual(job_config['params']['data_frequency'], 'daily')
 
     def test_create_plan_without_jobs(self):
         """Test creating a plan without jobs (backward compatibility)"""
@@ -92,7 +115,9 @@ class InstantCollectAPITest(TestCase):
             'jobs': [{
                 'id': job.id,
                 'data_type': 'quote',
+                'stock_scope': 'ALL',
                 'symbols': ['000001'],
+                'data_frequency': 'daily',
                 'start_date': '2024-01-01',
                 'end_date': '2024-12-31',
             }]
@@ -103,6 +128,7 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(response.data['data']['name'], '日期编辑测试-已更新')
         self.assertEqual(response.data['data']['jobs'][0]['config']['params']['start_date'], '2024-01-01')
         self.assertEqual(response.data['data']['jobs'][0]['config']['params']['end_date'], '2024-12-31')
+        self.assertEqual(response.data['data']['jobs'][0]['config']['params']['data_frequency'], 'daily')
 
         job.refresh_from_db()
         self.assertEqual(job.config['params']['start_date'], '2024-01-01')
@@ -121,6 +147,7 @@ class InstantCollectAPITest(TestCase):
                 'id': job.id,
                 'data_type': 'historical_quote',
                 'symbols': ['000001'],
+                'data_frequency': 'monthly',
                 'skip_existing': True,
             }]
         }, format='json')
@@ -128,6 +155,29 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         job.refresh_from_db()
         self.assertTrue(job.config['params']['skip_existing'])
+
+    def test_update_pending_plan_persists_index_scope(self):
+        plan = CollectPlan.objects.create(name='指数范围编辑测试')
+        job = CollectJob.objects.create(
+            plan=plan,
+            data_type='quote',
+            config={'symbols': [], 'params': {}}
+        )
+
+        response = self.client.patch(f'/api/collect-plans/{plan.id}/', {
+            'jobs': [{
+                'id': job.id,
+                'data_type': 'quote',
+                'stock_scope': 'INDEX',
+                'stock_list_code': '000906',
+                'symbols': [],
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        job.refresh_from_db()
+        self.assertEqual(job.config['stock_scope'], 'INDEX')
+        self.assertEqual(job.config['stock_list_code'], '000906')
 
     @patch('saa_collector.tasks.execute_collect_plan.delay')
     def test_execute_plan_always_queues_with_celery(self, delay):

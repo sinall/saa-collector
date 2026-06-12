@@ -10,6 +10,8 @@ from django.db import connection
 from calendar import monthrange
 
 from ..constants import DATA_TYPE_CONFIG, EARLIEST_YEAR
+from .common.index_scope_utils import resolve_index_constituent_payloads_by_dates, resolve_index_constituents_by_dates
+from .common.period_utils import get_period_label_for_date, get_period_range
 
 logger = logging.getLogger(__name__)
 
@@ -692,56 +694,14 @@ class CompletenessService:
             self._index_constituents_cache[cache_key] = {}
             return {}
 
-        max_anchor_date = max(anchor_trade_days.values())
-        cursor.execute(
-            """
-                SELECT DISTINCT date
-                FROM saa_index_weights
-                WHERE `index` = %s
-                  AND date <= %s
-                ORDER BY date
-            """,
-            [self.index_code, max_anchor_date],
+        constituents_by_date = resolve_index_constituents_by_dates(
+            cursor,
+            self.index_code,
+            anchor_trade_days.values(),
         )
-        index_dates = [self._coerce_date(row[0]) for row in cursor.fetchall()]
-        if not index_dates:
-            self._index_constituents_cache[cache_key] = {period: set() for period in periods}
-            return self._index_constituents_cache[cache_key]
-
-        selected_index_date_by_period = {}
-        index_date_pos = 0
-        for period in periods:
-            anchor_date = anchor_trade_days.get(period)
-            if not anchor_date:
-                continue
-            while index_date_pos + 1 < len(index_dates) and index_dates[index_date_pos + 1] <= anchor_date:
-                index_date_pos += 1
-            if index_dates[index_date_pos] <= anchor_date:
-                selected_index_date_by_period[period] = index_dates[index_date_pos]
-
-        selected_index_dates = sorted(set(selected_index_date_by_period.values()))
-        if not selected_index_dates:
-            self._index_constituents_cache[cache_key] = {period: set() for period in periods}
-            return self._index_constituents_cache[cache_key]
-
-        placeholders = ','.join(['%s'] * len(selected_index_dates))
-        cursor.execute(
-            f"""
-                SELECT date, code
-                FROM saa_index_weights
-                WHERE `index` = %s
-                  AND date IN ({placeholders})
-            """,
-            [self.index_code] + selected_index_dates,
-        )
-        constituents_by_index_date = {}
-        for index_date, code in cursor.fetchall():
-            constituents_by_index_date.setdefault(self._coerce_date(index_date), set()).add(code)
-
         result = {}
-        for period in periods:
-            index_date = selected_index_date_by_period.get(period)
-            result[period] = set(constituents_by_index_date.get(index_date, set()))
+        for period, anchor_date in anchor_trade_days.items():
+            result[period] = set(constituents_by_date.get(anchor_date, set()))
 
         self._index_constituents_cache[cache_key] = result
         return result
@@ -767,31 +727,19 @@ class CompletenessService:
             self._index_period_specs_cache[cache_key] = []
             return []
 
-        max_anchor_date = max(anchor_trade_days.values())
-        cursor.execute(
-            """
-                SELECT DISTINCT date
-                FROM saa_index_weights
-                WHERE `index` = %s
-                  AND date <= %s
-                ORDER BY date
-            """,
-            [self.index_code, max_anchor_date],
+        payloads_by_anchor_date = resolve_index_constituent_payloads_by_dates(
+            cursor,
+            self.index_code,
+            anchor_trade_days.values(),
         )
-        index_dates = [self._coerce_date(row[0]) for row in cursor.fetchall()]
-        if not index_dates:
-            self._index_period_specs_cache[cache_key] = []
-            return []
-
         specs = []
-        index_date_pos = 0
         for period in periods:
             anchor_date = anchor_trade_days.get(period)
             if not anchor_date:
                 continue
-            while index_date_pos + 1 < len(index_dates) and index_dates[index_date_pos + 1] <= anchor_date:
-                index_date_pos += 1
-            index_date = index_dates[index_date_pos]
+            index_date, _ = payloads_by_anchor_date.get(anchor_date, (None, set()))
+            if not index_date:
+                continue
             if index_date > anchor_date:
                 continue
             if aggregate_frequency:
@@ -1056,13 +1004,7 @@ class CompletenessService:
         return date.fromisoformat(str(value)[:10])
 
     def _get_period_label_for_date(self, value, frequency):
-        if frequency == 'daily':
-            return value.strftime('%Y-%m-%d')
-        if frequency == 'quarterly':
-            return f"{value.year}-Q{((value.month - 1) // 3) + 1}"
-        if frequency == 'yearly':
-            return str(value.year)
-        return value.strftime('%Y-%m')
+        return get_period_label_for_date(value, frequency)
 
     def _calculate_completeness(self, cursor, table_name, date_column, periods, frequency, data_frequency, stock_column='symbol'):
         """计算完整度（支持聚合）"""
@@ -1346,25 +1288,7 @@ class CompletenessService:
 
     def _get_period_range(self, period, frequency):
         """获取周期的日期范围"""
-        if frequency == 'daily':
-            return period, period
-        elif frequency == 'monthly':
-            year, month = int(period[:4]), int(period[5:7])
-            if month == 12:
-                end = date(year, 12, 31)
-            else:
-                end = date(year, month + 1, 1) - timedelta(days=1)
-            return f"{year}-{month:02d}-01", end.strftime('%Y-%m-%d')
-        elif frequency == 'quarterly':
-            year, quarter = int(period[:4]), int(period[6])
-            start_month = (quarter - 1) * 3 + 1
-            end_month = quarter * 3
-            end_day = 31 if end_month in [3, 12] else 30 if end_month in [4, 6, 9, 11] else 28
-            return f"{year}-{start_month:02d}-01", f"{year}-{end_month:02d}-{end_day}"
-        elif frequency == 'yearly':
-            year = int(period)
-            return f"{year}-01-01", f"{year}-12-31"
-        return period, period
+        return get_period_range(period, frequency)
 
     def _get_expected_trade_days(self, period, frequency):
         """获取预期交易日数（天数 - 最小周末数）"""

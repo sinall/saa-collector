@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -18,8 +19,10 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         service_class.return_value.collect.assert_called_once()
 
+    @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
     @patch('saa_collector.services.common.stock_status_service.StockStatusService')
-    def test_execute_collect_runs_extras_job(self, service_class):
+    def test_execute_collect_runs_extras_job(self, service_class, resolve_target_dates):
+        resolve_target_dates.return_value = [date(2026, 5, 29)]
         job = CollectJob.objects.create(
             data_type='extras',
             config={'symbols': [], 'params': {'start_date': '2026-05-29'}},
@@ -27,7 +30,10 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         execute_collect(job)
 
-        service_class.return_value.collect.assert_called_once()
+        service_class.return_value.collect.assert_called_once_with(
+            target_dates=[date(2026, 5, 29)],
+            symbols=None,
+        )
 
     @patch('saa_collector.services.common.index_quote_service.IndexQuoteService')
     def test_execute_collect_runs_index_quotes_job(self, service_class):
@@ -72,3 +78,24 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         execute_collect(job)
 
         service_class.return_value.collect_industry_stocks.assert_called_once()
+
+    @patch('saa_collector.services.collect_plan_executor.resolve_index_scope_symbols_at')
+    @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
+    def test_execute_collect_resolves_index_stock_scope_to_symbols(self, factory_class, resolve_index_scope_symbols_at):
+        resolve_index_scope_symbols_at.return_value = ['000001', '000002']
+        job = CollectJob.objects.create(
+            data_type='quote',
+            config={
+                'symbols': [],
+                'stock_scope': 'INDEX',
+                'stock_list_code': '000906',
+                'params': {},
+            },
+        )
+
+        execute_collect(job)
+
+        resolve_index_scope_symbols_at.assert_called_once()
+        factory_class.return_value.create_quote_service.return_value.collect.assert_called_once_with(
+            ['000001', '000002']
+        )

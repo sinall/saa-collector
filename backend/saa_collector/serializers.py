@@ -32,6 +32,25 @@ class CollectJobCreateSerializer(serializers.Serializer):
 class InstantCollectJobSerializer(serializers.Serializer):
     id = serializers.IntegerField(required=False)
     data_type = serializers.CharField(max_length=50, help_text='Data type to collect')
+    stock_scope = serializers.ChoiceField(
+        choices=['ALL', 'SELECTED', 'INDEX'],
+        required=False,
+        default='ALL',
+        help_text='Stock scope to collect'
+    )
+    stock_list_code = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text='Index code when stock_scope is INDEX'
+    )
+    data_frequency = serializers.ChoiceField(
+        choices=['daily', 'monthly'],
+        required=False,
+        default='daily',
+        help_text='Collection frequency for stock status jobs'
+    )
     symbols = serializers.ListField(
         child=serializers.CharField(max_length=20),
         required=False,
@@ -249,11 +268,16 @@ class CollectPlanCreateSerializer(serializers.Serializer):
                 config=build_collect_job_config(
                     symbols=job_data.get('symbols', []),
                     params={
+                        'stock_scope': job_data.get('stock_scope', 'ALL'),
+                        'stock_list_code': job_data.get('stock_list_code') or None,
+                        'data_frequency': job_data.get('data_frequency', 'daily'),
                         'start_date': str(job_data['start_date']) if job_data.get('start_date') else None,
                         'end_date': str(job_data['end_date']) if job_data.get('end_date') else None,
                         'report_types': job_data.get('report_types', []),
                         'skip_existing': job_data.get('skip_existing', False),
                     },
+                    stock_scope=job_data.get('stock_scope', 'ALL'),
+                    stock_list_code=job_data.get('stock_list_code') or None,
                 )
             )
 

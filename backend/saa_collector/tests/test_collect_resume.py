@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -295,24 +296,56 @@ class SkipExistingCollectTest(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.config['skip_existing_summary']['kept_symbols'], 0)
 
+    @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
     @patch('saa_collector.services.collect_plan_executor.stock_status_target_date_is_complete')
     @patch('saa_collector.services.common.stock_status_service.StockStatusService')
-    def test_extras_skip_existing_skips_external_call_when_target_date_complete(
-            self, service_class, target_date_is_complete):
-        target_date_is_complete.return_value = True
+    def test_extras_skip_existing_skips_external_call_when_all_target_dates_complete(
+            self, service_class, target_date_is_complete, resolve_target_dates):
+        resolve_target_dates.return_value = [date(2024, 5, 31), date(2024, 6, 28)]
+        target_date_is_complete.side_effect = [True, True]
         job = CollectJob.objects.create(
             data_type='extras',
             config={
-                'symbols': [],
+                'symbols': ['000001'],
                 'params': {
-                    'end_date': '2024-05-31',
+                    'start_date': '2024-05-01',
+                    'end_date': '2024-06-30',
+                    'data_frequency': 'monthly',
                     'skip_existing': True,
                 },
+                'stock_scope': 'SELECTED',
             },
         )
 
         execute_collect(job)
 
         service_class.assert_not_called()
-        target_date_is_complete.assert_called_once()
-        self.assertEqual(str(target_date_is_complete.call_args.args[0]), '2024-05-31')
+        self.assertEqual(target_date_is_complete.call_count, 2)
+
+    @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
+    @patch('saa_collector.services.collect_plan_executor.stock_status_target_date_is_complete')
+    @patch('saa_collector.services.common.stock_status_service.StockStatusService')
+    def test_extras_skip_existing_collects_only_missing_target_dates(
+            self, service_class, target_date_is_complete, resolve_target_dates):
+        resolve_target_dates.return_value = [date(2024, 5, 31), date(2024, 6, 28)]
+        target_date_is_complete.side_effect = [True, False]
+        job = CollectJob.objects.create(
+            data_type='extras',
+            config={
+                'symbols': ['000001'],
+                'params': {
+                    'start_date': '2024-05-01',
+                    'end_date': '2024-06-30',
+                    'data_frequency': 'monthly',
+                    'skip_existing': True,
+                },
+                'stock_scope': 'SELECTED',
+            },
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect.assert_called_once_with(
+            target_dates=[date(2024, 6, 28)],
+            symbols=['000001'],
+        )

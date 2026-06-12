@@ -12,6 +12,8 @@ test.describe('Instant Collect Feature', () => {
 
     await expect(page.locator('.el-dialog')).toBeVisible()
     await expect(page.locator('.el-dialog .el-dialog__title')).toContainText('即时采集')
+    await expect(page.locator('.el-dialog')).toContainText('全市场')
+    await expect(page.locator('.el-dialog')).toContainText('中证800')
 
     await page.click('.el-dialog .el-select')
     await page.click('.el-select-dropdown__item:has-text("最新行情")')

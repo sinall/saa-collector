@@ -113,15 +113,33 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="股票代码">
+        <el-form-item label="股票范围">
+          <el-radio-group v-model="instantForm.stock_scope">
+            <el-radio-button value="ALL">全市场</el-radio-button>
+            <el-radio-button value="SELECTED">指定股票</el-radio-button>
+            <el-radio-button value="INDEX">中证800</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="instantForm.stock_scope === 'SELECTED'" label="股票代码">
           <el-select
             v-model="instantForm.symbols"
             multiple
             filterable
             allow-create
-            placeholder="留空表示全部股票"
+            placeholder="输入股票代码"
             style="width: 100%"
           />
+        </el-form-item>
+        <el-form-item v-if="instantForm.stock_scope === 'INDEX'" label="指数代码">
+          <el-select v-model="instantForm.stock_list_code" style="width: 100%">
+            <el-option label="中证800 (000906)" value="000906" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="instantForm.data_type === 'extras'" label="补全周期">
+          <el-radio-group v-model="instantForm.data_frequency">
+            <el-radio-button value="daily">按天</el-radio-button>
+            <el-radio-button value="monthly">月度</el-radio-button>
+          </el-radio-group>
         </el-form-item>
         <el-form-item label="日期范围">
           <el-date-picker
@@ -185,6 +203,9 @@ const creating = ref(false)
 const instantForm = ref({
   name: '',
   data_type: '',
+  stock_scope: 'ALL' as 'ALL' | 'SELECTED' | 'INDEX',
+  stock_list_code: '000906',
+  data_frequency: 'daily' as 'daily' | 'monthly',
   symbols: [] as string[],
   dateRange: [] as string[],
   skip_existing: true
@@ -381,6 +402,9 @@ const showInstantCollectDialog = () => {
   instantForm.value = {
     name: '',
     data_type: '',
+    stock_scope: 'ALL' as 'ALL' | 'SELECTED' | 'INDEX',
+    stock_list_code: '000906',
+    data_frequency: 'daily' as 'daily' | 'monthly',
     symbols: [],
     dateRange: [],
     skip_existing: true
@@ -404,7 +428,10 @@ const createInstantPlan = async () => {
       execution_mode: 'PARALLEL',
       jobs: [{
         data_type: instantForm.value.data_type,
-        symbols: instantForm.value.symbols,
+        stock_scope: instantForm.value.stock_scope,
+        stock_list_code: instantForm.value.stock_scope === 'INDEX' ? instantForm.value.stock_list_code : null,
+        data_frequency: instantForm.value.data_type === 'extras' ? instantForm.value.data_frequency : undefined,
+        symbols: instantForm.value.stock_scope === 'SELECTED' ? instantForm.value.symbols : [],
         skip_existing: instantForm.value.skip_existing,
       }]
     }

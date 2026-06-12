@@ -812,6 +812,7 @@ export interface CollectPlan {
     params: {
       start_date?: string
       end_date?: string
+      data_frequency?: 'daily' | 'monthly'
     }
     status: string
     status_display: string
@@ -824,6 +825,9 @@ export interface CollectPlan {
 export interface CollectPlanJobPayload {
   id?: number | null
   data_type: string
+  stock_scope?: 'ALL' | 'SELECTED' | 'INDEX'
+  stock_list_code?: string | null
+  data_frequency?: 'daily' | 'monthly'
   symbols?: string[]
   start_date?: string | null
   end_date?: string | null
