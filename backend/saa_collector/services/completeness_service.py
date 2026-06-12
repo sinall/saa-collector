@@ -26,28 +26,120 @@ class CompletenessService:
         self.stock_codes = stock_codes
         self.index_code = index_code
         self.date_end = date_end or date.today()
-        self._stock_active_ranges = None
+        self._trade_days = None
+        self._trade_days_range = None
+        self._security_active_ranges = None
+        self._security_active_ranges_range = None
         self._expected_stock_counts_cache = {}
         self._non_stock_counts_cache = {}
         self._period_anchor_trade_days_cache = {}
         self._index_constituents_cache = {}
         self._index_period_specs_cache = {}
 
-    def _load_stock_active_ranges(self, cursor):
-        if self._stock_active_ranges is not None:
-            return self._stock_active_ranges
+    def _load_trade_days(self, cursor, start_date, end_date):
+        start_date = self._coerce_date(start_date)
+        end_date = self._coerce_date(end_date)
+        if (
+            self._trade_days is not None
+            and self._trade_days_range is not None
+            and self._trade_days_range[0] <= start_date
+            and self._trade_days_range[1] >= end_date
+        ):
+            return [
+                trade_day for trade_day in self._trade_days
+                if start_date <= trade_day <= end_date
+            ]
+
+        cursor.execute(
+            """
+                SELECT date
+                FROM saa_trade_days
+                WHERE date >= %s
+                  AND date <= %s
+                ORDER BY date
+            """,
+            [start_date, end_date],
+        )
+        self._trade_days = [self._coerce_date(row[0]) for row in cursor.fetchall()]
+        self._trade_days_range = (start_date, end_date)
+        return self._trade_days
+
+    def _load_security_active_ranges(self, cursor, start_date=None, end_date=None):
+        normalized_start = self._coerce_date(start_date) if start_date else None
+        normalized_end = self._coerce_date(end_date) if end_date else None
+        if self._security_active_ranges is not None:
+            if not normalized_start or not normalized_end:
+                return self._security_active_ranges
+            if (
+                self._security_active_ranges_range is not None
+                and self._security_active_ranges_range[0] <= normalized_start
+                and self._security_active_ranges_range[1] >= normalized_end
+            ):
+                return [
+                    row for row in self._security_active_ranges
+                    if row[1] <= normalized_end and row[2] >= normalized_start
+                ]
 
         params = []
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = """
+                  AND (start_date IS NULL OR start_date <= %s)
+                  AND (end_date IS NULL OR end_date >= %s)
+            """
+            params.extend([normalized_end, normalized_start])
+
+        stock_filter = ""
         if self.stock_codes:
             placeholders = ','.join(['%s'] * len(self.stock_codes))
-            query = f"SELECT listing_date, delisting_date FROM saa_stocks WHERE symbol IN ({placeholders})"
-            cursor.execute(query, self.stock_codes)
-        else:
-            query = "SELECT listing_date, delisting_date FROM saa_stocks"
-            cursor.execute(query)
+            stock_filter = f" AND code IN ({placeholders})"
+            params.extend(self.stock_codes)
 
-        self._stock_active_ranges = cursor.fetchall()
-        return self._stock_active_ranges
+        cursor.execute(
+            f"""
+                SELECT code, start_date, end_date
+                FROM saa_securities
+                WHERE type = 'stock'{date_filter}{stock_filter}
+            """,
+            params,
+        )
+
+        self._security_active_ranges = [
+            (
+                code,
+                self._coerce_date(security_start, date.min),
+                self._coerce_date(security_end, date.max),
+            )
+            for code, security_start, security_end in cursor.fetchall()
+        ]
+        self._security_active_ranges_range = (
+            normalized_start or date.min,
+            normalized_end or date.max,
+        )
+        return self._security_active_ranges
+
+    def _prepare_period_universe(self, cursor, data_type_configs, periods, frequency):
+        if not periods:
+            return
+
+        start_date, end_date = self._get_period_range(periods[0], frequency)
+        _, end_date = self._get_period_range(periods[-1], frequency)
+        self._load_trade_days(cursor, start_date, end_date)
+
+        if self.index_code:
+            return
+
+        needs_security_universe = any(
+            config.get('completeness_model') in ('snapshot_security', 'trading_day_security')
+            or (
+                config.get('stock_level', True)
+                and config.get('date_column') is not None
+                and config.get('completeness_model') != 'event_security'
+            )
+            for _, config in data_type_configs
+        )
+        if needs_security_universe:
+            self._load_security_active_ranges(cursor, start_date, end_date)
 
     def _get_period_end_date(self, period, frequency):
         """
@@ -106,17 +198,16 @@ class CompletenessService:
             self._expected_stock_counts_cache[cache_key] = result
             return result
 
-        active_ranges = self._load_stock_active_ranges(cursor)
+        start_date, end_date = self._get_period_range(periods[0], frequency)
+        _, end_date = self._get_period_range(periods[-1], frequency)
+        anchor_trade_days = self._get_period_anchor_trade_days(cursor, periods, frequency, start_date, end_date)
+        if not anchor_trade_days:
+            result = {period: 0 for period in periods}
+            self._expected_stock_counts_cache[cache_key] = result
+            return result
 
-        result = {}
-        for period in periods:
-            period_end = self._get_period_end_date(period, frequency)
-            count = sum(
-                1 for listing_date, delisting_date in active_ranges
-                if (listing_date is None or listing_date <= period_end)
-                and (delisting_date is None or delisting_date >= period_end)
-            )
-            result[period] = max(count, 1)
+        active_ranges = self._load_security_active_ranges(cursor, start_date, end_date)
+        result = self._count_active_securities_by_anchor(periods, anchor_trade_days, active_ranges)
 
         self._expected_stock_counts_cache[cache_key] = result
         return result
@@ -143,6 +234,8 @@ class CompletenessService:
 
         matrix = {}
         with connection.cursor() as cursor:
+            self._prepare_period_universe(cursor, data_type_configs, periods, frequency)
+
             for key, config in data_type_configs:
                 started_at = time.monotonic()
                 label = config['label']
@@ -520,19 +613,6 @@ class CompletenessService:
             if period in anchor_trade_days
         ]
 
-        universe_filter = ""
-        stock_params = []
-        if self.stock_codes:
-            placeholders = ','.join(['%s'] * len(self.stock_codes))
-            universe_filter = f" AND universe.code IN ({placeholders})"
-            stock_params = self.stock_codes
-
-        security_universe_sql = """
-            SELECT code, start_date, end_date
-            FROM saa_securities
-            WHERE type = 'stock'
-        """
-
         if self.index_code:
             index_constituents_by_period = self._load_index_constituents_by_period(
                 cursor, periods, frequency, start_date, end_date
@@ -560,30 +640,15 @@ class CompletenessService:
                     index_constituents_by_period,
                 )
             else:
-                values_sql = ''.join(['SELECT %s AS period, %s AS anchor_date'] + [' UNION ALL SELECT %s, %s'] * (len(period_date_values) - 1))
-                values_params = []
-                for period, anchor_date in period_date_values:
-                    values_params.extend([period, anchor_date])
-
-                actual_query = f"""
-                    SELECT
-                        anchors.period,
-                        COUNT(DISTINCT target.{stock_column}) AS actual_count
-                    FROM ({values_sql}) anchors
-                    JOIN ({security_universe_sql}) universe
-                      ON (universe.start_date IS NULL OR universe.start_date <= anchors.anchor_date)
-                     AND (universe.end_date IS NULL OR universe.end_date >= anchors.anchor_date)
-                    JOIN {table_name} target
-                      ON target.{stock_column} = universe.code
-                     AND target.{date_column} = anchors.anchor_date
-                    WHERE 1 = 1{universe_filter}
-                    GROUP BY anchors.period
-                """
-                cursor.execute(actual_query, values_params + stock_params)
-                actual_by_period = {
-                    str(row[0]): row[1] or 0
-                    for row in cursor.fetchall()
-                }
+                actual_by_period = self._load_anchor_security_counts_python(
+                    cursor,
+                    table_name,
+                    date_column,
+                    stock_column,
+                    period_date_values,
+                    start_date,
+                    end_date,
+                )
 
         result = []
         for period in periods:
@@ -602,20 +667,10 @@ class CompletenessService:
         if cache_key in self._period_anchor_trade_days_cache:
             return self._period_anchor_trade_days_cache[cache_key]
 
-        cursor.execute(
-            """
-                SELECT date
-                FROM saa_trade_days
-                WHERE date >= %s
-                  AND date <= %s
-                ORDER BY date
-            """,
-            [start_date, end_date],
-        )
+        trade_days = self._load_trade_days(cursor, start_date, end_date)
         period_set = set(periods)
         anchors = {}
-        for row in cursor.fetchall():
-            trade_day = self._coerce_date(row[0])
+        for trade_day in trade_days:
             period = self._get_period_label_for_date(trade_day, frequency)
             if period in period_set:
                 anchors[period] = trade_day
@@ -908,33 +963,19 @@ class CompletenessService:
         if not anchor_trade_days:
             return {}
 
-        stock_filter = ""
-        params = [end_date, start_date]
-        if self.stock_codes:
-            placeholders = ','.join(['%s'] * len(self.stock_codes))
-            stock_filter = f" AND code IN ({placeholders})"
-            params.extend(self.stock_codes)
+        active_ranges = self._load_security_active_ranges(cursor, start_date, end_date)
+        return self._count_active_securities_by_anchor(periods, anchor_trade_days, active_ranges)
 
-        cursor.execute(
-            f"""
-                SELECT code, start_date, end_date
-                FROM saa_securities
-                WHERE type = 'stock'
-                  AND (start_date IS NULL OR start_date <= %s)
-                  AND (end_date IS NULL OR end_date >= %s){stock_filter}
-            """,
-            params,
-        )
+    def _count_active_securities_by_anchor(self, periods, anchor_trade_days, active_ranges):
         starts = []
         ends = []
-        for _, security_start, security_end in cursor.fetchall():
-            starts.append(self._coerce_date(security_start, date.min))
-            ends.append(self._coerce_date(security_end, date.max))
+        for _, security_start, security_end in active_ranges:
+            starts.append(security_start)
+            ends.append(security_end)
 
         starts.sort()
         ends.sort()
 
-        period_set = set(periods)
         expected_by_period = {period: 0 for period in periods}
         active_count = 0
         start_index = 0
@@ -948,10 +989,60 @@ class CompletenessService:
                 active_count -= 1
                 end_index += 1
 
-            if period in period_set:
-                expected_by_period[period] = active_count
+            expected_by_period[period] = active_count
 
         return expected_by_period
+
+    def _load_anchor_security_counts_python(
+        self,
+        cursor,
+        table_name,
+        date_column,
+        stock_column,
+        period_date_values,
+        start_date,
+        end_date,
+    ):
+        """统计锚点交易日实际数据，证券有效性使用预加载 universe 在内存判断。"""
+        if not period_date_values:
+            return {}
+
+        anchor_dates = sorted({anchor_date for _, anchor_date in period_date_values})
+        date_placeholders = ','.join(['%s'] * len(anchor_dates))
+        stock_filter = ""
+        params = list(anchor_dates)
+        if self.stock_codes:
+            placeholders = ','.join(['%s'] * len(self.stock_codes))
+            stock_filter = f" AND {stock_column} IN ({placeholders})"
+            params.extend(self.stock_codes)
+
+        cursor.execute(
+            f"""
+                SELECT DISTINCT {stock_column}, {date_column}
+                FROM {table_name}
+                WHERE {date_column} IN ({date_placeholders}){stock_filter}
+            """,
+            params,
+        )
+
+        actual_codes_by_date = {}
+        for code, value_date in cursor.fetchall():
+            actual_codes_by_date.setdefault(self._coerce_date(value_date), set()).add(code)
+
+        active_codes_by_date = {anchor_date: set() for anchor_date in anchor_dates}
+        for code, security_start, security_end in self._load_security_active_ranges(cursor, start_date, end_date):
+            for anchor_date in anchor_dates:
+                if security_start <= anchor_date <= security_end:
+                    active_codes_by_date[anchor_date].add(code)
+
+        return {
+            period: len(
+                actual_codes_by_date.get(anchor_date, set()).intersection(
+                    active_codes_by_date.get(anchor_date, set())
+                )
+            )
+            for period, anchor_date in period_date_values
+        }
 
     def _coerce_date(self, value, default=None):
         if value is None:

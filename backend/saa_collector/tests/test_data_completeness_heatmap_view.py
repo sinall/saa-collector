@@ -32,7 +32,11 @@ class DataCompletenessHeatmapViewTest(TestCase):
         self.assertEqual(response.data['success'], True)
         called_data_types = service.calculate_all.call_args.args[0]
         self.assertNotIn('tick', called_data_types)
-        self.assertIn('trade_days', called_data_types)
+        self.assertNotIn('trade_days', called_data_types)
+        self.assertNotIn('stock_info', called_data_types)
+        self.assertNotIn('securities', called_data_types)
+        self.assertIn('historical_quote', called_data_types)
+        self.assertIn('extras', called_data_types)
         messages = '\n'.join(logs.output)
         self.assertIn('heatmap request start frequency=monthly scope=all periods=1', messages)
         self.assertIn('heatmap request done frequency=monthly scope=all periods=1', messages)
@@ -55,6 +59,25 @@ class DataCompletenessHeatmapViewTest(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         service.calculate_all.assert_called_once()
+
+    @patch('saa_collector.services.completeness_service.CompletenessService')
+    def test_heatmap_returns_latest_cached_response_when_daily_cache_is_cold(self, service_class):
+        cached_result = {
+            'date_range': {'start': '2026-05', 'end': '2026-05'},
+            'frequency': 'monthly',
+            'periods': ['2026-05'],
+            'data_types': [],
+            'matrix': {},
+            'scope': {'key': 'all', 'label': '全市场'},
+        }
+        cache.set('collector:heatmap:monthly:all:latest', cached_result, timeout=3600)
+
+        response = self.client.get('/api/data-completeness/heatmap/?frequency=monthly')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['success'], True)
+        self.assertEqual(response.data['data'], cached_result)
+        service_class.assert_not_called()
 
     @patch('saa_collector.views.connection')
     @patch('saa_collector.services.completeness_service.CompletenessService')

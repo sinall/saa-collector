@@ -2664,6 +2664,8 @@ class CollectPlanResetView(APIView):
 
 class DataCompletenessHeatmapView(APIView):
     permission_classes = [IsAuthenticated]
+    CACHE_TIMEOUT_SECONDS = 6 * 60 * 60
+    LATEST_CACHE_TIMEOUT_SECONDS = 24 * 60 * 60
 
     INDEX_SCOPE_LABELS = {
         '000906': '中证800',
@@ -2680,12 +2682,21 @@ class DataCompletenessHeatmapView(APIView):
             return Response({'success': False, 'error': 'Invalid scope'}, status=400)
 
         cache_key = f"collector:heatmap:{frequency}:{scope['key']}:{timezone.localdate().isoformat()}"
+        latest_cache_key = f"collector:heatmap:{frequency}:{scope['key']}:latest"
         cached_result = cache.get(cache_key)
         if cached_result is not None:
             logger.info("heatmap request cache_hit frequency=%s scope=%s", frequency, scope['key'])
             return Response({
                 'success': True,
                 'data': cached_result
+            })
+
+        latest_result = cache.get(latest_cache_key)
+        if latest_result is not None:
+            logger.info("heatmap request latest_cache_hit frequency=%s scope=%s", frequency, scope['key'])
+            return Response({
+                'success': True,
+                'data': latest_result
             })
 
         service = CompletenessService(
@@ -2697,7 +2708,10 @@ class DataCompletenessHeatmapView(APIView):
         if not periods:
             return Response({'success': False, 'error': 'Invalid frequency'}, status=400)
 
-        data_types = [key for key in DATA_TYPE_CONFIG.keys() if is_data_type_visible(key, 'dashboard')]
+        data_types = [
+            key for key, config in DATA_TYPE_CONFIG.items()
+            if config.get('show_completeness') and is_data_type_visible(key, 'dashboard')
+        ]
         started_at = time.monotonic()
         logger.info(
             "heatmap request start frequency=%s scope=%s periods=%s data_types=%s",
@@ -2711,7 +2725,8 @@ class DataCompletenessHeatmapView(APIView):
             'key': scope['key'],
             'label': scope['label'],
         }
-        cache.set(cache_key, result, timeout=300)
+        cache.set(cache_key, result, timeout=self.CACHE_TIMEOUT_SECONDS)
+        cache.set(latest_cache_key, result, timeout=self.LATEST_CACHE_TIMEOUT_SECONDS)
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         logger.info(
             "heatmap request done frequency=%s scope=%s periods=%s data_types=%s elapsed_ms=%s",

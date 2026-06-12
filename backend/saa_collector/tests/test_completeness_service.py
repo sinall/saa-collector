@@ -18,8 +18,14 @@ class CompletenessServiceTest(TestCase):
     @patch('saa_collector.services.completeness_service.connection')
     def test_event_security_completeness_marks_empty_periods_not_applicable(self, connection):
         cursor = Mock()
-        cursor.fetchall.return_value = [
-            ('2020', 1),
+        cursor.fetchall.side_effect = [
+            [
+                (date(2020, 12, 31),),
+                (date(2021, 12, 31),),
+            ],
+            [
+                ('2020', 1),
+            ],
         ]
         connection.cursor.return_value.__enter__.return_value = cursor
 
@@ -28,25 +34,40 @@ class CompletenessServiceTest(TestCase):
 
         self.assertEqual(result['matrix']['dividend'], [1.0, -1])
 
-    def test_expected_stock_counts_use_listing_and_delisting_dates(self):
+    def test_expected_stock_counts_use_security_active_ranges(self):
         cursor = Mock()
-        cursor.fetchall.return_value = [
-            (date(2020, 1, 1), date(2200, 1, 1)),
-            (date(2020, 1, 1), date(2020, 12, 31)),
-            (date(2021, 1, 1), date(2200, 1, 1)),
+        cursor.fetchall.side_effect = [
+            [
+                (date(2020, 12, 31),),
+                (date(2021, 12, 31),),
+            ],
+            [
+                ('000001', date(2020, 1, 1), date(2200, 1, 1)),
+                ('000002', date(2020, 1, 1), date(2020, 12, 31)),
+                ('000003', date(2021, 1, 1), date(2200, 1, 1)),
+            ],
         ]
 
         service = CompletenessService(date_end=date(2021, 12, 31))
         result = service._get_expected_stock_counts(cursor, ['2020', '2021'], 'yearly')
 
         self.assertEqual(result, {'2020': 2, '2021': 2})
-        cursor.execute.assert_called_once_with("SELECT listing_date, delisting_date FROM saa_stocks")
+        executed_sql = '\n'.join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertIn('FROM saa_trade_days', executed_sql)
+        self.assertIn('FROM saa_securities', executed_sql)
+        self.assertNotIn('FROM saa_stocks', executed_sql)
 
-    def test_expected_stock_counts_are_cached_per_frequency_and_periods(self):
+    def test_expected_stock_counts_reuse_trade_days_and_security_ranges(self):
         cursor = Mock()
-        cursor.fetchall.return_value = [
-            (date(2020, 1, 1), date(2200, 1, 1)),
-            (date(2021, 1, 1), date(2200, 1, 1)),
+        cursor.fetchall.side_effect = [
+            [
+                (date(2020, 12, 31),),
+                (date(2021, 12, 31),),
+            ],
+            [
+                ('000001', date(2020, 1, 1), date(2200, 1, 1)),
+                ('000002', date(2021, 1, 1), date(2200, 1, 1)),
+            ],
         ]
 
         service = CompletenessService(date_end=date(2021, 12, 31))
@@ -55,7 +76,9 @@ class CompletenessServiceTest(TestCase):
 
         self.assertEqual(first, {'2020': 1, '2021': 2})
         self.assertEqual(second, first)
-        cursor.execute.assert_called_once_with("SELECT listing_date, delisting_date FROM saa_stocks")
+        executed_sql = '\n'.join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertEqual(executed_sql.count('FROM saa_trade_days'), 1)
+        self.assertEqual(executed_sql.count('FROM saa_securities'), 1)
 
     @patch('saa_collector.services.completeness_service.connection')
     def test_trading_day_security_completeness_uses_trade_day_security_universe(self, connection):
@@ -71,7 +94,8 @@ class CompletenessServiceTest(TestCase):
                 ('000002', date(2025, 1, 1), date(2200, 1, 1)),
             ],
             [
-                ('2025-01', 2),
+                ('000001', date(2025, 1, 3)),
+                ('000002', date(2025, 1, 3)),
             ],
         ]
         connection.cursor.return_value.__enter__.return_value = cursor
@@ -94,7 +118,7 @@ class CompletenessServiceTest(TestCase):
                 ('000001', date(2025, 1, 1), date(2200, 1, 1)),
             ],
             [
-                ('2025-Q1', 1),
+                ('000001', date(2025, 3, 4)),
             ],
         ]
         connection.cursor.return_value.__enter__.return_value = cursor
@@ -128,6 +152,40 @@ class CompletenessServiceTest(TestCase):
         )
 
         self.assertEqual(result, {'2025-01': 2, '2025-02': 1})
+
+    @patch('saa_collector.services.completeness_service.connection')
+    def test_calculate_all_loads_trade_days_and_securities_once(self, connection):
+        cursor = Mock()
+        cursor.fetchall.side_effect = [
+            [
+                (date(2025, 1, 2),),
+                (date(2025, 1, 31),),
+                (date(2025, 2, 28),),
+            ],
+            [
+                ('000001', date(2025, 1, 1), date(2200, 1, 1)),
+                ('000002', date(2025, 1, 1), date(2025, 1, 31)),
+            ],
+            [
+                ('2025-01', 2),
+                ('2025-02', 1),
+            ],
+            [
+                ('000001', date(2025, 1, 31)),
+                ('000002', date(2025, 1, 31)),
+                ('000001', date(2025, 2, 28)),
+            ],
+        ]
+        connection.cursor.return_value.__enter__.return_value = cursor
+
+        service = CompletenessService(date_end=date(2025, 2, 28))
+        result = service.calculate_all(['historical_quote', 'extras'], ['2025-01', '2025-02'], 'monthly')
+
+        self.assertEqual(result['matrix']['historical_quote'], [1.0, 1.0])
+        self.assertEqual(result['matrix']['extras'], [1.0, 1.0])
+        executed_sql = '\n'.join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertEqual(executed_sql.count('FROM saa_trade_days'), 1)
+        self.assertEqual(executed_sql.count('FROM saa_securities'), 1)
 
     @patch('saa_collector.services.completeness_service.connection')
     def test_trading_day_security_index_scope_uses_period_anchor_constituents(self, connection):
