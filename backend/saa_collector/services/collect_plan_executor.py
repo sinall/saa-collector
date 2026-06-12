@@ -289,7 +289,14 @@ def execute_collect(job):
                 with connection.cursor() as cursor:
                     scoped_symbols_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, target_dates)
                 for target_date in target_dates:
-                    service.collect(target_dates=[target_date], symbols=scoped_symbols_by_date.get(target_date, (None, None))[1])
+                    scoped_symbols = scoped_symbols_by_date.get(target_date, (None, None))[1]
+                    if not scoped_symbols:
+                        logger.info(
+                            'Skipping extras collect for %s: no scoped symbols at target date',
+                            target_date,
+                        )
+                        continue
+                    service.collect(target_dates=[target_date], symbols=scoped_symbols)
             else:
                 service.collect(target_dates=target_dates, symbols=symbols)
         elif data_type == 'index_quotes':

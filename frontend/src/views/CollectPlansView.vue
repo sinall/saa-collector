@@ -67,7 +67,7 @@
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="row.status === 'PENDING'" @click="$router.push(`/collect-plans/${row.id}/edit`)">编辑</el-dropdown-item>
+                  <el-dropdown-item v-if="canEditPlan(row)" @click="$router.push(`/collect-plans/${row.id}/edit`)">编辑</el-dropdown-item>
                   <el-dropdown-item v-if="row.status === 'PENDING'" @click="executePlan(row)">执行</el-dropdown-item>
                   <el-dropdown-item v-if="row.status === 'QUEUED' || row.status === 'RUNNING'" @click="stopPlan(row)">停止</el-dropdown-item>
                   <el-dropdown-item v-if="row.status === 'STOPPED'" @click="continuePlan(row)">继续</el-dropdown-item>
@@ -310,6 +310,10 @@ const getStatusType = (status: string) => {
     'FAILED': 'danger'
   }
   return types[status] || 'info'
+}
+
+const canEditPlan = (plan: DisplayPlan) => {
+  return plan.source === 'MANUAL' && plan.status !== 'QUEUED' && plan.status !== 'RUNNING'
 }
 
 const viewPlan = (id: number) => {

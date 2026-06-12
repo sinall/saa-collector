@@ -12,7 +12,7 @@
           </div>
           <div>
             <el-button 
-              v-if="plan?.status === 'PENDING'"
+              v-if="canEditPlan(plan)"
               @click="$router.push(`/collect-plans/${plan?.id}/edit`)"
             >编辑</el-button>
             <el-button 
@@ -141,6 +141,11 @@ let pollTimer: number | null = null
 
 const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
   return job.config?.params?.[key] ?? job.config?.[key] ?? job.params?.[key] ?? null
+}
+
+const canEditPlan = (currentPlan: any) => {
+  if (!currentPlan) return false
+  return currentPlan.source === 'MANUAL' && currentPlan.status !== 'QUEUED' && currentPlan.status !== 'RUNNING'
 }
 
 const clearPollTimer = () => {

@@ -20,9 +20,13 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         service_class.return_value.collect.assert_called_once()
 
     @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
+    @patch('saa_collector.services.collect_plan_executor.resolve_index_constituent_payloads_by_dates')
     @patch('saa_collector.services.common.stock_status_service.StockStatusService')
-    def test_execute_collect_runs_extras_job(self, service_class, resolve_target_dates):
+    def test_execute_collect_runs_extras_job(self, service_class, resolve_index_payloads, resolve_target_dates):
         resolve_target_dates.return_value = [date(2026, 5, 29)]
+        resolve_index_payloads.return_value = {
+            date(2026, 5, 29): (date(2026, 5, 29), {'000001'}),
+        }
         job = CollectJob.objects.create(
             data_type='extras',
             config={'symbols': [], 'params': {'start_date': '2026-05-29'}},

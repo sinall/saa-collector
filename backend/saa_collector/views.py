@@ -89,6 +89,10 @@ def resolve_collect_dates_from_job(job):
     return start_date, end_date, params
 
 
+def can_edit_collect_plan(plan):
+    return plan.source == 'MANUAL' and plan.status not in ('QUEUED', 'RUNNING')
+
+
 def calculate_expected_periods(earliest_date, latest_date, frequency):
     if not earliest_date or not latest_date or not frequency:
         return 0
@@ -2310,10 +2314,10 @@ class CollectPlanDetailView(APIView):
     def patch(self, request, pk):
         plan = get_object_or_404(CollectPlan, pk=pk)
 
-        if plan.status != 'PENDING':
+        if not can_edit_collect_plan(plan):
             return Response({
                 'success': False,
-                'error': '只能编辑待执行的计划'
+                'error': '只能编辑手动创建且未执行中的计划'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = CollectPlanUpdateSerializer(data=request.data)

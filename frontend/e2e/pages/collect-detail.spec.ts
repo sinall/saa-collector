@@ -513,6 +513,57 @@ test.describe('Collect Plan Detail Page', () => {
     await expect(page.locator('.collect-plan-detail')).not.toContainText('采集计划 1249')
   })
 
+  test('should show edit action for completed manual plans', async ({ page }) => {
+    await page.route('**/api/data-types/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data_types: [], groups: [] }),
+      })
+    })
+
+    await page.route('**/api/collect-plans/1308/', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            id: 1308,
+            name: '即时采集计划',
+            status: 'COMPLETED',
+            status_display: '已完成',
+            source: 'MANUAL',
+            source_display: '即时采集',
+            execution_mode: 'PARALLEL',
+            execution_mode_display: '并行',
+            created_at: '2026-06-01 10:00:00',
+            started_at: '2026-06-01 10:01:00',
+            completed_at: '2026-06-01 10:02:00',
+            jobs_count: 1,
+            jobs: [
+              {
+                id: 901,
+                data_type: 'quote',
+                data_type_display: '最新行情',
+                config: { symbols: ['000001'], params: {} },
+                status: 'SUCCESS',
+                status_display: '成功',
+              },
+            ],
+          },
+        }),
+      })
+    })
+
+    await page.goto('/admin/collector/collect-plans/1308')
+    await waitForPageLoad(page)
+
+    await expect(page.getByRole('button', { name: '编辑' })).toBeVisible()
+    await page.getByRole('button', { name: '编辑' }).click()
+    await expect(page).toHaveURL(/\/collect-plans\/1308\/edit$/)
+  })
+
   test('should load plan detail without errors', async ({ page }) => {
     const errors: string[] = []
     const failedRequests: string[] = []

@@ -144,10 +144,65 @@ class CollectPlanActionAPITest(TestCase):
             self.assertNotIn('remaining_symbols', job.config)
             self.assertNotIn('failed_symbols', job.config)
 
+    def test_manual_plan_can_be_edited_after_completion(self):
+        plan = CollectPlan.objects.create(
+            name='手动计划',
+            source='MANUAL',
+            status='COMPLETED',
+        )
+        job = CollectJob.objects.create(
+            plan=plan,
+            data_type='quote',
+            status='SUCCESS',
+            config={'symbols': ['000001'], 'params': {'start_date': '2024-01-01', 'end_date': '2024-12-31'}},
+        )
+
+        response = self.client.patch(f'/api/collect-plans/{plan.id}/', {
+            'name': '手动计划-已更新',
+            'jobs': [{
+                'id': job.id,
+                'data_type': 'quote',
+                'symbols': ['000001'],
+                'start_date': '2025-01-01',
+                'end_date': '2025-12-31',
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        plan.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(plan.name, '手动计划-已更新')
+        self.assertEqual(job.config['params']['start_date'], '2025-01-01')
+        self.assertEqual(job.config['params']['end_date'], '2025-12-31')
+
+    def test_integrity_and_schedule_plans_cannot_be_edited(self):
+        integrity_plan = CollectPlan.objects.create(
+            name='修复计划',
+            source='INTEGRITY',
+            status='COMPLETED',
+        )
+        schedule_plan = CollectPlan.objects.create(
+            name='定时触发计划',
+            source='SCHEDULE',
+            status='COMPLETED',
+        )
+
+        for plan in (integrity_plan, schedule_plan):
+            response = self.client.patch(f'/api/collect-plans/{plan.id}/', {
+                'name': f'{plan.name}-已更新',
+                'jobs': [],
+            }, format='json')
+
+            self.assertEqual(response.status_code, 400)
+            self.assertFalse(response.data['success'])
+            self.assertIn('只能编辑手动创建且未执行中的计划', response.data['error'])
+
 
 class CollectPlanResumeExecutionTest(TestCase):
+    @patch('saa_collector.services.collect_plan_executor.db.connections.close_all')
     @patch('saa_collector.services.collect_plan_executor.execute_job')
-    def test_execute_plan_skips_success_jobs(self, execute_job):
+    def test_execute_plan_skips_success_jobs(self, execute_job, close_all):
         plan = CollectPlan.objects.create(name='跳过成功任务')
         success_job = CollectJob.objects.create(
             plan=plan,
@@ -164,6 +219,7 @@ class CollectPlanResumeExecutionTest(TestCase):
 
         execute_plan(plan.id, task_id='celery-task-1')
 
+        close_all.assert_called()
         execute_job.assert_called_once_with(pending_job.id, 'celery-task-1', plan.id)
         success_job.refresh_from_db()
         pending_job.refresh_from_db()

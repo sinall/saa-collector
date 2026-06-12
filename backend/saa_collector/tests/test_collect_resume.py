@@ -324,11 +324,13 @@ class SkipExistingCollectTest(TestCase):
 
     @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
     @patch('saa_collector.services.collect_plan_executor.stock_status_target_date_is_complete')
+    @patch('saa_collector.services.collect_plan_executor.resolve_index_constituent_payloads_by_dates')
     @patch('saa_collector.services.common.stock_status_service.StockStatusService')
     def test_extras_skip_existing_collects_only_missing_target_dates(
-            self, service_class, target_date_is_complete, resolve_target_dates):
+            self, service_class, resolve_index_payloads, target_date_is_complete, resolve_target_dates):
         resolve_target_dates.return_value = [date(2024, 5, 31), date(2024, 6, 28)]
         target_date_is_complete.side_effect = [True, False]
+        resolve_index_payloads.return_value = {}
         job = CollectJob.objects.create(
             data_type='extras',
             config={
