@@ -186,6 +186,7 @@ export const collectHistoricalQuotes = async (params: {
   symbols?: string[]
   start_date?: string
   end_date?: string
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
 }): Promise<ApiResponse<CollectJob>> => {
   const response = await api.post('/collect/historical-quotes/', params)
   return response.data
@@ -195,6 +196,7 @@ export const collectStatements = async (params: {
   symbols?: string[]
   start_date?: string
   report_types?: string[]
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
 }): Promise<ApiResponse<CollectJob>> => {
   const response = await api.post('/collect/statements/', params)
   return response.data
@@ -203,6 +205,7 @@ export const collectStatements = async (params: {
 export const collectCapital = async (params: {
   symbols?: string[]
   start_date?: string
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
 }): Promise<ApiResponse<CollectJob>> => {
   const response = await api.post('/collect/capital/', params)
   return response.data
@@ -216,6 +219,7 @@ export const collectValuation = async (symbols?: string[]): Promise<ApiResponse<
 export const collectMainBusiness = async (params: {
   symbols?: string[]
   start_date?: string
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
 }): Promise<ApiResponse<CollectJob>> => {
   const response = await api.post('/collect/main-business/', params)
   return response.data
@@ -813,6 +817,7 @@ export interface CollectPlan {
       start_date?: string
       end_date?: string
       data_frequency?: 'daily' | 'monthly'
+      end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
     }
     status: string
     status_display: string
@@ -831,6 +836,7 @@ export interface CollectPlanJobPayload {
   symbols?: string[]
   start_date?: string | null
   end_date?: string | null
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
   report_types?: string[]
   skip_existing?: boolean
 }

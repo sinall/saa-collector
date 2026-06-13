@@ -120,7 +120,7 @@ DATA_TYPE_CONFIG = {
         'data_frequency': 'monthly',
         'completeness_model': 'periodic_security',
         'stock_level': True,
-        'label': '历史月行情',
+        'label': '历史行情',
         'stock_column': 'code',
         'supports_integrity_check': True,
         'group': 'market',

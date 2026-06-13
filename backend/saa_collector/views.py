@@ -25,7 +25,7 @@ from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 
 from .collect_job_config import build_collect_job_config
-from .date_expressions import normalize_schedule_params, parse_schedule_date
+from .date_expressions import normalize_schedule_params, parse_schedule_date, resolve_collect_job_date_range
 from .models import CollectJob, DataIntegrityReport, DataIntegrityItem, CollectPlan, CollectSchedule
 from .task_dispatcher import (
     create_plan_from_schedule,
@@ -83,9 +83,7 @@ def resolve_collect_dates_from_job(job):
         params = dict(params, start_date=start_value)
     if end_value not in (None, ''):
         params = dict(params, end_date=end_value)
-
-    start_date = parse_schedule_date(params.get('start_date'), today=timezone.localdate())
-    end_date = parse_schedule_date(params.get('end_date'), today=timezone.localdate())
+    start_date, end_date, params = resolve_collect_job_date_range(params, today=timezone.localdate())
     return start_date, end_date, params
 
 
@@ -303,6 +301,7 @@ class BaseCollectView(APIView):
                 params={
                     'start_date': str(serializer.validated_data.get('start_date')) if serializer.validated_data.get('start_date') else None,
                     'end_date': str(serializer.validated_data.get('end_date')) if serializer.validated_data.get('end_date') else None,
+                    'end_date_mode': serializer.validated_data.get('end_date_mode', 'EXECUTION_DAY'),
                     'report_types': serializer.validated_data.get('report_types', []),
                 },
             )
@@ -1893,7 +1892,7 @@ class DataIntegrityReportHeatmapView(APIView):
 
 DATA_TYPE_LABELS = {
     'quote': '最新行情',
-    'historical_quote': '历史月行情',
+    'historical_quote': '历史行情',
     'balance_sheet': '资产负债表',
     'income': '利润表',
     'cash_flow': '现金流量表',
@@ -2370,6 +2369,8 @@ class CollectPlanDetailView(APIView):
                         params['skip_existing'] = job_data.get('skip_existing', False)
                     if 'data_frequency' in job_data:
                         params['data_frequency'] = job_data.get('data_frequency', 'daily')
+                    if 'end_date_mode' in job_data:
+                        params['end_date_mode'] = job_data.get('end_date_mode', 'EXECUTION_DAY')
                     if 'stock_scope' in job_data:
                         params['stock_scope'] = job_data.get('stock_scope', 'ALL')
                     if 'stock_list_code' in job_data:
@@ -2914,7 +2915,7 @@ class DisplayFieldConfigView(APIView):
         'saa_stocks': '基本信息',
         'saa_securities': '证券主数据',
         'saa_latest_prices': '最新行情',
-        'saa_prices_ex': '历史月行情',
+        'saa_prices_ex': '历史行情',
         'saa_raw_balance_sheet': '资产负债表',
         'saa_raw_income_statement': '利润表',
         'saa_raw_cash_flow_statement': '现金流量表',
@@ -2937,7 +2938,7 @@ class DisplayFieldConfigView(APIView):
             'label': '行情数据',
             'items': [
                 {'key': 'quote', 'label': '最新行情', 'table': 'saa_latest_prices'},
-                {'key': 'historical_quote', 'label': '历史月行情', 'table': 'saa_prices_ex'},
+                {'key': 'historical_quote', 'label': '历史行情', 'table': 'saa_prices_ex'},
             ]
         },
         {

@@ -98,7 +98,7 @@
         </el-table-column>
         <el-table-column label="结束日期" width="120">
           <template #default="{ row }">
-            {{ getJobParam(row, 'end_date') || '-' }}
+            {{ getJobEndDateDisplay(row) }}
           </template>
         </el-table-column>
         <el-table-column prop="status_display" label="状态" width="100">
@@ -141,6 +141,11 @@ let pollTimer: number | null = null
 
 const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
   return job.config?.params?.[key] ?? job.config?.[key] ?? job.params?.[key] ?? null
+}
+
+const getJobEndDateDisplay = (job: any) => {
+  const endDateMode = job.config?.params?.end_date_mode || (getJobParam(job, 'end_date') ? 'FIXED' : 'EXECUTION_DAY')
+  return endDateMode === 'EXECUTION_DAY' ? '执行当天' : (getJobParam(job, 'end_date') || '-')
 }
 
 const canEditPlan = (currentPlan: any) => {

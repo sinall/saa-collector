@@ -23,12 +23,28 @@ class CollectJobCreateSerializer(serializers.Serializer):
     )
     start_date = serializers.DateField(required=False, help_text='开始日期')
     end_date = serializers.DateField(required=False, help_text='结束日期')
+    end_date_mode = serializers.ChoiceField(
+        choices=['FIXED', 'EXECUTION_DAY'],
+        required=False,
+        default='EXECUTION_DAY',
+        help_text='结束日期模式'
+    )
     report_types = serializers.ListField(
         child=serializers.CharField(max_length=50),
         required=False,
         default=list,
         help_text='报表类型列表 (balance_sheet, income, cash_flow, dividend)'
     )
+
+    def validate(self, attrs):
+        start_date = attrs.get('start_date')
+        end_date = attrs.get('end_date')
+        end_date_mode = attrs.get('end_date_mode', 'EXECUTION_DAY')
+        if end_date_mode == 'FIXED' and end_date is None:
+            raise serializers.ValidationError('请选择结束日期或改为执行当天')
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError('结束日期不能早于开始日期')
+        return attrs
 class InstantCollectJobSerializer(serializers.Serializer):
     id = serializers.IntegerField(required=False)
     data_type = serializers.CharField(max_length=50, help_text='Data type to collect')
@@ -59,6 +75,12 @@ class InstantCollectJobSerializer(serializers.Serializer):
     )
     start_date = serializers.DateField(required=False, allow_null=True, help_text='Start date')
     end_date = serializers.DateField(required=False, allow_null=True, help_text='End date')
+    end_date_mode = serializers.ChoiceField(
+        choices=['FIXED', 'EXECUTION_DAY'],
+        required=False,
+        default='EXECUTION_DAY',
+        help_text='End date mode for collect plan jobs'
+    )
     report_types = serializers.ListField(
         child=serializers.CharField(max_length=50),
         required=False,
@@ -74,6 +96,9 @@ class InstantCollectJobSerializer(serializers.Serializer):
     def validate(self, attrs):
         start_date = attrs.get('start_date')
         end_date = attrs.get('end_date')
+        end_date_mode = attrs.get('end_date_mode', 'EXECUTION_DAY')
+        if end_date_mode == 'FIXED' and end_date is None:
+            raise serializers.ValidationError('请选择结束日期或改为执行当天')
         if start_date and end_date and end_date < start_date:
             raise serializers.ValidationError('结束日期不能早于开始日期')
         return attrs
@@ -271,6 +296,7 @@ class CollectPlanCreateSerializer(serializers.Serializer):
                         'stock_scope': job_data.get('stock_scope', 'ALL'),
                         'stock_list_code': job_data.get('stock_list_code') or None,
                         'data_frequency': job_data.get('data_frequency', 'daily'),
+                        'end_date_mode': job_data.get('end_date_mode', 'EXECUTION_DAY'),
                         'start_date': str(job_data['start_date']) if job_data.get('start_date') else None,
                         'end_date': str(job_data['end_date']) if job_data.get('end_date') else None,
                         'report_types': job_data.get('report_types', []),

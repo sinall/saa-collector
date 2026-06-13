@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -54,6 +55,40 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(job_config['params']['data_frequency'], 'monthly')
         self.assertEqual(job_config['stock_scope'], 'ALL')
         self.assertTrue(CollectJob.objects.get().config['params']['skip_existing'])
+
+    def test_create_plan_job_persists_execution_day_end_date_mode(self):
+        response = self.client.post('/api/collect-plans/', {
+            'name': '浮动结束日期计划',
+            'execution_mode': 'PARALLEL',
+            'jobs': [{
+                'data_type': 'historical_quote',
+                'stock_scope': 'ALL',
+                'symbols': ['000001'],
+                'start_date': '2024-01-01',
+                'end_date_mode': 'EXECUTION_DAY',
+            }]
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        job_config = response.data['data']['jobs'][0]['config']
+        self.assertEqual(job_config['params']['end_date_mode'], 'EXECUTION_DAY')
+        self.assertIsNone(job_config['params'].get('end_date'))
+
+    def test_collect_historical_quotes_defaults_end_date_to_execution_day(self):
+        fixed_today = date(2026, 6, 13)
+        with patch('saa_collector.views.timezone.localdate', return_value=fixed_today), \
+             patch('saa_collector.views.threading.Thread.start', return_value=None):
+            response = self.client.post('/api/collect/historical-quotes/', {
+                'symbols': ['000001'],
+                'start_date': '2024-01-01',
+                'end_date_mode': 'EXECUTION_DAY',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data['success'])
+        job = CollectJob.objects.get()
+        self.assertEqual(job.config['params']['end_date_mode'], 'EXECUTION_DAY')
+        self.assertIsNone(job.config['params'].get('end_date'))
 
     def test_create_plan_job_persists_index_scope(self):
         response = self.client.post('/api/collect-plans/', {

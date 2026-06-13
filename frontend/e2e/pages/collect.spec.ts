@@ -242,12 +242,13 @@ test('collect-plan edit should submit job date config when saving', async ({ pag
                 id: 901,
                 data_type: 'quote',
                 data_type_display: '最新行情',
-                config: {
-                  symbols: ['000001'],
-                  params: {
-                    start_date: patchBody.jobs[0].start_date,
-                    end_date: patchBody.jobs[0].end_date,
-                  },
+              config: {
+                symbols: ['000001'],
+                end_date_mode: 'FIXED',
+                params: {
+                  start_date: patchBody.jobs[0].start_date,
+                  end_date: patchBody.jobs[0].end_date,
+                },
                 },
                 status: 'PENDING',
                 status_display: '待执行',
@@ -305,8 +306,11 @@ test('collect-plan edit should submit job date config when saving', async ({ pag
     {
       id: 901,
       data_type: 'quote',
+      data_frequency: 'daily',
+      skip_existing: false,
       stock_scope: 'ALL',
       stock_list_code: null,
+      end_date_mode: 'FIXED',
       symbols: ['000001'],
       start_date: '2024-01-01',
       end_date: '2024-12-31',
@@ -362,6 +366,7 @@ test('collect-plan edit should preserve index stock scope when saving', async ({
                   symbols: [],
                   stock_scope: patchBody.jobs[0].stock_scope,
                   stock_list_code: patchBody.jobs[0].stock_list_code,
+                  end_date_mode: patchBody.jobs[0].end_date_mode,
                   params: {
                     start_date: patchBody.jobs[0].start_date,
                     end_date: patchBody.jobs[0].end_date,
@@ -402,6 +407,7 @@ test('collect-plan edit should preserve index stock scope when saving', async ({
                 symbols: [],
                 stock_scope: 'INDEX',
                 stock_list_code: '000906',
+                end_date_mode: 'FIXED',
                 params: {
                   start_date: '2024-01-01',
                   end_date: '2024-12-31',
@@ -433,11 +439,133 @@ test('collect-plan edit should preserve index stock scope when saving', async ({
       data_type: 'quote',
       data_frequency: 'daily',
       skip_existing: false,
+      end_date_mode: 'FIXED',
       stock_scope: 'INDEX',
       stock_list_code: '000906',
       symbols: [],
       start_date: '2024-01-01',
       end_date: '2024-12-31',
+    },
+  ])
+})
+
+test('collect-plan edit should save execution-day end date mode', async ({ page }) => {
+  let patchBody: any = null
+
+  await page.route(/.*\/admin\/collector\/api\/data-types\/?(\?.*)?$/, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data_types: [
+          {
+            key: 'quote',
+            label: '最新行情',
+            visibility: { collect_plan: true },
+          },
+        ],
+        groups: [],
+      }),
+    })
+  })
+
+  await page.route(/.*\/admin\/collector\/api\/collect-plans\/1308\/?$/, async route => {
+    if (route.request().method() === 'PATCH') {
+      patchBody = route.request().postDataJSON()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            id: 1308,
+            name: patchBody.name,
+            status: 'PENDING',
+            status_display: '待执行',
+            source: 'MANUAL',
+            source_display: '即时采集',
+            execution_mode: patchBody.execution_mode,
+            execution_mode_display: '并行',
+            created_at: '2026-06-01 10:00:00',
+            jobs_count: 1,
+            jobs: [
+              {
+                id: 901,
+                data_type: 'quote',
+                data_type_display: '最新行情',
+                config: {
+                  symbols: ['000001'],
+                  params: {
+                    start_date: patchBody.jobs[0].start_date,
+                    end_date: null,
+                    end_date_mode: patchBody.jobs[0].end_date_mode,
+                  },
+                },
+                status: 'PENDING',
+                status_display: '待执行',
+              },
+            ],
+          },
+        }),
+      })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          id: 1308,
+          name: '计划 1308',
+          status: 'PENDING',
+          status_display: '待执行',
+          source: 'MANUAL',
+          source_display: '即时采集',
+          execution_mode: 'PARALLEL',
+          execution_mode_display: '并行',
+          created_at: '2026-06-01 10:00:00',
+          jobs_count: 1,
+          jobs: [
+            {
+              id: 901,
+              data_type: 'quote',
+              data_type_display: '最新行情',
+              config: {
+                symbols: ['000001'],
+                params: {
+                  start_date: '2024-01-01',
+                  end_date: null,
+                  end_date_mode: 'EXECUTION_DAY',
+                },
+              },
+              status: 'PENDING',
+              status_display: '待执行',
+            },
+          ],
+        },
+      }),
+    })
+  })
+
+  await page.goto('/admin/collector/collect-plans/1308/edit')
+  await waitForPageLoad(page)
+  await page.getByRole('button', { name: '保存' }).click()
+
+  await expect.poll(() => patchBody).not.toBeNull()
+  expect(patchBody.jobs).toEqual([
+    {
+      id: 901,
+      data_type: 'quote',
+      stock_scope: 'ALL',
+      stock_list_code: null,
+      end_date_mode: 'EXECUTION_DAY',
+      symbols: ['000001'],
+      start_date: '2024-01-01',
+      end_date: null,
+      data_frequency: 'daily',
+      skip_existing: false,
     },
   ])
 })

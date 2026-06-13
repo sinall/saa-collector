@@ -134,6 +134,25 @@ def resolve_schedule_date_range(
     return start_date, end_date, normalized
 
 
+def resolve_collect_job_date_range(params, *, today=None):
+    normalized = normalize_schedule_params(params)
+    base_date = today or date.today()
+
+    start_date = parse_schedule_date(
+        normalized.get('start_date'),
+        today=base_date,
+    )
+    end_date = parse_schedule_date(
+        normalized.get('end_date'),
+        today=base_date,
+    )
+
+    if end_date is None and str(normalized.get('end_date_mode') or '').upper() == 'EXECUTION_DAY':
+        end_date = base_date
+
+    return start_date, end_date, normalized
+
+
 def resolve_trade_day_offset(base_date, offset):
     if offset == 0:
         latest_trade_day = get_latest_trade_day_on_or_before(base_date)

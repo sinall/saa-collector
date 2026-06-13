@@ -23,7 +23,7 @@
         <div v-for="(job, index) in form.jobs" :key="index" class="job-item">
           <el-card shadow="never">
             <el-row :gutter="20">
-              <el-col :span="8">
+              <el-col :span="24">
                 <el-form-item label="数据类型">
                   <el-select v-model="job.data_type">
                     <el-option
@@ -35,6 +35,8 @@
                   </el-select>
                 </el-form-item>
               </el-col>
+            </el-row>
+            <el-row :gutter="20">
               <el-col :span="8">
                 <el-form-item label="开始日期">
                   <el-date-picker
@@ -44,14 +46,24 @@
                   />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="16">
                 <el-form-item label="结束日期">
-                  <el-date-picker
-                    v-model="job.date_end"
-                    type="date"
-                    value-format="YYYY-MM-DD"
-                    :disabled-date="(date: Date) => isBeforeDate(date, job.date_start)"
-                  />
+                  <div class="end-date-control">
+                    <el-radio-group v-model="job.end_date_mode" size="small" class="end-date-mode-group">
+                      <el-radio-button value="EXECUTION_DAY">执行当天</el-radio-button>
+                      <el-radio-button value="FIXED">固定日期</el-radio-button>
+                    </el-radio-group>
+                    <el-date-picker
+                      v-if="job.end_date_mode === 'FIXED'"
+                      v-model="job.date_end"
+                      class="end-date-picker"
+                      type="date"
+                      value-format="YYYY-MM-DD"
+                      placeholder="结束日期"
+                      :disabled-date="(date: Date) => isBeforeDate(date, job.date_start)"
+                    />
+                    <span v-else class="floating-end-date">执行当天</span>
+                  </div>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -134,6 +146,7 @@ const addJob = () => {
     data_type: 'quote',
     stock_scope: 'ALL',
     stock_list_code: '000906',
+    end_date_mode: 'EXECUTION_DAY',
     symbols_input: '',
     date_start: null,
     date_end: null,
@@ -155,7 +168,8 @@ const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job
     ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
     : [],
   start_date: job.date_start,
-  end_date: job.date_end,
+  end_date: job.end_date_mode === 'FIXED' ? job.date_end : null,
+  end_date_mode: job.end_date_mode,
   data_frequency: job.data_frequency,
   skip_existing: Boolean(job.skip_existing)
 }))
@@ -177,7 +191,7 @@ const isBeforeDate = (date: Date, minDate?: string | null) => {
 
 const hasInvalidJobDateRange = () => {
   return form.value.jobs.some((job: any) => (
-    job.date_start && job.date_end && job.date_end < job.date_start
+    job.end_date_mode === 'FIXED' && job.date_start && job.date_end && job.date_end < job.date_start
   ))
 }
 
@@ -198,6 +212,7 @@ const fetchPlan = async () => {
       data_type: job.data_type,
       stock_scope: job.config?.stock_scope || job.config?.params?.stock_scope || 'ALL',
       stock_list_code: job.config?.stock_list_code || job.config?.params?.stock_list_code || '000906',
+      end_date_mode: job.config?.params?.end_date_mode || (getJobParam(job, 'end_date') ? 'FIXED' : 'EXECUTION_DAY'),
       symbols_input: job.config?.symbols?.join('\n') || '',
       date_start: getJobParam(job, 'start_date'),
       date_end: getJobParam(job, 'end_date'),
@@ -212,6 +227,10 @@ const fetchPlan = async () => {
 const savePlan = async () => {
   if (!form.value.name) {
     ElMessage.warning('请输入计划名称')
+    return
+  }
+  if (form.value.jobs.some((job: any) => job.end_date_mode === 'FIXED' && !job.date_end)) {
+    ElMessage.warning('请选择结束日期或改为执行当天')
     return
   }
   if (hasInvalidJobDateRange()) {
@@ -282,5 +301,22 @@ watch(
 }
 .job-item {
   margin-bottom: 16px;
+}
+.end-date-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.end-date-mode-group {
+  flex: 0 0 auto;
+}
+.end-date-picker {
+  width: 220px;
+}
+.floating-end-date {
+  color: #909399;
+  font-size: 14px;
+  line-height: 32px;
 }
 </style>

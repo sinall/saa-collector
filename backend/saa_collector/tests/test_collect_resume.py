@@ -108,6 +108,36 @@ class FinancialStatementResumeTest(TestCase):
         self.assertEqual(kwargs['progress_total_symbols'], 3)
         self.assertEqual(kwargs['progress_completed_symbols'], 1)
 
+
+class FloatingEndDateCollectTest(TestCase):
+    @patch('saa_collector.services.collect_plan_executor.filter_existing_symbols_for_job', side_effect=lambda job, symbols, start_date, end_date: symbols)
+    @patch('saa_collector.services.collect_plan_executor.timezone.localdate')
+    @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
+    def test_historical_quote_end_date_mode_execution_day_resolves_to_today(
+            self, factory_class, localdate, filter_existing_symbols_for_job):
+        localdate.return_value = date(2026, 6, 13)
+        job = CollectJob.objects.create(
+            data_type='historical_quote',
+            config={
+                'symbols': ['000001'],
+                'params': {
+                    'start_date': '2024-01-01',
+                    'end_date_mode': 'EXECUTION_DAY',
+                },
+            },
+        )
+        service = factory_class.return_value.create_quote_service.return_value
+        service.build_symbols.side_effect = lambda symbols: symbols
+
+        execute_collect(job)
+
+        service.collect_historical.assert_called_once_with(
+            ['000001'],
+            start_date=date(2024, 1, 1),
+            end_date=date(2026, 6, 13),
+        )
+        filter_existing_symbols_for_job.assert_called_once()
+
     @patch('saa_collector.services.collect_plan_executor.release_process_memory')
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     def test_financial_statements_resume_clears_progress_when_all_remaining_symbols_succeed(

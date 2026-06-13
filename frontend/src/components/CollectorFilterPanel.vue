@@ -7,6 +7,7 @@ interface FilterParams {
   symbols: string[]
   start_date?: string
   end_date?: string
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
   dates?: string[]
   report_types?: string[]
   stock_list_code?: string
@@ -18,12 +19,14 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   showReportTypes?: boolean
   showDateRange?: boolean
+  showEndDateMode?: boolean
   visibilityContext?: DataTypeVisibilityContext
 }>(), {
   queryButtonText: '查询',
   loading: false,
   showReportTypes: false,
   showDateRange: true,
+  showEndDateMode: false,
   visibilityContext: undefined
 })
 
@@ -47,6 +50,7 @@ const dataTypeExpanded = ref(true)
 
 const stockMode = ref<'all' | 'manual' | 'index'>('all')
 const dateMode = ref<'single' | 'range'>('range')
+const endDateMode = ref<'FIXED' | 'EXECUTION_DAY'>('EXECUTION_DAY')
 const selectedDataType = ref('trade_days')
 const manualStocks = ref('000002, 600519')
 const selectedList = ref('')
@@ -125,9 +129,19 @@ const handleQuery = () => {
     if (dateMode.value === 'single') {
       params.start_date = singleDate.value
       params.end_date = singleDate.value
+      if (props.showEndDateMode) {
+        params.end_date_mode = 'FIXED'
+      }
     } else {
       params.start_date = startDate.value
-      params.end_date = endDate.value
+      if (props.showEndDateMode) {
+        params.end_date_mode = endDateMode.value
+        if (endDateMode.value === 'FIXED') {
+          params.end_date = endDate.value
+        }
+      } else {
+        params.end_date = endDate.value
+      }
     }
   }
   
@@ -253,7 +267,21 @@ defineExpose({
             <div class="date-range">
               <input type="date" v-model="startDate" :max="today" />
               <span>至</span>
-              <input type="date" v-model="endDate" :max="today" :min="startDate" />
+              <input v-if="!showEndDateMode || endDateMode === 'FIXED'" type="date" v-model="endDate" :max="today" :min="startDate" />
+              <span v-else class="floating-end-date">执行当天</span>
+            </div>
+          </template>
+
+          <template v-if="showEndDateMode">
+            <div class="radio-group">
+              <label>
+                <input type="radio" value="EXECUTION_DAY" v-model="endDateMode" />
+                执行当天
+              </label>
+              <label>
+                <input type="radio" value="FIXED" v-model="endDateMode" />
+                固定日期
+              </label>
             </div>
           </template>
         </div>
@@ -460,6 +488,11 @@ textarea {
 }
 
 .date-range span {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.floating-end-date {
   font-size: 0.8rem;
   color: #666;
 }

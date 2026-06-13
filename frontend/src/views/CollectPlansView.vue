@@ -141,17 +141,32 @@
             <el-radio-button value="monthly">月度</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="日期范围">
+        <el-form-item label="开始日期">
           <el-date-picker
-            v-model="instantForm.dateRange"
-            type="daterange"
-            unlink-panels
+            v-model="instantForm.start_date"
+            type="date"
             value-format="YYYY-MM-DD"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
+            placeholder="开始日期"
             style="width: 100%"
           />
+        </el-form-item>
+        <el-form-item label="结束日期">
+          <div class="end-date-control">
+            <el-radio-group v-model="instantForm.end_date_mode" size="small" class="end-date-mode-group">
+              <el-radio-button value="EXECUTION_DAY">执行当天</el-radio-button>
+              <el-radio-button value="FIXED">固定日期</el-radio-button>
+            </el-radio-group>
+            <el-date-picker
+              v-if="instantForm.end_date_mode === 'FIXED'"
+              v-model="instantForm.end_date"
+              class="end-date-picker"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :disabled-date="(date: Date) => isBeforeDate(date, instantForm.start_date)"
+            />
+            <span v-else class="floating-end-date">执行当天</span>
+          </div>
         </el-form-item>
         <el-form-item label="已有数据">
           <el-switch
@@ -207,9 +222,22 @@ const instantForm = ref({
   stock_list_code: '000906',
   data_frequency: 'daily' as 'daily' | 'monthly',
   symbols: [] as string[],
-  dateRange: [] as string[],
+  start_date: '',
+  end_date_mode: 'EXECUTION_DAY' as 'FIXED' | 'EXECUTION_DAY',
+  end_date: '',
   skip_existing: true
 })
+
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const isBeforeDate = (date: Date, minDate?: string | null) => {
+  return Boolean(minDate && formatDateKey(date) < minDate)
+}
 
 interface DisplayPlan {
   id: number
@@ -410,7 +438,9 @@ const showInstantCollectDialog = () => {
     stock_list_code: '000906',
     data_frequency: 'daily' as 'daily' | 'monthly',
     symbols: [],
-    dateRange: [],
+    start_date: '',
+    end_date_mode: 'EXECUTION_DAY' as 'FIXED' | 'EXECUTION_DAY',
+    end_date: '',
     skip_existing: true
   }
   instantCollectVisible.value = true
@@ -427,6 +457,11 @@ const createInstantPlan = async () => {
     const dataTypeName = getLabel(instantForm.value.data_type)
     const name = instantForm.value.name || `即时采集-${dataTypeName}-${new Date().toISOString().split('T')[0]}`
 
+    if (instantForm.value.end_date_mode === 'FIXED' && !instantForm.value.end_date) {
+      ElMessage.warning('请选择结束日期或改为执行当天')
+      return
+    }
+
     const params: any = {
       name,
       execution_mode: 'PARALLEL',
@@ -435,14 +470,17 @@ const createInstantPlan = async () => {
         stock_scope: instantForm.value.stock_scope,
         stock_list_code: instantForm.value.stock_scope === 'INDEX' ? instantForm.value.stock_list_code : null,
         data_frequency: instantForm.value.data_type === 'extras' ? instantForm.value.data_frequency : undefined,
+        end_date_mode: instantForm.value.end_date_mode,
         symbols: instantForm.value.stock_scope === 'SELECTED' ? instantForm.value.symbols : [],
         skip_existing: instantForm.value.skip_existing,
       }]
     }
 
-    if (instantForm.value.dateRange && instantForm.value.dateRange.length === 2) {
-      params.jobs[0].start_date = instantForm.value.dateRange[0]
-      params.jobs[0].end_date = instantForm.value.dateRange[1]
+    params.jobs[0].start_date = instantForm.value.start_date || undefined
+    params.jobs[0].end_date = instantForm.value.end_date_mode === 'FIXED' ? (instantForm.value.end_date || undefined) : null
+    if (instantForm.value.end_date_mode === 'FIXED' && instantForm.value.start_date && instantForm.value.end_date && instantForm.value.end_date < instantForm.value.start_date) {
+      ElMessage.warning('结束日期不能早于开始日期')
+      return
     }
 
     const response = await createCollectPlan(params)
@@ -493,5 +531,22 @@ onActivated(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+.end-date-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.end-date-mode-group {
+  flex: 0 0 auto;
+}
+.end-date-picker {
+  width: 220px;
+}
+.floating-end-date {
+  color: #909399;
+  font-size: 14px;
+  line-height: 32px;
 }
 </style>

@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from saa_collector.date_expressions import (
     normalize_schedule_params,
     parse_schedule_date,
+    resolve_collect_job_date_range,
     resolve_schedule_date_range,
 )
 from saa_collector.models import CollectJob, CollectSchedule
@@ -119,6 +120,19 @@ class ScheduleDateExpressionTest(TestCase):
         self.assertEqual(normalized['end_date'], 'T-1td')
         self.assertNotIn('date_start', normalized)
         self.assertNotIn('date_end', normalized)
+
+    def test_resolve_collect_job_date_range_supports_execution_day_mode(self):
+        start_date, end_date, normalized = resolve_collect_job_date_range(
+            {
+                'start_date': '2024-01-01',
+                'end_date_mode': 'EXECUTION_DAY',
+            },
+            today=date(2026, 5, 25),
+        )
+
+        self.assertEqual(start_date, date(2024, 1, 1))
+        self.assertEqual(end_date, date(2026, 5, 25))
+        self.assertEqual(normalized['end_date_mode'], 'EXECUTION_DAY')
 
 
 class CollectScheduleRelativeDateAPITest(TestCase):

@@ -5,6 +5,7 @@
       query-button-text="开始采集"
       :loading="collecting"
       :show-report-types="true"
+      :show-end-date-mode="true"
       visibility-context="collect"
       @query="handleCollect"
     />
@@ -85,6 +86,7 @@ interface FilterParams {
   symbols: string[]
   start_date?: string
   end_date?: string
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
   report_types?: string[]
 }
 
@@ -122,6 +124,7 @@ const handleCollect = async (params: FilterParams) => {
       symbols,
       start_date: params.start_date,
       end_date: params.end_date,
+      end_date_mode: params.end_date_mode,
       report_types: params.report_types,
     }
 

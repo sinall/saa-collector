@@ -23,7 +23,7 @@ class TushareQuoteServiceTest(SimpleTestCase):
         self.assertEqual(config['date_column'], 'date')
         self.assertEqual(config['stock_column'], 'code')
         self.assertEqual(config['data_frequency'], 'monthly')
-        self.assertEqual(config['label'], '历史月行情')
+        self.assertEqual(config['label'], '历史行情')
 
     def test_collect_saves_latest_quotes_without_quarter_filtering(self):
         service = self._make_service()

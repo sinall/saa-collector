@@ -12,6 +12,7 @@ from saa_collector.collect_job_config import get_cache_control
 from saa_collector.constants import DATA_TYPE_CONFIG
 from saa_collector.date_expressions import (
     normalize_schedule_params,
+    resolve_collect_job_date_range,
     resolve_schedule_date_range,
 )
 from saa_collector.models import CollectJob, CollectPlan, DataIntegrityItem
@@ -182,12 +183,6 @@ def execute_collect(job):
     data_type = job.data_type
     symbols = job.config.get('symbols') if job.config.get('symbols') else None
     params = normalize_schedule_params(job.config.get('params', {}))
-    start_value = job.config.get('start_date')
-    end_value = job.config.get('end_date')
-    if start_value not in (None, ''):
-        params = dict(params, start_date=start_value)
-    if end_value not in (None, ''):
-        params = dict(params, end_date=end_value)
     calendar_service = None
     stock_scope = get_job_stock_scope(job)
     index_code = get_job_index_code(job)
@@ -204,11 +199,26 @@ def execute_collect(job):
             return
         calendar_service.collect(refresh_start, base_date)
 
-    start_date, end_date, params = resolve_schedule_date_range(
-        params,
-        today=timezone.localdate(),
-        trade_calendar_refresher=refresh_trade_calendar,
-    )
+    if params.get('end_date_mode'):
+        start_date, end_date, params = resolve_collect_job_date_range(
+            params,
+            today=timezone.localdate(),
+        )
+    else:
+        start_date, end_date, params = resolve_schedule_date_range(
+            params,
+            today=timezone.localdate(),
+            trade_calendar_refresher=refresh_trade_calendar,
+        )
+    if start_date is not None or end_date is not None:
+        params = dict(params)
+        if start_date is not None:
+            params['start_date'] = start_date
+        if end_date is not None:
+            params['end_date'] = end_date
+
+    if end_date is not None and start_date is not None and end_date < start_date:
+        raise ValueError('结束日期不能早于开始日期')
 
     unit = 'symbol' if data_type in (
         'stock_info', 'quote', 'historical_quote', 'financial_statements',
