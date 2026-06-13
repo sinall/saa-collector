@@ -4,6 +4,21 @@
 
 This is a SAA (Strategic Asset Allocation) Collector project with a Vue 3 frontend and Django backend.
 
+## AI Agent Codegraph
+
+When investigating cross-file dependencies, backend/frontend API impact, data completeness flow, collect plan execution, cache invalidation, or data type configuration impact, generate the parent-level lightweight codegraph first:
+
+```bash
+cd .. && just codegraph saa-collector
+```
+
+- Read `.codegraph/saa-collector.md` for the summary and high-degree files.
+- Use `.codegraph/saa-collector.json` for structured dependency lookup.
+- Use `.codegraph/saa-collector.dot` for optional Graphviz rendering.
+- The output is local generated data and is not committed by default.
+- Regenerate it manually after relevant source changes; it does not update automatically.
+- To refresh it automatically after local commits, run `cd .. && just install-codegraph-hooks saa-collector`.
+
 ## Development Workflow
 
 ### TDD Principles (Test-Driven Development) ⚠️ MANDATORY
