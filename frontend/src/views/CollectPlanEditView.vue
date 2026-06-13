@@ -55,14 +55,31 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <el-form-item label="股票范围">
+              <el-radio-group v-model="job.stock_scope">
+                <el-radio-button value="ALL">全市场</el-radio-button>
+                <el-radio-button value="SELECTED">指定股票</el-radio-button>
+                <el-radio-button value="INDEX">中证800</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="job.stock_scope === 'SELECTED'" label="股票代码">
+              <el-input
+                v-model="job.symbols_input"
+                type="textarea"
+                placeholder="每行一个股票代码，留空则全量"
+                :rows="3"
+              />
+            </el-form-item>
+            <el-form-item v-if="job.stock_scope === 'INDEX'" label="指数代码">
+              <el-select v-model="job.stock_list_code" style="width: 100%">
+                <el-option label="中证800 (000906)" value="000906" />
+              </el-select>
+            </el-form-item>
             <el-form-item v-if="job.data_type === 'extras'" label="补全周期">
               <el-radio-group v-model="job.data_frequency">
                 <el-radio-button value="daily">按天</el-radio-button>
                 <el-radio-button value="monthly">月度</el-radio-button>
               </el-radio-group>
-            </el-form-item>
-            <el-form-item label="股票代码">
-              <el-input v-model="job.symbols_input" type="textarea" placeholder="每行一个股票代码，留空则全量" :rows="3" />
             </el-form-item>
             <el-form-item label="已有数据">
               <el-switch
@@ -115,6 +132,8 @@ const addJob = () => {
   form.value.jobs.push({
     id: null,
     data_type: 'quote',
+    stock_scope: 'ALL',
+    stock_list_code: '000906',
     symbols_input: '',
     date_start: null,
     date_end: null,
@@ -130,6 +149,8 @@ const removeJob = (index: number) => {
 const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job: any) => ({
   id: job.id ?? undefined,
   data_type: job.data_type,
+  stock_scope: job.stock_scope,
+  stock_list_code: job.stock_scope === 'INDEX' ? job.stock_list_code : null,
   symbols: job.symbols_input
     ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
     : [],
@@ -175,6 +196,8 @@ const fetchPlan = async () => {
     form.value.jobs = plan.jobs?.map((job: any) => ({
       id: job.id,
       data_type: job.data_type,
+      stock_scope: job.config?.stock_scope || job.config?.params?.stock_scope || 'ALL',
+      stock_list_code: job.config?.stock_list_code || job.config?.params?.stock_list_code || '000906',
       symbols_input: job.config?.symbols?.join('\n') || '',
       date_start: getJobParam(job, 'start_date'),
       date_end: getJobParam(job, 'end_date'),
