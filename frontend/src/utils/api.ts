@@ -62,6 +62,7 @@ export interface ApiResponse<T> {
   data?: T
   message?: string
   error?: string
+  meta?: Record<string, unknown>
 }
 
 export const login = async (username: string, password: string): Promise<{token: string; username: string; avatar_url: string}> => {
@@ -418,9 +419,10 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
 
 export const fetchCompletenessHeatmap = async (
   frequency: string = 'monthly',
-  scope: string = 'all'
+  scope: string = 'all',
+  refresh: boolean = false
 ): Promise<ApiResponse<HeatmapResponse>> => {
-  const response = await api.get('/data-completeness/heatmap/', { params: { frequency, scope } })
+  const response = await api.get('/data-completeness/heatmap/', { params: { frequency, scope, refresh: refresh ? 1 : undefined } })
   return response.data
 }
 

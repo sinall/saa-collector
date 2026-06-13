@@ -2501,6 +2501,8 @@ class CollectPlanResetView(APIView):
             else:
                 plan.status = 'COMPLETED'
                 self._update_report_items(plan)
+                from .services.heatmap_cache import invalidate_heatmap_cache
+                invalidate_heatmap_cache()
             plan.completed_at = timezone.now()
             plan.save()
         except Exception as e:
@@ -2686,31 +2688,39 @@ class DataCompletenessHeatmapView(APIView):
 
     def get(self, request):
         from .services.completeness_service import CompletenessService
+        from .services.heatmap_cache import build_heatmap_cache_keys
         from .constants import DATA_TYPE_CONFIG
 
         frequency = request.query_params.get('frequency', 'monthly')
         scope_key = request.query_params.get('scope', 'all')
+        force_refresh = request.query_params.get('refresh') in ('1', 'true', 'yes', 'on')
         scope = self._resolve_scope(scope_key)
         if scope is None:
             return Response({'success': False, 'error': 'Invalid scope'}, status=400)
 
-        cache_key = f"collector:heatmap:{frequency}:{scope['key']}:{timezone.localdate().isoformat()}"
-        latest_cache_key = f"collector:heatmap:{frequency}:{scope['key']}:latest"
-        cached_result = cache.get(cache_key)
-        if cached_result is not None:
-            logger.info("heatmap request cache_hit frequency=%s scope=%s", frequency, scope['key'])
-            return Response({
-                'success': True,
-                'data': cached_result
-            })
+        cache_key, latest_cache_key = build_heatmap_cache_keys(
+            frequency,
+            scope['key'],
+            timezone.localdate().isoformat(),
+        )
+        if not force_refresh:
+            cached_result = cache.get(cache_key)
+            if cached_result is not None:
+                logger.info("heatmap request cache_hit frequency=%s scope=%s", frequency, scope['key'])
+                return Response({
+                    'success': True,
+                    'data': cached_result,
+                    'meta': {'cached': True, 'cache': 'daily'},
+                })
 
-        latest_result = cache.get(latest_cache_key)
-        if latest_result is not None:
-            logger.info("heatmap request latest_cache_hit frequency=%s scope=%s", frequency, scope['key'])
-            return Response({
-                'success': True,
-                'data': latest_result
-            })
+            latest_result = cache.get(latest_cache_key)
+            if latest_result is not None:
+                logger.info("heatmap request latest_cache_hit frequency=%s scope=%s", frequency, scope['key'])
+                return Response({
+                    'success': True,
+                    'data': latest_result,
+                    'meta': {'cached': True, 'cache': 'latest'},
+                })
 
         service = CompletenessService(
             stock_codes=scope['stock_codes'],
@@ -2752,7 +2762,8 @@ class DataCompletenessHeatmapView(APIView):
 
         return Response({
             'success': True,
-            'data': result
+            'data': result,
+            'meta': {'cached': False, 'cache': 'refresh' if force_refresh else 'miss'},
         })
 
     def _resolve_scope(self, scope_key):
@@ -3279,6 +3290,9 @@ class CollectScheduleTriggerView(APIView):
             plan.status = 'COMPLETED' if all_success else 'FAILED'
             plan.completed_at = timezone.now()
             plan.save()
+            if plan.status == 'COMPLETED':
+                from .services.heatmap_cache import invalidate_heatmap_cache
+                invalidate_heatmap_cache()
         except Exception as e:
             logger.exception(f"Plan {plan_id} failed: {e}")
             try:

@@ -27,6 +27,18 @@
           <el-option label="季度" value="quarterly" />
           <el-option label="年度" value="yearly" />
         </el-select>
+        <el-tag v-if="cacheLabel" size="small" type="info" effect="plain">
+          {{ cacheLabel }}
+        </el-tag>
+        <el-tooltip content="重新计算热力图" placement="top">
+          <el-button
+            size="small"
+            :icon="Refresh"
+            :loading="refreshing"
+            circle
+            @click="refreshHeatmapData"
+          />
+        </el-tooltip>
       </div>
     </div>
 
@@ -50,6 +62,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ECharts, EChartsOption } from 'echarts'
+import { Refresh } from '@element-plus/icons-vue'
 import {
   fetchCompletenessHeatmap,
   fetchCompletenessHeatmapScopes,
@@ -113,7 +126,9 @@ const scopeOptions = ref<HeatmapScopeOption[]>([
   { key: DEFAULT_SCOPE, label: '全市场', type: 'all' }
 ])
 const loading = ref(false)
+const refreshing = ref(false)
 const heatmapData = ref<HeatmapResponse | null>(null)
+const cacheState = ref<string>('')
 const allPeriods = ref<string[]>([])
 const sliderRange = ref<[number, number]>([0, 0])
 let echartsModule: typeof import('echarts') | null = null
@@ -129,6 +144,13 @@ const loadEcharts = async () => {
 
 const effectiveFrequency = computed(() => {
   return props.viewFrequency || selectedFrequency.value
+})
+
+const cacheLabel = computed(() => {
+  if (!cacheState.value) return ''
+  if (cacheState.value === 'daily' || cacheState.value === 'latest') return '缓存'
+  if (cacheState.value === 'refresh') return '已刷新'
+  return '最新'
 })
 
 const sliderMarks = computed<Record<number, string>>(() => {
@@ -199,7 +221,7 @@ const initFromData = async (data: ExternalHeatmapData, frequency: string) => {
   }, 100)
 }
 
-const loadHeatmapData = async () => {
+const loadHeatmapData = async (refresh = false) => {
   if (props.externalData) {
     initFromData(props.externalData, props.viewFrequency || selectedFrequency.value)
     return
@@ -210,15 +232,18 @@ const loadHeatmapData = async () => {
   }
 
   loading.value = true
+  if (refresh) refreshing.value = true
   try {
-    const response = await fetchCompletenessHeatmap(selectedFrequency.value, selectedScope.value)
+    const response = await fetchCompletenessHeatmap(selectedFrequency.value, selectedScope.value, refresh)
     if (response.success && response.data) {
+      cacheState.value = typeof response.meta?.cache === 'string' ? response.meta.cache : ''
       initFromData(response.data, selectedFrequency.value)
     }
   } catch (error) {
     console.error('Failed to load heatmap data:', error)
   } finally {
     loading.value = false
+    refreshing.value = false
   }
 }
 
@@ -588,6 +613,10 @@ const onFrequencyChange = () => {
 const onScopeChange = () => {
   writeStoredValue(HEATMAP_SCOPE_STORAGE_KEY, selectedScope.value)
   loadHeatmapData()
+}
+
+const refreshHeatmapData = () => {
+  loadHeatmapData(true)
 }
 
 const onSliderChange = () => {

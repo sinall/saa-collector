@@ -23,6 +23,7 @@ from saa_collector.services.collect_execution_context import (
     set_collect_execution_context,
 )
 from saa_collector.services.common.progress import ProgressLogger
+from saa_collector.services.heatmap_cache import invalidate_heatmap_cache
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ def execute_plan(plan_id, task_id=None):
         else:
             plan.status = 'COMPLETED'
             update_report_items(plan)
+            invalidate_heatmap_cache()
         plan.completed_at = timezone.now()
         plan.save()
         logger.info('Finished collect plan: status=%s', plan.status)
@@ -265,12 +267,13 @@ def execute_collect(job):
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
             if stock_scope == 'INDEX':
-                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
-            symbols = build_symbols_for_service(service, symbols)
-            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
-            if not symbols:
-                return
-            service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+                collect_index_historical_quotes(job, service, start_date, end_date, index_code)
+            else:
+                symbols = build_symbols_for_service(service, symbols)
+                symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+                if not symbols:
+                    return
+                service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'extras':
             from saa_collector.services.common.stock_status_service import StockStatusService
             data_frequency = str(params.get('data_frequency') or 'daily').lower()
@@ -560,6 +563,78 @@ def resolve_index_scope_symbols_at(job, as_of_date):
     with connection.cursor() as cursor:
         payload = resolve_index_constituent_payloads_by_dates(cursor, index_code, [as_of_date]).get(as_of_date, (None, set()))
         return sorted(payload[1])
+
+
+def collect_index_historical_quotes(job, service, start_date, end_date, index_code):
+    if start_date is None and end_date is None:
+        end_date = timezone.localdate()
+        start_date = end_date
+    elif start_date is None:
+        start_date = end_date
+    elif end_date is None:
+        end_date = start_date
+
+    date_ranges = generate_monthly_date_ranges(start_date, end_date)
+    if not date_ranges:
+        return
+
+    anchor_dates = [period_end for _, period_end in date_ranges]
+    with connection.cursor() as cursor:
+        payloads_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, anchor_dates)
+
+    for period_start, period_end in date_ranges:
+        scoped_symbols = sorted(payloads_by_date.get(period_end, (None, set()))[1])
+        if not scoped_symbols:
+            logger.info(
+                'Skipping historical_quote collect for %s..%s: no index constituents',
+                period_start,
+                period_end,
+            )
+            continue
+
+        scoped_symbols = build_symbols_for_service(service, scoped_symbols)
+        scoped_symbols = filter_existing_symbols_for_job(job, scoped_symbols, period_start, period_end)
+        if not scoped_symbols:
+            continue
+
+        service.collect_historical(
+            scoped_symbols,
+            start_date=period_start,
+            end_date=period_end,
+        )
+
+
+def generate_monthly_date_ranges(start_date, end_date):
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime):
+        end_date = end_date.date()
+    if not isinstance(start_date, date) or not isinstance(end_date, date):
+        return []
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    ranges = []
+    year = start_date.year
+    month = start_date.month
+    while True:
+        month_start = date(year, month, 1)
+        if month == 12:
+            next_month = date(year + 1, 1, 1)
+        else:
+            next_month = date(year, month + 1, 1)
+        month_end = next_month - timedelta(days=1)
+        period_start = max(start_date, month_start)
+        period_end = min(end_date, month_end)
+        if period_start <= period_end:
+            ranges.append((period_start, period_end))
+        if month_end >= end_date:
+            break
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+    return ranges
 
 
 def should_skip_existing_job(job):

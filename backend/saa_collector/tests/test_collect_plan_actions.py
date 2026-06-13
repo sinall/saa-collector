@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
@@ -7,6 +8,7 @@ from rest_framework.test import APIClient
 
 from saa_collector.models import CollectJob, CollectPlan
 from saa_collector.services.collect_plan_executor import execute_plan
+from saa_collector.services.heatmap_cache import get_heatmap_cache_version
 
 
 class CollectPlanActionAPITest(TestCase):
@@ -200,6 +202,9 @@ class CollectPlanActionAPITest(TestCase):
 
 
 class CollectPlanResumeExecutionTest(TestCase):
+    def setUp(self):
+        cache.clear()
+
     @patch('saa_collector.services.collect_plan_executor.db.connections.close_all')
     @patch('saa_collector.services.collect_plan_executor.execute_job')
     def test_execute_plan_skips_success_jobs(self, execute_job, close_all):
@@ -227,3 +232,19 @@ class CollectPlanResumeExecutionTest(TestCase):
         self.assertEqual(success_job.status, 'SUCCESS')
         self.assertEqual(pending_job.status, 'PENDING')
         self.assertEqual(plan.status, 'COMPLETED')
+
+    @patch('saa_collector.services.collect_plan_executor.db.connections.close_all')
+    @patch('saa_collector.services.collect_plan_executor.execute_job')
+    def test_execute_plan_invalidates_heatmap_cache_after_success(self, execute_job, close_all):
+        plan = CollectPlan.objects.create(name='刷新热力图缓存')
+        CollectJob.objects.create(
+            plan=plan,
+            data_type='extras',
+            status='SUCCESS',
+            config={'symbols': ['000001'], 'params': {}},
+        )
+        initial_version = get_heatmap_cache_version()
+
+        execute_plan(plan.id, task_id='celery-task-1')
+
+        self.assertEqual(get_heatmap_cache_version(), initial_version + 1)
