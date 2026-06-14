@@ -40,6 +40,12 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         start_date = min(dates)
         end_date = max(dates)
         df = pd.DataFrame()
+        self._logger.info(
+            "Querying Akshare monthly quotes: symbols=%d start_date=%s end_date=%s",
+            len(symbols) if symbols else 0,
+            start_date,
+            end_date,
+        )
         for symbol in symbols:
             df1 = akshare.stock_zh_a_hist(
                 symbol=symbol, period='monthly',
@@ -47,6 +53,12 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
             )
             df = pd.concat([df, df1])
         if df.empty:
+            self._logger.warning(
+                "No Akshare monthly quotes returned: symbols=%d start_date=%s end_date=%s",
+                len(symbols) if symbols else 0,
+                start_date,
+                end_date,
+            )
             return
         existing_symbols = self.build_symbols(symbols)
         df['code'] = df['股票代码']
@@ -62,6 +74,13 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         df = df[df['code'].isin(existing_symbols)]
         records = df.to_dict('records')
         records = self.filter_records(records, start_date)
+        self._logger.info(
+            "Saving %d Akshare monthly quote records to saa_prices_ex: symbols=%d start_date=%s end_date=%s",
+            len(records),
+            len(existing_symbols) if existing_symbols else 0,
+            start_date,
+            end_date,
+        )
         self.save_records(records, 'saa_prices_ex', ['code', 'date'])
 
     def filter_records(self, records, start_date=None):

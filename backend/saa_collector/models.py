@@ -38,21 +38,25 @@ class CollectJob(models.Model):
     def start(self):
         self.status = 'RUNNING'
         self.start_time = timezone.now()
-        self.save()
+        self.save(update_fields=['status', 'start_time'])
 
     def complete(self, success=True, message=None):
         self.status = 'SUCCESS' if success else 'FAILED'
         self.end_time = timezone.now()
+        update_fields = ['status', 'end_time']
         if message:
             self.message = message
-        self.save()
+            update_fields.append('message')
+        self.save(update_fields=update_fields)
 
     def stop(self, message=None):
         self.status = 'STOPPED'
         self.end_time = timezone.now()
+        update_fields = ['status', 'end_time']
         if message:
             self.message = message
-        self.save()
+            update_fields.append('message')
+        self.save(update_fields=update_fields)
 
 
 class DataIntegrityReport(models.Model):

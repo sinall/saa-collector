@@ -581,27 +581,74 @@ def collect_index_historical_quotes(job, service, start_date, end_date, index_co
     anchor_dates = [period_end for _, period_end in date_ranges]
     with connection.cursor() as cursor:
         payloads_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, anchor_dates)
+        quote_trade_dates_by_period_end = resolve_last_trade_days_for_ranges(cursor, date_ranges)
 
     for period_start, period_end in date_ranges:
-        scoped_symbols = sorted(payloads_by_date.get(period_end, (None, set()))[1])
+        index_date, scoped_symbol_set = payloads_by_date.get(period_end, (None, set()))
+        quote_trade_date = quote_trade_dates_by_period_end.get(period_end) or period_end
+        scoped_symbols = sorted(scoped_symbol_set)
         if not scoped_symbols:
             logger.info(
-                'Skipping historical_quote collect for %s..%s: no index constituents',
+                'Skipping historical_quote collect for range=%s..%s index_code=%s: no index constituents',
                 period_start,
                 period_end,
+                index_code,
             )
             continue
 
+        requested_count = len(scoped_symbols)
         scoped_symbols = build_symbols_for_service(service, scoped_symbols)
         scoped_symbols = filter_existing_symbols_for_job(job, scoped_symbols, period_start, period_end)
         if not scoped_symbols:
             continue
 
+        logger.info(
+            'Collecting historical_quote period: range=%s..%s index_code=%s index_date=%s quote_trade_date=%s '
+            'requested=%d kept=%d symbols_sample=%s',
+            period_start,
+            period_end,
+            index_code,
+            index_date,
+            quote_trade_date,
+            requested_count,
+            len(scoped_symbols),
+            scoped_symbols[:10],
+        )
         service.collect_historical(
             scoped_symbols,
+            trade_date=quote_trade_date,
             start_date=period_start,
             end_date=period_end,
         )
+
+
+def resolve_last_trade_days_for_ranges(cursor, date_ranges):
+    if not date_ranges:
+        return {}
+    min_start = min(period_start for period_start, _ in date_ranges)
+    max_end = max(period_end for _, period_end in date_ranges)
+    try:
+        cursor.execute(
+            """
+                SELECT date
+                FROM saa_trade_days
+                WHERE date BETWEEN %s AND %s
+                ORDER BY date
+            """,
+            [min_start, max_end],
+        )
+        trade_days = [row[0] for row in cursor.fetchall()]
+    except Exception as exc:
+        logger.warning(
+            'Failed to resolve quote trade dates from saa_trade_days; falling back to period end: %s',
+            exc,
+        )
+        trade_days = []
+    trade_days_by_period_end = {}
+    for period_start, period_end in date_ranges:
+        candidates = [trade_day for trade_day in trade_days if period_start <= trade_day <= period_end]
+        trade_days_by_period_end[period_end] = candidates[-1] if candidates else period_end
+    return trade_days_by_period_end
 
 
 def generate_monthly_date_ranges(start_date, end_date):
@@ -649,32 +696,55 @@ def filter_existing_symbols_for_job(job, symbols, start_date, end_date):
     if not symbols:
         return symbols
 
-    kept_symbols, skipped_count, reason = find_symbols_missing_data(
+    result = find_symbols_missing_data(
         job.data_type,
         symbols,
         start_date,
         end_date,
+        include_details=True,
     )
-    record_skip_existing_summary(job.id, len(symbols), len(kept_symbols), skipped_count, reason)
+    if len(result) == 3:
+        kept_symbols, skipped_count, reason = result
+        details = {}
+    else:
+        kept_symbols, skipped_count, reason, details = result
+    record_skip_existing_summary(
+        job.id,
+        len(symbols),
+        len(kept_symbols),
+        skipped_count,
+        reason,
+        details,
+    )
     if skipped_count:
         logger.info(
-            'Applied skip-existing filter: data_type=%s requested=%d kept=%d skipped=%d reason=%s',
+            'Applied skip-existing filter: data_type=%s range=%s..%s periods=%s requested=%d '
+            'kept=%d skipped=%d reason=%s kept_sample=%s skipped_sample=%s missing_sample=%s',
             job.data_type,
+            start_date,
+            end_date,
+            details.get('period_window') or details.get('expected_period_count'),
             len(symbols),
             len(kept_symbols),
             skipped_count,
             reason,
+            details.get('kept_sample', []),
+            details.get('skipped_sample', []),
+            details.get('missing_periods_sample', {}),
         )
     if not kept_symbols:
         logger.info(
-            'Skipping %s collect: all %d symbols already have target data',
+            'Skipping %s collect: all %d symbols already have target data for range=%s..%s periods=%s',
             job.data_type,
             len(symbols),
+            start_date,
+            end_date,
+            details.get('period_window') or details.get('expected_period_count'),
         )
     return kept_symbols
 
 
-def record_skip_existing_summary(job_id, requested_count, kept_count, skipped_count, reason):
+def record_skip_existing_summary(job_id, requested_count, kept_count, skipped_count, reason, details=None):
     job = CollectJob.objects.get(id=job_id)
     config = dict(job.config or {})
     config[SKIP_EXISTING_SUMMARY_KEY] = {
@@ -684,15 +754,17 @@ def record_skip_existing_summary(job_id, requested_count, kept_count, skipped_co
         'reason': reason,
         'checked_at': timezone.now().isoformat(),
     }
+    if details:
+        config[SKIP_EXISTING_SUMMARY_KEY].update(details)
     job.config = config
     job.save(update_fields=['config'])
 
 
-def find_symbols_missing_data(data_type, symbols, start_date, end_date):
+def find_symbols_missing_data(data_type, symbols, start_date, end_date, include_details=False):
     config = DATA_TYPE_CONFIG.get(data_type) or {}
     table_name = config.get('table')
     if not table_name:
-        return symbols, 0, 'unsupported-data-type'
+        return build_skip_existing_result(symbols, 0, 'unsupported-data-type', {}, include_details)
 
     stock_column = config.get('stock_column') or 'symbol'
     date_column = config.get('date_column')
@@ -700,15 +772,22 @@ def find_symbols_missing_data(data_type, symbols, start_date, end_date):
     if not date_column:
         existing_symbols = query_existing_symbols(table_name, stock_column, unique_symbols)
         kept_symbols = [symbol for symbol in unique_symbols if symbol not in existing_symbols]
-        return kept_symbols, len(unique_symbols) - len(kept_symbols), 'snapshot-symbol-missing'
+        details = build_skip_existing_details(unique_symbols, kept_symbols, set(), {})
+        return build_skip_existing_result(
+            kept_symbols,
+            len(unique_symbols) - len(kept_symbols),
+            'snapshot-symbol-missing',
+            details,
+            include_details,
+        )
 
     if start_date is None or end_date is None:
-        return unique_symbols, 0, 'date-range-required'
+        return build_skip_existing_result(unique_symbols, 0, 'date-range-required', {}, include_details)
 
     frequency = get_skip_existing_frequency(config)
     expected_periods = generate_skip_existing_periods(start_date, end_date, frequency)
     if not expected_periods:
-        return unique_symbols, 0, 'no-expected-periods'
+        return build_skip_existing_result(unique_symbols, 0, 'no-expected-periods', {}, include_details)
 
     existing_periods = query_existing_symbol_periods(
         table_name,
@@ -723,7 +802,46 @@ def find_symbols_missing_data(data_type, symbols, start_date, end_date):
         symbol for symbol in unique_symbols
         if not expected_periods.issubset(existing_periods.get(symbol, set()))
     ]
-    return kept_symbols, len(unique_symbols) - len(kept_symbols), f'{frequency}-period-missing'
+    details = build_skip_existing_details(unique_symbols, kept_symbols, expected_periods, existing_periods)
+    return build_skip_existing_result(
+        kept_symbols,
+        len(unique_symbols) - len(kept_symbols),
+        f'{frequency}-period-missing',
+        details,
+        include_details,
+    )
+
+
+def build_skip_existing_result(kept_symbols, skipped_count, reason, details, include_details):
+    if include_details:
+        return kept_symbols, skipped_count, reason, details
+    return kept_symbols, skipped_count, reason
+
+
+def build_skip_existing_details(unique_symbols, kept_symbols, expected_periods, existing_periods):
+    expected_periods = sorted(expected_periods)
+    kept_set = set(kept_symbols)
+    skipped_symbols = [symbol for symbol in unique_symbols if symbol not in kept_set]
+    missing_periods_sample = {}
+    for symbol in kept_symbols[:5]:
+        missing = sorted(set(expected_periods) - existing_periods.get(symbol, set()))
+        missing_periods_sample[symbol] = missing[:10]
+
+    return {
+        'expected_period_count': len(expected_periods),
+        'period_window': format_period_window(expected_periods),
+        'kept_sample': kept_symbols[:10],
+        'skipped_sample': skipped_symbols[:10],
+        'missing_periods_sample': missing_periods_sample,
+    }
+
+
+def format_period_window(periods):
+    if not periods:
+        return ''
+    if len(periods) == 1:
+        return periods[0]
+    return f'{periods[0]}..{periods[-1]}'
 
 
 def get_skip_existing_frequency(config):

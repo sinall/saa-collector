@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onActivated, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { ECharts, EChartsOption } from 'echarts'
 import { Refresh } from '@element-plus/icons-vue'
 import {
@@ -129,6 +129,7 @@ const loading = ref(false)
 const refreshing = ref(false)
 const heatmapData = ref<HeatmapResponse | null>(null)
 const cacheState = ref<string>('')
+const lastLoadedAt = ref(0)
 const allPeriods = ref<string[]>([])
 const sliderRange = ref<[number, number]>([0, 0])
 let echartsModule: typeof import('echarts') | null = null
@@ -238,6 +239,7 @@ const loadHeatmapData = async (refresh = false) => {
     if (response.success && response.data) {
       cacheState.value = typeof response.meta?.cache === 'string' ? response.meta.cache : ''
       initFromData(response.data, selectedFrequency.value)
+      lastLoadedAt.value = Date.now()
     }
   } catch (error) {
     console.error('Failed to load heatmap data:', error)
@@ -647,6 +649,12 @@ onMounted(async () => {
   await loadHeatmapScopes()
   loadHeatmapData()
   window.addEventListener('resize', handleResize)
+})
+
+onActivated(() => {
+  if (Date.now() - lastLoadedAt.value > 1000) {
+    loadHeatmapData()
+  }
 })
 
 onUnmounted(() => {

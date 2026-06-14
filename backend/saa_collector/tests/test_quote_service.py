@@ -115,3 +115,86 @@ class TushareQuoteServiceTest(SimpleTestCase):
             'paused': 0,
         })
         self.assertEqual(service.save_records.call_args.args[1:], ('saa_prices_ex', ['code', 'date']))
+
+    def test_collect_historical_queries_monthly_quotes_in_symbol_batches(self):
+        service = self._make_service()
+        symbols = [f'{index:06d}' for index in range(1, 53)]
+        service.build_symbols.return_value = symbols
+        service.pro.monthly.side_effect = [
+            pd.DataFrame([
+                {
+                    'ts_code': '000001.SZ',
+                    'open': 10.0,
+                    'close': 10.5,
+                    'high': 10.8,
+                    'low': 9.9,
+                    'vol': 1000,
+                    'amount': 10500,
+                    'trade_date': '20260430',
+                },
+            ]),
+            pd.DataFrame([
+                {
+                    'ts_code': '000051.SZ',
+                    'open': 11.0,
+                    'close': 11.5,
+                    'high': 11.8,
+                    'low': 10.9,
+                    'vol': 2000,
+                    'amount': 23000,
+                    'trade_date': '20260430',
+                },
+            ]),
+        ]
+
+        service.collect_historical(
+            symbols=symbols,
+            start_date=pd.Timestamp('2026-04-01'),
+            end_date=pd.Timestamp('2026-04-30'),
+        )
+
+        self.assertEqual(service.pro.monthly.call_count, 2)
+        first_call = service.pro.monthly.call_args_list[0].kwargs
+        second_call = service.pro.monthly.call_args_list[1].kwargs
+        self.assertEqual(first_call['ts_code'], symbols[:50])
+        self.assertEqual(second_call['ts_code'], symbols[50:])
+        service.save_records.assert_called_once()
+        records = service.save_records.call_args.args[0]
+        self.assertEqual([record['code'] for record in records], ['000001', '000051'])
+
+    def test_collect_historical_queries_monthly_quotes_by_trade_date_for_scoped_month(self):
+        service = self._make_service()
+        service.pro.monthly.return_value = pd.DataFrame([
+            {
+                'ts_code': '000001.SZ',
+                'open': 10.0,
+                'close': 10.5,
+                'high': 10.8,
+                'low': 9.9,
+                'vol': 1000,
+                'amount': 10500,
+                'trade_date': '20260430',
+            },
+            {
+                'ts_code': '600000.SH',
+                'open': 12.0,
+                'close': 12.5,
+                'high': 12.8,
+                'low': 11.9,
+                'vol': 3000,
+                'amount': 37500,
+                'trade_date': '20260430',
+            },
+        ])
+
+        service.collect_historical(
+            symbols=['000001'],
+            trade_date=pd.Timestamp('2026-04-30'),
+            start_date=pd.Timestamp('2026-04-01'),
+            end_date=pd.Timestamp('2026-04-30'),
+        )
+
+        service.pro.monthly.assert_called_once_with(trade_date='20260430')
+        service.save_records.assert_called_once()
+        records = service.save_records.call_args.args[0]
+        self.assertEqual([record['code'] for record in records], ['000001'])

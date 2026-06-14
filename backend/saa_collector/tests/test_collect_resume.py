@@ -8,6 +8,29 @@ from saa_collector.services.collect_plan_executor import execute_collect
 
 
 class FinancialStatementResumeTest(TestCase):
+    def test_collect_job_complete_preserves_config_updates_from_executor(self):
+        job = CollectJob.objects.create(
+            data_type='historical_quote',
+            config={'params': {'skip_existing': True}},
+        )
+        updated_job = CollectJob.objects.get(id=job.id)
+        updated_job.config = {
+            **updated_job.config,
+            'skip_existing_summary': {
+                'kept_symbols': 0,
+                'period_window': '2025-04',
+            },
+        }
+        updated_job.save(update_fields=['config'])
+
+        job.complete(success=True, message='执行完成')
+
+        job.refresh_from_db()
+        self.assertEqual(job.config['skip_existing_summary'], {
+            'kept_symbols': 0,
+            'period_window': '2025-04',
+        })
+
     @patch('saa_collector.services.collect_plan_executor.release_process_memory')
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     def test_financial_statements_filters_explicit_symbols_to_a_stocks(
@@ -301,10 +324,12 @@ class SkipExistingCollectTest(TestCase):
             [['000001', '000002'], ['000002', '000003']],
         )
         self.assertEqual(service.collect_historical.call_args_list[0].kwargs, {
+            'trade_date': date(2025, 4, 30),
             'start_date': date(2025, 4, 1),
             'end_date': date(2025, 4, 30),
         })
         self.assertEqual(service.collect_historical.call_args_list[1].kwargs, {
+            'trade_date': date(2025, 5, 31),
             'start_date': date(2025, 5, 1),
             'end_date': date(2025, 5, 31),
         })
@@ -340,6 +365,40 @@ class SkipExistingCollectTest(TestCase):
         self.assertEqual(job.config['skip_existing_summary']['requested_symbols'], 3)
         self.assertEqual(job.config['skip_existing_summary']['kept_symbols'], 1)
         self.assertEqual(job.config['skip_existing_summary']['skipped_symbols'], 2)
+
+    @patch('saa_collector.services.collect_plan_executor.query_existing_symbol_periods')
+    @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
+    def test_historical_quote_skip_existing_summary_includes_period_details(
+            self, factory_class, query_existing_symbol_periods):
+        job = CollectJob.objects.create(
+            data_type='historical_quote',
+            config={
+                'symbols': ['000001', '000002'],
+                'params': {
+                    'start_date': '2025-04-01',
+                    'end_date': '2025-05-31',
+                    'skip_existing': True,
+                },
+            },
+        )
+        service = factory_class.return_value.create_quote_service.return_value
+        service.build_symbols.side_effect = lambda symbols: sorted(symbols)
+        query_existing_symbol_periods.return_value = {
+            '000001': {'2025-04', '2025-05'},
+            '000002': {'2025-04'},
+        }
+
+        execute_collect(job)
+
+        service.collect_historical.assert_called_once()
+        self.assertEqual(service.collect_historical.call_args.args[0], ['000002'])
+        job.refresh_from_db()
+        summary = job.config['skip_existing_summary']
+        self.assertEqual(summary['period_window'], '2025-04..2025-05')
+        self.assertEqual(summary['expected_period_count'], 2)
+        self.assertEqual(summary['kept_sample'], ['000002'])
+        self.assertEqual(summary['skipped_sample'], ['000001'])
+        self.assertEqual(summary['missing_periods_sample'], {'000002': ['2025-05']})
 
     @patch('saa_collector.services.collect_plan_executor.find_symbols_missing_data')
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
