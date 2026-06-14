@@ -67,14 +67,14 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            <el-form-item label="股票范围">
+            <el-form-item v-if="supportsStockScope(job.data_type)" label="股票范围">
               <el-radio-group v-model="job.stock_scope">
                 <el-radio-button value="ALL">全市场</el-radio-button>
                 <el-radio-button value="SELECTED">指定股票</el-radio-button>
                 <el-radio-button value="INDEX">中证800</el-radio-button>
               </el-radio-group>
             </el-form-item>
-            <el-form-item v-if="job.stock_scope === 'SELECTED'" label="股票代码">
+            <el-form-item v-if="supportsStockScope(job.data_type) && job.stock_scope === 'SELECTED'" label="股票代码">
               <el-input
                 v-model="job.symbols_input"
                 type="textarea"
@@ -82,7 +82,7 @@
                 :rows="3"
               />
             </el-form-item>
-            <el-form-item v-if="job.stock_scope === 'INDEX'" label="指数代码">
+            <el-form-item v-if="supportsStockScope(job.data_type) && job.stock_scope === 'INDEX'" label="指数代码">
               <el-select v-model="job.stock_list_code" style="width: 100%">
                 <el-option label="中证800 (000906)" value="000906" />
               </el-select>
@@ -126,6 +126,21 @@ import { ElMessage } from 'element-plus'
 
 const { dataTypes, loadDataTypes } = useDataTypes()
 const selectableDataTypes = computed(() => dataTypes.value.filter(dt => isDataTypeVisible(dt, 'collect_plan')))
+const STOCK_SCOPE_DATA_TYPES = new Set([
+  'stock_info',
+  'quote',
+  'historical_quote',
+  'extras',
+  'index_weights',
+  'financial_statements',
+  'balance_sheet',
+  'income',
+  'cash_flow',
+  'dividend',
+  'capital',
+  'main_business',
+])
+const supportsStockScope = (dataType: string) => STOCK_SCOPE_DATA_TYPES.has(dataType)
 
 const router = useRouter()
 const route = useRoute()
@@ -159,20 +174,23 @@ const removeJob = (index: number) => {
   form.value.jobs.splice(index, 1)
 }
 
-const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job: any) => ({
-  id: job.id ?? undefined,
-  data_type: job.data_type,
-  stock_scope: job.stock_scope,
-  stock_list_code: job.stock_scope === 'INDEX' ? job.stock_list_code : null,
-  symbols: job.symbols_input
-    ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
-    : [],
-  start_date: job.date_start,
-  end_date: job.end_date_mode === 'FIXED' ? job.date_end : null,
-  end_date_mode: job.end_date_mode,
-  data_frequency: job.data_frequency,
-  skip_existing: Boolean(job.skip_existing)
-}))
+const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job: any) => {
+  const stockScope = supportsStockScope(job.data_type) ? job.stock_scope : 'ALL'
+  return {
+    id: job.id ?? undefined,
+    data_type: job.data_type,
+    stock_scope: stockScope,
+    stock_list_code: stockScope === 'INDEX' ? job.stock_list_code : null,
+    symbols: stockScope === 'SELECTED' && job.symbols_input
+      ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
+      : [],
+    start_date: job.date_start,
+    end_date: job.end_date_mode === 'FIXED' ? job.date_end : null,
+    end_date_mode: job.end_date_mode,
+    data_frequency: job.data_frequency,
+    skip_existing: Boolean(job.skip_existing),
+  }
+})
 
 const getJobParam = (job: any, key: 'start_date' | 'end_date') => {
   return job.config?.params?.[key] ?? job.config?.[key] ?? job.params?.[key] ?? null
@@ -287,6 +305,19 @@ watch(
       fetchPlan()
     }
   }
+)
+
+watch(
+  () => form.value.jobs.map((job: any) => job.data_type),
+  () => {
+    form.value.jobs.forEach((job: any) => {
+      if (!supportsStockScope(job.data_type)) {
+        job.stock_scope = 'ALL'
+        job.symbols_input = ''
+      }
+    })
+  },
+  { deep: true },
 )
 </script>
 

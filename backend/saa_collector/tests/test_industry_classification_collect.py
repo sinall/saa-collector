@@ -83,6 +83,27 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         service_class.return_value.collect_industry_stocks.assert_called_once()
 
+    @patch('saa_collector.services.common.index_weight_service.IndexWeightService')
+    def test_execute_collect_routes_index_stock_scope_for_industry_stocks_to_index_weights(
+            self, service_class):
+        job = CollectJob.objects.create(
+            data_type='industry_stocks',
+            config={
+                'symbols': [],
+                'stock_scope': 'INDEX',
+                'stock_list_code': '000906',
+                'params': {'start_date': '2026-05-29', 'end_date': '2026-06-14'},
+            },
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect.assert_called_once_with(
+            ['000906'],
+            date(2026, 5, 29),
+            date(2026, 6, 14),
+        )
+
     @patch('saa_collector.services.collect_plan_executor.resolve_index_scope_symbols_at')
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     def test_execute_collect_resolves_index_stock_scope_to_symbols(self, factory_class, resolve_index_scope_symbols_at):
@@ -102,4 +123,24 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         resolve_index_scope_symbols_at.assert_called_once()
         factory_class.return_value.create_quote_service.return_value.collect.assert_called_once_with(
             ['000001', '000002']
+        )
+
+    @patch('saa_collector.services.common.index_weight_service.IndexWeightService')
+    def test_execute_collect_runs_index_weights_job_with_index_scope(self, service_class):
+        job = CollectJob.objects.create(
+            data_type='index_weights',
+            config={
+                'symbols': [],
+                'stock_scope': 'INDEX',
+                'stock_list_code': '000906',
+                'params': {'start_date': '2026-05-29', 'end_date': '2026-06-14'},
+            },
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect.assert_called_once_with(
+            ['000906'],
+            date(2026, 5, 29),
+            date(2026, 6, 14),
         )

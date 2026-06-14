@@ -319,17 +319,27 @@ def execute_collect(job):
         elif data_type == 'index_weights':
             from saa_collector.services.common.index_weight_service import IndexWeightService
             service = IndexWeightService()
-            service.collect(symbols, start_date, end_date)
+            indexes = resolve_index_job_indexes(job, symbols, index_code)
+            service.collect(indexes, start_date, end_date)
         elif data_type == 'industries':
             from saa_collector.services.common.sw_industry_service import SwIndustryService
             service = SwIndustryService()
             service.collect_industries(end_date or start_date)
         elif data_type == 'industry_stocks':
-            from saa_collector.services.common.sw_industry_service import SwIndustryService
-            service = SwIndustryService()
             if stock_scope == 'INDEX':
-                symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
-            service.collect_industry_stocks(symbols, end_date or start_date)
+                from saa_collector.services.common.index_weight_service import IndexWeightService
+                logger.warning(
+                    'Routing stock_scope=INDEX for industry_stocks to index_weights: index_code=%s; '
+                    'use index_weights for benchmark constituents',
+                    index_code,
+                )
+                service = IndexWeightService()
+                indexes = resolve_index_job_indexes(job, symbols, index_code)
+                service.collect(indexes, start_date, end_date)
+            else:
+                from saa_collector.services.common.sw_industry_service import SwIndustryService
+                service = SwIndustryService()
+                service.collect_industry_stocks(symbols, end_date or start_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             if stock_scope == 'INDEX':
@@ -552,6 +562,14 @@ def get_job_index_code(job):
     config = job.config or {}
     params = normalize_schedule_params(config.get('params', {}))
     return config.get('stock_list_code') or params.get('stock_list_code')
+
+
+def resolve_index_job_indexes(job, symbols, index_code):
+    if get_job_stock_scope(job) != 'INDEX':
+        return symbols
+    if index_code:
+        return [index_code]
+    return symbols
 
 
 def resolve_index_scope_symbols_at(job, as_of_date):

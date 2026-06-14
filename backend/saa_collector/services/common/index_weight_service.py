@@ -2,10 +2,12 @@
 import logging
 from datetime import date as date_type
 from datetime import datetime
+from datetime import timedelta
 
 import mysql.connector
 import pandas as pd
 
+from saa_collector.date_expressions import get_latest_trade_day_on_or_before
 from saa_collector.services.common.config_service import ConfigService
 from saa_collector.services.common.logging_utils import format_sample_record
 from saa_collector.third_party.tushare_api_client import get_tushare_client
@@ -28,11 +30,16 @@ class IndexWeightService:
     def collect(self, indexes=None, start_date=None, end_date=None):
         indexes = self.build_indexes(indexes)
         start_date, end_date = self.normalize_date_range(start_date, end_date)
+        date_ranges = self.generate_monthly_date_ranges(start_date, end_date)
         cnx = mysql.connector.connect(**self.db_config)
         try:
             records = []
             for index in indexes:
-                records.extend(self.query_records(index, start_date, end_date))
+                for _, period_end in date_ranges:
+                    trade_date = self.resolve_month_end_trade_date(period_end)
+                    if trade_date is None:
+                        continue
+                    records.extend(self.query_records(index, trade_date, trade_date))
             stock_names = self.query_stock_names(cnx, [record['code'] for record in records])
             for record in records:
                 record['display_name'] = stock_names.get(record['code'])
@@ -106,11 +113,53 @@ class IndexWeightService:
         return min(dates), max(dates)
 
     @staticmethod
+    def generate_monthly_date_ranges(start_date, end_date):
+        if isinstance(start_date, datetime):
+            start_date = start_date.date()
+        if isinstance(end_date, datetime):
+            end_date = end_date.date()
+        if not isinstance(start_date, date_type) or not isinstance(end_date, date_type):
+            return []
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+
+        ranges = []
+        year = start_date.year
+        month = start_date.month
+        while True:
+            month_start = date_type(year, month, 1)
+            if month == 12:
+                next_month = date_type(year + 1, 1, 1)
+            else:
+                next_month = date_type(year, month + 1, 1)
+            month_end = next_month - timedelta(days=1)
+            period_start = max(start_date, month_start)
+            period_end = min(end_date, month_end)
+            if period_start <= period_end:
+                ranges.append((period_start, period_end))
+            if month_end >= end_date:
+                break
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+        return ranges
+
+    @staticmethod
+    def resolve_month_end_trade_date(period_end):
+        trade_date = get_latest_trade_day_on_or_before(period_end)
+        return trade_date or period_end
+
+    @staticmethod
     def to_tushare_index_code(index):
+        if not index:
+            return index
         if index.endswith('.XSHG'):
             return index.replace('.XSHG', '.SH')
         if index.endswith('.XSHE'):
             return index.replace('.XSHE', '.SZ')
+        if str(index).isdigit() and len(str(index)) == 6:
+            return '{}.SZ'.format(index) if str(index).startswith('399') else '{}.SH'.format(index)
         return index
 
     @staticmethod

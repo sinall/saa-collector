@@ -113,14 +113,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="股票范围">
+        <el-form-item v-if="instantSupportsStockScope" label="股票范围">
           <el-radio-group v-model="instantForm.stock_scope">
             <el-radio-button value="ALL">全市场</el-radio-button>
             <el-radio-button value="SELECTED">指定股票</el-radio-button>
             <el-radio-button value="INDEX">中证800</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="instantForm.stock_scope === 'SELECTED'" label="股票代码">
+        <el-form-item v-if="instantSupportsStockScope && instantForm.stock_scope === 'SELECTED'" label="股票代码">
           <el-select
             v-model="instantForm.symbols"
             multiple
@@ -130,7 +130,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item v-if="instantForm.stock_scope === 'INDEX'" label="指数代码">
+        <el-form-item v-if="instantSupportsStockScope && instantForm.stock_scope === 'INDEX'" label="指数代码">
           <el-select v-model="instantForm.stock_list_code" style="width: 100%">
             <el-option label="中证800 (000906)" value="000906" />
           </el-select>
@@ -185,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated } from 'vue'
+import { ref, computed, onMounted, onActivated, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { More } from '@element-plus/icons-vue'
@@ -203,6 +203,22 @@ import { useDataTypes, isDataTypeVisible } from '@/composables/useDataTypes'
 
 const { dataTypes, loadDataTypes, getLabel } = useDataTypes()
 const instantCollectDataTypes = computed(() => dataTypes.value.filter(dt => isDataTypeVisible(dt, 'collect_plan')))
+const STOCK_SCOPE_DATA_TYPES = new Set([
+  'stock_info',
+  'quote',
+  'historical_quote',
+  'extras',
+  'index_weights',
+  'financial_statements',
+  'balance_sheet',
+  'income',
+  'cash_flow',
+  'dividend',
+  'capital',
+  'main_business',
+])
+const supportsStockScope = (dataType: string) => STOCK_SCOPE_DATA_TYPES.has(dataType)
+const instantSupportsStockScope = computed(() => supportsStockScope(instantForm.value.data_type))
 
 const router = useRouter()
 const plans = ref<CollectPlan[]>([])
@@ -462,16 +478,17 @@ const createInstantPlan = async () => {
       return
     }
 
+    const stockScope = instantSupportsStockScope.value ? instantForm.value.stock_scope : 'ALL'
     const params: any = {
       name,
       execution_mode: 'PARALLEL',
       jobs: [{
         data_type: instantForm.value.data_type,
-        stock_scope: instantForm.value.stock_scope,
-        stock_list_code: instantForm.value.stock_scope === 'INDEX' ? instantForm.value.stock_list_code : null,
+        stock_scope: stockScope,
+        stock_list_code: stockScope === 'INDEX' ? instantForm.value.stock_list_code : null,
         data_frequency: instantForm.value.data_type === 'extras' ? instantForm.value.data_frequency : undefined,
         end_date_mode: instantForm.value.end_date_mode,
-        symbols: instantForm.value.stock_scope === 'SELECTED' ? instantForm.value.symbols : [],
+        symbols: stockScope === 'SELECTED' ? instantForm.value.symbols : [],
         skip_existing: instantForm.value.skip_existing,
       }]
     }
@@ -512,6 +529,16 @@ onActivated(() => {
     fetchPlans()
   }
 })
+
+watch(
+  () => instantForm.value.data_type,
+  (dataType) => {
+    if (!supportsStockScope(dataType)) {
+      instantForm.value.stock_scope = 'ALL'
+      instantForm.value.symbols = []
+    }
+  },
+)
 </script>
 
 <style scoped>

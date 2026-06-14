@@ -99,10 +99,14 @@ class IndexQuoteService:
 
     @staticmethod
     def to_tushare_index_code(index):
+        if not index:
+            return index
         if index.endswith('.XSHG'):
             return index.replace('.XSHG', '.SH')
         if index.endswith('.XSHE'):
             return index.replace('.XSHE', '.SZ')
+        if str(index).isdigit() and len(str(index)) == 6:
+            return '{}.SZ'.format(index) if str(index).startswith('399') else '{}.SH'.format(index)
         return index
 
     @staticmethod
