@@ -749,6 +749,8 @@ class CompletenessService:
                 )
             else:
                 period_start, period_end = self._get_period_range(period, frequency)
+            period_start = self._coerce_date(period_start)
+            period_end = self._coerce_date(period_end)
             specs.append((period, period_start, period_end, anchor_date, index_date))
         self._index_period_specs_cache[cache_key] = specs
         return specs
@@ -793,7 +795,8 @@ class CompletenessService:
         if table_name == 'saa_index_weights':
             return {
                 period: len(index_constituents_by_period.get(period, set()))
-                if period_start <= index_date <= period_end else 0
+                if self._coerce_date(period_start) <= self._coerce_date(index_date) <= self._coerce_date(period_end)
+                else 0
                 for period, period_start, period_end, _, index_date in period_specs
             }
 

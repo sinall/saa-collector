@@ -16,6 +16,7 @@
 - group: 所属分组（market/statement/other/valuation/industry）
 - show_completeness: 是否在仪表盘显示完整性
 - need_date: 采集时是否需要日期参数
+- date_anchor: 默认日期锚点策略（如 execution_day/month_end_trade_day）
 - security_scope: 证券范围约束（如 'a_stock' 表示仅 A 股股票）
 - visibility: 不同业务上下文中的可见性（collect/collect_plan/schedule/data_check/integrity_report/dashboard）
 - order: 排序序号（越小越靠前）
@@ -118,6 +119,7 @@ DATA_TYPE_CONFIG = {
         'table': 'saa_prices_ex',
         'date_column': 'date',
         'data_frequency': 'monthly',
+        'date_anchor': 'month_end_trade_day',
         'completeness_model': 'periodic_security',
         'stock_level': True,
         'label': '历史行情',
@@ -297,7 +299,8 @@ DATA_TYPE_CONFIG = {
     'index_weights': {
         'table': 'saa_index_weights',
         'date_column': 'date',
-        'data_frequency': 'quarterly',
+        'data_frequency': 'monthly',
+        'date_anchor': 'month_end_trade_day',
         'completeness_model': 'periodic_security',
         'stock_level': True,
         'label': '指数成分股权重',
@@ -337,6 +340,7 @@ DATA_TYPE_CONFIG = {
         'table': 'saa_industry_stocks',
         'date_column': 'date',
         'data_frequency': 'monthly',
+        'date_anchor': 'month_end_trade_day',
         'completeness_model': 'periodic_security',
         'stock_level': True,
         'label': '行业成分股',

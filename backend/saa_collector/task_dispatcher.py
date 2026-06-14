@@ -101,6 +101,7 @@ def create_plan_from_schedule(schedule, trigger_type):
         config=build_collect_job_config(
             symbols=schedule.symbols,
             params=schedule.params,
+            data_type=schedule.data_type,
         )
     )
     return plan

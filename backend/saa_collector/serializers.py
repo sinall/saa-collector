@@ -292,6 +292,7 @@ class CollectPlanCreateSerializer(serializers.Serializer):
                 data_type=job_data['data_type'],
                 config=build_collect_job_config(
                     symbols=job_data.get('symbols', []),
+                    data_type=job_data['data_type'],
                     params={
                         'stock_scope': job_data.get('stock_scope', 'ALL'),
                         'stock_list_code': job_data.get('stock_list_code') or None,

@@ -25,6 +25,15 @@ class CollectJobConfigTest(TestCase):
         self.assertIs(config['api_cache_bypass'], True)
         self.assertEqual(config['api_cache_ttl_seconds'], 60)
 
+    def test_build_collect_job_config_applies_default_date_anchor_from_data_type(self):
+        config = build_collect_job_config(
+            symbols=[],
+            params={},
+            data_type='index_weights',
+        )
+
+        self.assertEqual(config['date_anchor'], 'month_end_trade_day')
+
     def test_get_cache_control_prefers_top_level_config_over_params(self):
         config = {
             'api_cache_enabled': True,

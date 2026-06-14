@@ -49,8 +49,11 @@ class IndexWeightServiceTest(SimpleTestCase):
         with self.assertLogs(level='INFO') as logs:
             service.collect(['000906.XSHG'], date(2026, 5, 29), date(2026, 5, 29))
 
+        self.assertEqual(pro.query.call_count, 1)
         self.assertEqual(pro.query.call_args.args[0], 'index_weight')
         self.assertEqual(pro.query.call_args.kwargs['index_code'], '000906.SH')
+        self.assertEqual(pro.query.call_args.kwargs['start_date'], '20260529')
+        self.assertEqual(pro.query.call_args.kwargs['end_date'], '20260529')
         self.assertIn(
             "Saved 2 records to saa_index_weights; sample={'index': '000906', "
             "'date': '2026-05-29', 'code': '000001', 'display_name': '平安银行', 'weight': 0.76}",
@@ -103,6 +106,53 @@ class IndexWeightServiceTest(SimpleTestCase):
 
         self.assertEqual(pro.query.call_args.kwargs['index_code'], '000906.SH')
         db_class.return_value.to_sql.assert_called_once_with([], connection, 'saa_index_weights', ['index', 'date', 'code'])
+
+    @patch('saa_collector.services.common.index_weight_service.get_latest_trade_day_on_or_before')
+    @patch('saa_collector.services.common.index_weight_service.ConfigService')
+    @patch('saa_collector.services.common.index_weight_service.get_tushare_client')
+    @patch('saa_collector.services.common.index_weight_service.mysql.connector.connect')
+    @patch('saa_collector.services.common.index_weight_service.DB')
+    def test_collect_uses_provided_trade_dates_without_month_end_lookup(
+            self, db_class, connect, get_client, config_service_class, get_latest_trade_day_on_or_before):
+        config_service_class.return_value.get_config.return_value = {
+            'saa_collector': {'tushare_api': {'token': 'token', 'rate_limit': 10}}
+        }
+        config_service_class.return_value.get_db_config.return_value = {'host': 'db'}
+        pro = Mock()
+        pro.query.side_effect = [
+            pd.DataFrame([
+                {
+                    'index_code': '000906.SH',
+                    'con_code': '000001.SZ',
+                    'trade_date': '20260529',
+                    'weight': 0.76,
+                },
+            ]),
+            pd.DataFrame([
+                {
+                    'index_code': '000906.SH',
+                    'con_code': '600000.SH',
+                    'trade_date': '20260630',
+                    'weight': 1.23,
+                },
+            ]),
+        ]
+        get_client.return_value = pro
+        connection = Mock()
+        connect.return_value = connection
+
+        service = IndexWeightService()
+        service.collect(
+            ['000906.XSHG'],
+            trade_dates=[date(2026, 5, 29), date(2026, 6, 30)],
+        )
+
+        get_latest_trade_day_on_or_before.assert_not_called()
+        self.assertEqual(pro.query.call_count, 2)
+        self.assertEqual(pro.query.call_args_list[0].kwargs['start_date'], '20260529')
+        self.assertEqual(pro.query.call_args_list[0].kwargs['end_date'], '20260529')
+        self.assertEqual(pro.query.call_args_list[1].kwargs['start_date'], '20260630')
+        self.assertEqual(pro.query.call_args_list[1].kwargs['end_date'], '20260630')
 
     @patch('saa_collector.services.common.index_weight_service.get_latest_trade_day_on_or_before')
     @patch('saa_collector.services.common.index_weight_service.ConfigService')

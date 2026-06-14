@@ -50,16 +50,26 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         service_class.return_value.collect.assert_called_once()
 
+    @patch('saa_collector.services.collect_plan_executor.resolve_month_end_trade_dates')
     @patch('saa_collector.services.common.index_weight_service.IndexWeightService')
-    def test_execute_collect_runs_index_weights_job(self, service_class):
+    def test_execute_collect_runs_index_weights_job(self, service_class, resolve_month_end_trade_dates):
+        resolve_month_end_trade_dates.return_value = [date(2026, 5, 29)]
         job = CollectJob.objects.create(
             data_type='index_weights',
             config={'symbols': ['000906.XSHG'], 'params': {'start_date': '2026-05-29'}},
         )
 
-        execute_collect(job)
+        with self.assertLogs(level='INFO') as logs:
+            execute_collect(job)
 
-        service_class.return_value.collect.assert_called_once()
+        resolve_month_end_trade_dates.assert_called_once()
+        service_class.return_value.collect.assert_called_once_with(
+            ['000906.XSHG'],
+            trade_dates=[date(2026, 5, 29)],
+        )
+        self.assertTrue(
+            any('Resolved index_weights trade dates:' in message for message in logs.output),
+        )
 
     @patch('saa_collector.services.common.sw_industry_service.SwIndustryService')
     def test_execute_collect_runs_industries_job(self, service_class):
@@ -83,9 +93,11 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         service_class.return_value.collect_industry_stocks.assert_called_once()
 
+    @patch('saa_collector.services.collect_plan_executor.resolve_month_end_trade_dates')
     @patch('saa_collector.services.common.index_weight_service.IndexWeightService')
     def test_execute_collect_routes_index_stock_scope_for_industry_stocks_to_index_weights(
-            self, service_class):
+            self, service_class, resolve_month_end_trade_dates):
+        resolve_month_end_trade_dates.return_value = [date(2026, 5, 29), date(2026, 6, 13)]
         job = CollectJob.objects.create(
             data_type='industry_stocks',
             config={
@@ -100,8 +112,7 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         service_class.return_value.collect.assert_called_once_with(
             ['000906'],
-            date(2026, 5, 29),
-            date(2026, 6, 14),
+            trade_dates=[date(2026, 5, 29), date(2026, 6, 13)],
         )
 
     @patch('saa_collector.services.collect_plan_executor.resolve_index_scope_symbols_at')
@@ -125,8 +136,11 @@ class CsrcIndustryClassificationCollectTest(TestCase):
             ['000001', '000002']
         )
 
+    @patch('saa_collector.services.collect_plan_executor.resolve_month_end_trade_dates')
     @patch('saa_collector.services.common.index_weight_service.IndexWeightService')
-    def test_execute_collect_runs_index_weights_job_with_index_scope(self, service_class):
+    def test_execute_collect_runs_index_weights_job_with_index_scope(
+            self, service_class, resolve_month_end_trade_dates):
+        resolve_month_end_trade_dates.return_value = [date(2026, 5, 29), date(2026, 6, 13)]
         job = CollectJob.objects.create(
             data_type='index_weights',
             config={
@@ -141,6 +155,19 @@ class CsrcIndustryClassificationCollectTest(TestCase):
 
         service_class.return_value.collect.assert_called_once_with(
             ['000906'],
-            date(2026, 5, 29),
-            date(2026, 6, 14),
+            trade_dates=[date(2026, 5, 29), date(2026, 6, 13)],
         )
+
+    @patch('saa_collector.services.collect_plan_executor.resolve_month_end_trade_dates')
+    @patch('saa_collector.services.common.index_quote_service.IndexQuoteService')
+    def test_execute_collect_keeps_daily_tasks_on_execution_day_path(
+            self, service_class, resolve_month_end_trade_dates):
+        job = CollectJob.objects.create(
+            data_type='quote',
+            config={'symbols': ['000906.XSHG'], 'params': {'start_date': '2026-05-29'}},
+        )
+
+        execute_collect(job)
+
+        resolve_month_end_trade_dates.assert_not_called()
+        service_class.return_value.collect.assert_called_once_with(['000906.XSHG'])

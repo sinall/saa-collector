@@ -17,6 +17,10 @@ from saa_collector.date_expressions import (
 )
 from saa_collector.models import CollectJob, CollectPlan, DataIntegrityItem
 from saa_collector.services.common.index_scope_utils import resolve_index_constituent_payloads_by_dates
+from saa_collector.services.common.period_utils import (
+    generate_monthly_date_ranges,
+    resolve_month_end_trade_dates,
+)
 from saa_collector.services.collect_execution_context import (
     get_collect_execution_context,
     reset_collect_execution_context,
@@ -320,7 +324,18 @@ def execute_collect(job):
             from saa_collector.services.common.index_weight_service import IndexWeightService
             service = IndexWeightService()
             indexes = resolve_index_job_indexes(job, symbols, index_code)
-            service.collect(indexes, start_date, end_date)
+            trade_dates = resolve_job_month_end_trade_dates(job, start_date, end_date)
+            if trade_dates is None:
+                service.collect(indexes, start_date, end_date)
+            else:
+                logger.info(
+                    'Resolved index_weights trade dates: index_code=%s date_anchor=%s count=%d sample=%s',
+                    index_code,
+                    get_job_date_anchor(job),
+                    len(trade_dates),
+                    trade_dates[:5],
+                )
+                service.collect(indexes, trade_dates=trade_dates)
         elif data_type == 'industries':
             from saa_collector.services.common.sw_industry_service import SwIndustryService
             service = SwIndustryService()
@@ -335,7 +350,19 @@ def execute_collect(job):
                 )
                 service = IndexWeightService()
                 indexes = resolve_index_job_indexes(job, symbols, index_code)
-                service.collect(indexes, start_date, end_date)
+                trade_dates = resolve_job_month_end_trade_dates(job, start_date, end_date)
+                if trade_dates is None:
+                    service.collect(indexes, start_date, end_date)
+                else:
+                    logger.info(
+                        'Resolved index_weights trade dates for routed industry_stocks job: '
+                        'index_code=%s date_anchor=%s count=%d sample=%s',
+                        index_code,
+                        get_job_date_anchor(job),
+                        len(trade_dates),
+                        trade_dates[:5],
+                    )
+                    service.collect(indexes, trade_dates=trade_dates)
             else:
                 from saa_collector.services.common.sw_industry_service import SwIndustryService
                 service = SwIndustryService()
@@ -564,6 +591,22 @@ def get_job_index_code(job):
     return config.get('stock_list_code') or params.get('stock_list_code')
 
 
+def get_job_date_anchor(job):
+    config = job.config or {}
+    params = normalize_schedule_params(config.get('params', {}))
+    if config.get('date_anchor') is not None:
+        return config.get('date_anchor')
+    if params.get('date_anchor') is not None:
+        return params.get('date_anchor')
+    return (DATA_TYPE_CONFIG.get(job.data_type) or {}).get('date_anchor')
+
+
+def resolve_job_month_end_trade_dates(job, start_date, end_date):
+    if get_job_date_anchor(job) != 'month_end_trade_day':
+        return None
+    return resolve_month_end_trade_dates(start_date, end_date)
+
+
 def resolve_index_job_indexes(job, symbols, index_code):
     if get_job_stock_scope(job) != 'INDEX':
         return symbols
@@ -667,39 +710,6 @@ def resolve_last_trade_days_for_ranges(cursor, date_ranges):
         candidates = [trade_day for trade_day in trade_days if period_start <= trade_day <= period_end]
         trade_days_by_period_end[period_end] = candidates[-1] if candidates else period_end
     return trade_days_by_period_end
-
-
-def generate_monthly_date_ranges(start_date, end_date):
-    if isinstance(start_date, datetime):
-        start_date = start_date.date()
-    if isinstance(end_date, datetime):
-        end_date = end_date.date()
-    if not isinstance(start_date, date) or not isinstance(end_date, date):
-        return []
-    if start_date > end_date:
-        start_date, end_date = end_date, start_date
-
-    ranges = []
-    year = start_date.year
-    month = start_date.month
-    while True:
-        month_start = date(year, month, 1)
-        if month == 12:
-            next_month = date(year + 1, 1, 1)
-        else:
-            next_month = date(year, month + 1, 1)
-        month_end = next_month - timedelta(days=1)
-        period_start = max(start_date, month_start)
-        period_end = min(end_date, month_end)
-        if period_start <= period_end:
-            ranges.append((period_start, period_end))
-        if month_end >= end_date:
-            break
-        month += 1
-        if month > 12:
-            month = 1
-            year += 1
-    return ranges
 
 
 def should_skip_existing_job(job):

@@ -298,6 +298,7 @@ class BaseCollectView(APIView):
             data_type=self.data_type,
             config=build_collect_job_config(
                 symbols=serializer.validated_data.get('symbols', []),
+                data_type=self.data_type,
                 params={
                     'start_date': str(serializer.validated_data.get('start_date')) if serializer.validated_data.get('start_date') else None,
                     'end_date': str(serializer.validated_data.get('end_date')) if serializer.validated_data.get('end_date') else None,
@@ -1606,6 +1607,7 @@ class DataIntegrityReportGeneratePlanView(APIView):
                 data_type=data_type,
                 config=build_collect_job_config(
                     symbols=[] if report.stock_scope == 'ALL' else list(info['stock_codes']),
+                    data_type=data_type,
                     start_date=str(report.date_start) if report.date_start else None,
                     end_date=str(report.date_end) if report.date_end else None,
                     miss_periods=periods,
@@ -2379,6 +2381,7 @@ class CollectPlanDetailView(APIView):
                     job.data_type = job_data['data_type']
                     job.config = build_collect_job_config(
                         symbols=job_data.get('symbols', existing_config.get('symbols', [])),
+                        data_type=job_data['data_type'],
                         params=params,
                         stock_scope=job_data.get('stock_scope', existing_config.get('stock_scope', 'ALL')),
                         stock_list_code=job_data.get('stock_list_code', existing_config.get('stock_list_code')),

@@ -205,32 +205,72 @@ class CompletenessServiceTest(TestCase):
                 (date(2025, 1, 15), '000002'),
                 (date(2025, 2, 15), '000002'),
             ],
-            [
-                (date(2025, 1, 15),),
-                (date(2025, 2, 15),),
-            ],
-            [
-                ('000001', date(2025, 1, 31)),
-                ('000002', date(2025, 2, 28)),
-            ],
         ]
         connection.cursor.return_value.__enter__.return_value = cursor
 
         service = CompletenessService(index_code='000906', date_end=date(2025, 2, 28))
-        result = service.calculate_all(['extras'], ['2025-01', '2025-02'], 'monthly')
+        specs = service._build_index_period_specs(
+            cursor,
+            ['2025-01', '2025-02'],
+            'monthly',
+            '2025-01-01',
+            '2025-02-28',
+        )
 
-        self.assertEqual(result['matrix']['extras'], [0.5, 1.0])
-        executed_sql = '\n'.join(call.args[0] for call in cursor.execute.call_args_list)
-        self.assertIn('FROM saa_trade_days', executed_sql)
-        self.assertIn('FROM saa_index_weights', executed_sql)
-        self.assertIn('FROM saa_extras', executed_sql)
-        self.assertIn('date IN', executed_sql)
+        self.assertEqual(
+            specs,
+            [
+                ('2025-01', date(2025, 1, 1), date(2025, 1, 31), date(2025, 1, 31), date(2025, 1, 15)),
+                ('2025-02', date(2025, 2, 1), date(2025, 2, 28), date(2025, 2, 28), date(2025, 2, 15)),
+            ],
+        )
+
+    @patch('saa_collector.services.completeness_service.connection')
+    def test_index_weights_index_scope_monthly_uses_date_ranges(self, connection):
+        cursor = Mock()
+        cursor.fetchall.side_effect = [
+            [
+                (date(2025, 5, 30),),
+                (date(2025, 6, 30),),
+            ],
+            [
+                (date(2025, 5, 30),),
+                (date(2025, 6, 30),),
+            ],
+            [
+                (date(2025, 5, 30), '000001'),
+                (date(2025, 5, 30), '000002'),
+                (date(2025, 6, 30), '000001'),
+                (date(2025, 6, 30), '000002'),
+            ],
+            [
+                (date(2025, 5, 30),),
+                (date(2025, 6, 30),),
+            ],
+            [
+                (date(2025, 5, 30), '000001'),
+                (date(2025, 5, 30), '000002'),
+                (date(2025, 6, 30), '000001'),
+                (date(2025, 6, 30), '000002'),
+            ],
+        ]
+        connection.cursor.return_value.__enter__.return_value = cursor
+
+        service = CompletenessService(index_code='000906', date_end=date(2025, 6, 30))
+        result = service.calculate_all(['index_weights'], ['2025-05', '2025-06'], 'monthly')
+
+        self.assertEqual(result['matrix']['index_weights'], [1.0, 1.0])
 
     @patch('saa_collector.services.completeness_service.connection')
     def test_calculate_all_logs_data_type_duration(self, connection):
         cursor = Mock()
-        cursor.fetchall.return_value = [
-            ('2025-01', 1),
+        cursor.fetchall.side_effect = [
+            [
+                (date(2025, 1, 31),),
+            ],
+            [
+                ('2025-01', 1),
+            ],
         ]
         connection.cursor.return_value.__enter__.return_value = cursor
 
