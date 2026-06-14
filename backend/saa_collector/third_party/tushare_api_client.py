@@ -38,6 +38,8 @@ class TushareApiClient:
         'fina_mainbz': 30 * 24 * 60 * 60,
         'stk_factor': 30 * 24 * 60 * 60,
         'index_classify': 7 * 24 * 60 * 60,
+        'index_daily': 24 * 60 * 60,
+        'index_weight': 24 * 60 * 60,
         'index_member_all': 24 * 60 * 60,
         'stock_basic': 7 * 24 * 60 * 60,
     }

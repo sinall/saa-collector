@@ -321,3 +321,29 @@ class TushareApiClientTest(TestCase):
         cache_store.get.assert_called_once()
         cache_store.set.assert_called_once()
         self.assertEqual(cache_store.set.call_args.kwargs['ttl_seconds'], 24 * 60 * 60)
+
+    @patch('saa_collector.third_party.tushare_api_client.ts.pro_api')
+    @patch.object(tushare_api_client.TushareApiClient, '_build_redis_client', return_value=None)
+    def test_query_caches_index_weight_api_by_default(self, _build_redis_client, pro_api):
+        cache_store = Mock()
+        cache_store.get.return_value = None
+        pro_api.return_value.query.return_value = pd.DataFrame([
+            {'index_code': '000906.SH', 'con_code': '000001.SZ', 'trade_date': '20260529'},
+        ])
+        client = tushare_api_client.TushareApiClient(
+            'token',
+            rate_limit=60,
+            cache_store=cache_store,
+        )
+
+        client.query(
+            'index_weight',
+            index_code='000906.SH',
+            start_date='20260529',
+            end_date='20260529',
+            api_cache_enabled=True,
+        )
+
+        cache_store.get.assert_called_once()
+        cache_store.set.assert_called_once()
+        self.assertEqual(cache_store.set.call_args.kwargs['ttl_seconds'], 24 * 60 * 60)
