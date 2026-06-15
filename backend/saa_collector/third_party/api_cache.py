@@ -24,6 +24,23 @@ class CachedApiResponse:
 
 
 class DjangoExternalApiCacheStore:
+    def _format_params(self, params):
+        if not params:
+            return '-'
+        parts = []
+        for key, value in sorted(params.items()):
+            parts.append('{}={}'.format(key, self._format_param_value(value)))
+        return ','.join(parts)
+
+    def _format_param_value(self, value):
+        if isinstance(value, list):
+            if len(value) <= 5:
+                return '[' + ','.join(str(item) for item in value) + ']'
+            return '[' + ','.join(str(item) for item in value[:5]) + ',...;count={}]'.format(len(value))
+        if value is None:
+            return 'null'
+        return str(value)
+
     def get_response(self, *, provider, api_name, cache_key):
         now = timezone.now()
         entry = ExternalApiCacheEntry.objects.filter(
@@ -33,15 +50,15 @@ class DjangoExternalApiCacheStore:
         ).first()
         if entry is None:
             logger.info(
-                'External API cache miss: provider=%s api=%s cache_key=%s',
-                provider, api_name, cache_key
+                'External API cache miss: provider=%s api=%s params=%s cache_key=%s',
+                provider, api_name, '-', cache_key
             )
             return None
 
         if entry.expires_at <= now:
             logger.info(
-                'External API cache expired: provider=%s api=%s cache_key=%s expires_at=%s',
-                provider, api_name, cache_key, entry.expires_at
+                'External API cache expired: provider=%s api=%s params=%s cache_key=%s expires_at=%s',
+                provider, api_name, self._format_params(entry.params_json), cache_key, entry.expires_at
             )
             return None
 
@@ -50,8 +67,8 @@ class DjangoExternalApiCacheStore:
             last_hit_at=now,
         )
         logger.info(
-            'External API cache hit: provider=%s api=%s cache_key=%s',
-            provider, api_name, cache_key
+            'External API cache hit: provider=%s api=%s params=%s cache_key=%s',
+            provider, api_name, self._format_params(entry.params_json), cache_key
         )
         return CachedApiResponse(
             body=bytes(entry.response_body),
@@ -93,8 +110,8 @@ class DjangoExternalApiCacheStore:
                 },
             )
         logger.info(
-            'External API cache stored: provider=%s api=%s cache_key=%s ttl_seconds=%s bytes=%d',
-            provider, api_name, cache_key, ttl_seconds, len(body)
+            'External API cache stored: provider=%s api=%s params=%s cache_key=%s ttl_seconds=%s bytes=%d',
+            provider, api_name, self._format_params(params), cache_key, ttl_seconds, len(body)
         )
 
     def get_records(self, *, provider, api_name, cache_key):

@@ -55,6 +55,51 @@ class ExternalApiCacheStoreTest(TestCase):
 
         self.assertEqual(records, [{'ts_code': '000001.SZ', 'end_date': '20231231'}])
 
+    def test_cache_hit_log_includes_params(self):
+        store = DjangoExternalApiCacheStore()
+        ExternalApiCacheEntry.objects.create(
+            provider='tushare',
+            api_name='index_member_all',
+            cache_key='abc',
+            canonical_call_json={'provider': 'tushare', 'api': 'index_member_all'},
+            params_json={'is_new': 'Y', 'l1_code': '801010.SI'},
+            response_body=json.dumps(
+                [{'l1_code': '801010.SI', 'ts_code': '000001.SZ'}]
+            ).encode('utf-8'),
+            response_content_type='application/json',
+            response_encoding='utf-8',
+            response_sha256='unused',
+            raw_response_schema_version='tushare-raw-v1',
+            expires_at=timezone.now() + timezone.timedelta(seconds=60),
+        )
+
+        with self.assertLogs('saa_collector.third_party.api_cache', level='INFO') as logs:
+            store.get_records(provider='tushare', api_name='index_member_all', cache_key='abc')
+
+        messages = '\n'.join(logs.output)
+        self.assertIn('External API cache hit: provider=tushare api=index_member_all', messages)
+        self.assertIn('params=is_new=Y,l1_code=801010.SI', messages)
+
+    def test_cache_store_log_includes_params(self):
+        store = DjangoExternalApiCacheStore()
+
+        with self.assertLogs('saa_collector.third_party.api_cache', level='INFO') as logs:
+            store.set_records(
+                provider='tushare',
+                api_name='index_member_all',
+                cache_key='abc',
+                canonical_call={'provider': 'tushare', 'api': 'index_member_all'},
+                params={'is_new': 'Y', 'l1_code': '801010.SI'},
+                fields='',
+                response_records=[{'l1_code': '801010.SI', 'ts_code': '000001.SZ'}],
+                schema_version='tushare-raw-v1',
+                ttl_seconds=60,
+            )
+
+        messages = '\n'.join(logs.output)
+        self.assertIn('External API cache stored: provider=tushare api=index_member_all', messages)
+        self.assertIn('params=is_new=Y,l1_code=801010.SI', messages)
+
     def test_set_response_and_get_response_round_trip_binary_body(self):
         store = DjangoExternalApiCacheStore()
 

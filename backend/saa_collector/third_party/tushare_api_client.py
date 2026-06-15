@@ -228,8 +228,13 @@ class TushareApiClient:
         fields = self._parse_fields(cache_context.get('fields'))
         if fields and not set(fields).issubset(set(result.columns)):
             self._logger.info(
-                'External API cache miss: provider=tushare api=%s cache_key=%s reason=missing_fields requested=%s cached=%s',
-                cache_context['api_name'], cache_context['cache_key'], fields, list(result.columns)
+                'External API cache miss: provider=tushare api=%s params=%s cache_key=%s '
+                'reason=missing_fields requested=%s cached=%s',
+                cache_context['api_name'],
+                self._format_cache_params(cache_context.get('params')),
+                cache_context['cache_key'],
+                fields,
+                list(result.columns),
             )
             return None
         if fields:
@@ -254,6 +259,23 @@ class TushareApiClient:
             )
         except Exception as e:
             self._logger.warning('External API cache write failed: %s', e)
+
+    def _format_cache_params(self, params):
+        if not params:
+            return '-'
+        parts = []
+        for key, value in sorted(params.items()):
+            parts.append('{}={}'.format(key, self._format_cache_param_value(value)))
+        return ','.join(parts)
+
+    def _format_cache_param_value(self, value):
+        if isinstance(value, list):
+            if len(value) <= 5:
+                return '[' + ','.join(str(item) for item in value) + ']'
+            return '[' + ','.join(str(item) for item in value[:5]) + ',...;count={}]'.format(len(value))
+        if value is None:
+            return 'null'
+        return str(value)
 
     def _sanitize_response_records(self, records):
         return [
