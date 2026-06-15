@@ -366,7 +366,18 @@ def execute_collect(job):
             else:
                 from saa_collector.services.common.sw_industry_service import SwIndustryService
                 service = SwIndustryService()
-                service.collect_industry_stocks(symbols, end_date or start_date)
+                trade_dates = resolve_job_month_end_trade_dates(job, start_date, end_date)
+                if trade_dates is None:
+                    service.collect_industry_stocks(symbols, end_date or start_date)
+                else:
+                    logger.info(
+                        'Resolved industry_stocks trade dates: stock_scope=%s date_anchor=%s count=%d sample=%s',
+                        stock_scope,
+                        get_job_date_anchor(job),
+                        len(trade_dates),
+                        trade_dates[:5],
+                    )
+                    service.collect_industry_stocks(symbols, target_dates=trade_dates)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             if stock_scope == 'INDEX':

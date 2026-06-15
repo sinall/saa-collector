@@ -91,6 +91,45 @@ class SwIndustryServiceTest(SimpleTestCase):
     @patch('saa_collector.services.common.sw_industry_service.get_tushare_client')
     @patch('saa_collector.services.common.sw_industry_service.mysql.connector.connect')
     @patch('saa_collector.services.common.sw_industry_service.DB')
+    def test_collect_industry_stocks_supports_monthly_backfill_dates(
+            self, db_class, connect, get_client, config_service_class):
+        config_service_class.return_value.get_config.return_value = {
+            'saa_collector': {'tushare_api': {'token': 'token', 'rate_limit': 10}}
+        }
+        config_service_class.return_value.get_db_config.return_value = {'host': 'db'}
+        cursor = Mock()
+        cursor.fetchall.return_value = [('801010',)]
+        connection = Mock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+        pro = Mock()
+        pro.query.return_value = pd.DataFrame([
+            {'l1_code': '801010.SI', 'ts_code': '000001.SZ', 'name': '平安银行'},
+        ])
+        get_client.return_value = pro
+
+        service = SwIndustryService()
+        service.collect_industry_stocks(None, target_dates=[date(2025, 5, 30), date(2025, 6, 30)])
+
+        self.assertEqual(pro.query.call_count, 2)
+        self.assertEqual(pro.query.call_args_list[0].args[0], 'index_member_all')
+        self.assertEqual(pro.query.call_args_list[0].kwargs['l1_code'], '801010.SI')
+        self.assertEqual(pro.query.call_args_list[1].kwargs['l1_code'], '801010.SI')
+        db_class.return_value.to_sql.assert_called_once_with(
+            [
+                {'industry_code': '801010', 'date': date(2025, 5, 30), 'code': '000001'},
+                {'industry_code': '801010', 'date': date(2025, 6, 30), 'code': '000001'},
+            ],
+            connection,
+            'saa_industry_stocks',
+            ['industry_code', 'date', 'code'],
+        )
+        connection.close.assert_called_once()
+
+    @patch('saa_collector.services.common.sw_industry_service.ConfigService')
+    @patch('saa_collector.services.common.sw_industry_service.get_tushare_client')
+    @patch('saa_collector.services.common.sw_industry_service.mysql.connector.connect')
+    @patch('saa_collector.services.common.sw_industry_service.DB')
     def test_collect_industry_stocks_skips_provider_shape_errors(self, db_class, connect, get_client, config_service_class):
         config_service_class.return_value.get_config.return_value = {
             'saa_collector': {'tushare_api': {'token': 'token', 'rate_limit': 10}}

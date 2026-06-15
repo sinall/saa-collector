@@ -40,21 +40,23 @@ class SwIndustryService:
         finally:
             cnx.close()
 
-    def collect_industry_stocks(self, industry_codes=None, target_date=None):
-        target_date = self.normalize_target_date(target_date)
+    def collect_industry_stocks(self, industry_codes=None, target_date=None, target_dates=None):
+        target_dates = self.normalize_target_dates(target_dates, target_date)
         cnx = mysql.connector.connect(**self.db_config)
         try:
             industry_codes = self.build_industry_codes(industry_codes, cnx)
             records = []
-            for industry_code in industry_codes:
-                try:
-                    records.extend(self.query_industry_stock_records(industry_code, target_date))
-                except (KeyError, ValueError) as exc:
-                    self._logger.warning(
-                        'Skipping SW industry constituents: industry_code=%s error=%s',
-                        industry_code,
-                        exc,
-                    )
+            for target_date in target_dates:
+                for industry_code in industry_codes:
+                    try:
+                        records.extend(self.query_industry_stock_records(industry_code, target_date))
+                    except (KeyError, ValueError) as exc:
+                        self._logger.warning(
+                            'Skipping SW industry constituents: industry_code=%s target_date=%s error=%s',
+                            industry_code,
+                            target_date,
+                            exc,
+                        )
             self.save_industry_stocks(records, cnx)
             self._logger.info(
                 'Saved %s records to saa_industry_stocks; sample=%s',
@@ -140,6 +142,20 @@ class SwIndustryService:
         if not isinstance(target_date, date_type):
             raise TypeError('target_date must be a date')
         return target_date
+
+    @classmethod
+    def normalize_target_dates(cls, target_dates, target_date=None):
+        if target_dates is None:
+            return [cls.normalize_target_date(target_date)]
+
+        normalized = []
+        for value in target_dates:
+            if isinstance(value, datetime):
+                value = value.date()
+            elif not isinstance(value, date_type):
+                value = datetime.strptime(str(value), '%Y-%m-%d').date()
+            normalized.append(value)
+        return normalized
 
     @staticmethod
     def to_tushare_industry_code(industry_code):
