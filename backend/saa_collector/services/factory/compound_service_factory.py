@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import logging
 
-from django.conf import settings
-
 from saa_collector.services.common.valuation_service import ValuationServiceImpl
 from saa_collector.services.factory.service_factory import ServiceFactory
+from saa_collector.services.factory.provider_config import build_selection, resolve_provider
 from saa_collector.services.impl.akshare.service_factory import AkshareServiceFactoryImpl
 from saa_collector.services.impl.cninfo.service_factory import CninfoServiceFactoryImpl
 from saa_collector.services.impl.tushare.service_factory import TushareServiceFactoryImpl
@@ -13,19 +12,27 @@ logger = logging.getLogger(__name__)
 
 
 class CompoundServiceFactory(ServiceFactory):
-    def __init__(self):
+    def __init__(self, data_type=None, provider=None, provider_source=None):
         self.akshare_impl = AkshareServiceFactoryImpl()
         self.cninfo_impl = CninfoServiceFactoryImpl()
         self.tushare_impl = TushareServiceFactoryImpl()
 
-        data_source = getattr(settings, 'DATA_SOURCE', 'akshare')
+        selection = (
+            resolve_provider(data_type)
+            if provider is None
+            else build_selection(provider, provider_source or 'explicit')
+        )
+        data_source = selection.provider
+        provider_source = selection.source
         if data_source == 'akshare':
             self.impl = self.akshare_impl
         else:
             self.impl = self.tushare_impl
         logger.info(
-            'CompoundServiceFactory initialized: DATA_SOURCE=%s selected_impl=%s',
+            'CompoundServiceFactory initialized: data_type=%s provider=%s source=%s selected_impl=%s',
+            data_type,
             data_source,
+            provider_source,
             self.impl.__class__.__name__,
         )
 

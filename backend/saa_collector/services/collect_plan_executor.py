@@ -27,6 +27,7 @@ from saa_collector.services.collect_execution_context import (
     set_collect_execution_context,
 )
 from saa_collector.services.common.progress import ProgressLogger
+from saa_collector.services.factory.provider_config import require_provider
 from saa_collector.services.heatmap_cache import invalidate_heatmap_cache
 
 logger = logging.getLogger(__name__)
@@ -182,11 +183,22 @@ def refresh_django_db_connections(reason):
     db.connections.close_all()
 
 
+def require_tushare_provider(data_type):
+    selection = require_provider(data_type, {'tushare'})
+    logger.info(
+        'Resolved collector provider: data_type=%s provider=%s source=%s',
+        data_type,
+        selection.provider,
+        selection.source,
+    )
+    return selection
+
+
 def execute_collect(job):
     from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
 
-    factory = CompoundServiceFactory()
     data_type = job.data_type
+    factory = CompoundServiceFactory(data_type=data_type)
     symbols = job.config.get('symbols') if job.config.get('symbols') else None
     params = normalize_schedule_params(job.config.get('params', {}))
     calendar_service = None
@@ -317,10 +329,12 @@ def execute_collect(job):
             else:
                 service.collect(target_dates=target_dates, symbols=symbols)
         elif data_type == 'index_quotes':
+            require_tushare_provider(data_type)
             from saa_collector.services.common.index_quote_service import IndexQuoteService
             service = IndexQuoteService()
             service.collect(symbols, start_date, end_date)
         elif data_type == 'index_weights':
+            require_tushare_provider(data_type)
             from saa_collector.services.common.index_weight_service import IndexWeightService
             service = IndexWeightService()
             indexes = resolve_index_job_indexes(job, symbols, index_code)
@@ -337,11 +351,13 @@ def execute_collect(job):
                 )
                 service.collect(indexes, trade_dates=trade_dates)
         elif data_type == 'industries':
+            require_tushare_provider(data_type)
             from saa_collector.services.common.sw_industry_service import SwIndustryService
             service = SwIndustryService()
             service.collect_industries(end_date or start_date)
         elif data_type == 'industry_stocks':
             if stock_scope == 'INDEX':
+                require_tushare_provider('index_weights')
                 from saa_collector.services.common.index_weight_service import IndexWeightService
                 logger.warning(
                     'Routing stock_scope=INDEX for industry_stocks to index_weights: index_code=%s; '
@@ -364,6 +380,7 @@ def execute_collect(job):
                     )
                     service.collect(indexes, trade_dates=trade_dates)
             else:
+                require_tushare_provider(data_type)
                 from saa_collector.services.common.sw_industry_service import SwIndustryService
                 service = SwIndustryService()
                 trade_dates = resolve_job_month_end_trade_dates(job, start_date, end_date)

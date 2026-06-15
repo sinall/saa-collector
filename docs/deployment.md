@@ -155,7 +155,7 @@ server {
 | `STATICFILES_STORAGE` | `whitenoise.storage.CompressedStaticFilesStorage` | WhiteNoise 压缩 |
 | `DATABASE ENGINE` | `mysql.connector.django` | MySQL 连接器 |
 | `CORS_ALLOW_ALL_ORIGINS` | `True` | 允许所有跨域 |
-| `DATA_SOURCE` | `tushare` (默认) | 数据源选择 |
+| `DATA_SOURCE` | `tushare` (默认) | 数据源默认值；优先使用 `saa_collector.yml` 中的 `default_provider` 和 `data_providers` |
 
 ## 开发环境 vs 生产环境
 
@@ -249,7 +249,7 @@ Browser: GET /admin/collector/static/admin/css/base.css
 | `SERVICE` | 否 | `gunicorn` | 服务模式 |
 | `GUNICORN_WORKERS` | 否 | `1` | Gunicorn worker 数 |
 | `GUNICORN_THREADS` | 否 | `4` | Gunicorn thread 数 |
-| `DATA_SOURCE` | 否 | `tushare` | 数据源 (akshare/tushare) |
+| `DATA_SOURCE` | 否 | `tushare` | 数据源默认值；生产优先通过 `saa_collector.yml` 的 `default_provider` / `data_providers` 集中配置 |
 | `DEBUG` | 否 | `False` | 调试模式 |
 
 ### UCenter 认证环境变量

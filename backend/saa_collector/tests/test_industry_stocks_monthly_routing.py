@@ -33,3 +33,34 @@ class IndustryStocksMonthlyRoutingTest(SimpleTestCase):
             ['801010'],
             target_dates=[date(2025, 5, 30), date(2025, 6, 30)],
         )
+
+    @patch('saa_collector.services.factory.provider_config.load_config')
+    @patch('saa_collector.services.common.sw_industry_service.SwIndustryService')
+    def test_execute_collect_rejects_unsupported_industry_stocks_provider(self, service_class, load_config):
+        load_config.return_value = {
+            'saa_collector': {
+                'default_provider': 'tushare',
+                'data_providers': {
+                    'industry_stocks': 'akshare',
+                },
+            },
+        }
+        job = SimpleNamespace(
+            id=1356,
+            plan_id=1346,
+            data_type='industry_stocks',
+            config={
+                'symbols': ['801010'],
+                'params': {
+                    'start_date': '2025-05-01',
+                    'end_date': '2025-06-30',
+                },
+            },
+        )
+
+        with self.assertRaisesMessage(
+                ValueError,
+                'Unsupported collector provider for data_type=industry_stocks: provider=akshare supported=tushare'):
+            execute_collect(job)
+
+        service_class.assert_not_called()

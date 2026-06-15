@@ -35,6 +35,26 @@ saa_collector:
     # Number of symbols processed before flushing high-volume collectors to DB.
     # save_batch_symbols: 50
 
+  # Default provider for collector services. Per-data-type entries override it.
+  # Supported providers: tushare, akshare.
+  default_provider: tushare
+  data_providers:
+    trade_days: tushare
+    stock_info: tushare
+    quote: tushare
+    historical_quote: tushare
+    financial_statements: tushare
+    balance_sheet: tushare
+    income: tushare
+    cash_flow: tushare
+    dividend: tushare
+    capital: tushare
+    main_business: tushare
+    industries: tushare
+    industry_stocks: tushare
+    index_quotes: tushare
+    index_weights: tushare
+
   db:
     host: iguuu.com
     user:
