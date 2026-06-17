@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -59,7 +60,7 @@ class CsrcIndustryClassificationCollectTest(TestCase):
             config={'symbols': ['000906.XSHG'], 'params': {'start_date': '2026-05-29'}},
         )
 
-        with self.assertLogs(level='INFO') as logs:
+        with self.assertLogs('saa_collector.services.collect_plan_executor', level='INFO') as logs:
             execute_collect(job)
 
         resolve_month_end_trade_dates.assert_called_once()
@@ -159,9 +160,9 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         )
 
     @patch('saa_collector.services.collect_plan_executor.resolve_month_end_trade_dates')
-    @patch('saa_collector.services.common.index_quote_service.IndexQuoteService')
+    @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     def test_execute_collect_keeps_daily_tasks_on_execution_day_path(
-            self, service_class, resolve_month_end_trade_dates):
+            self, factory_class, resolve_month_end_trade_dates):
         job = CollectJob.objects.create(
             data_type='quote',
             config={'symbols': ['000906.XSHG'], 'params': {'start_date': '2026-05-29'}},
@@ -170,4 +171,48 @@ class CsrcIndustryClassificationCollectTest(TestCase):
         execute_collect(job)
 
         resolve_month_end_trade_dates.assert_not_called()
-        service_class.return_value.collect.assert_called_once_with(['000906.XSHG'])
+        factory_class.return_value.create_quote_service.return_value.collect.assert_called_once_with(['000906.XSHG'])
+
+    @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
+    @patch('saa_collector.services.common.valuation_service.ValuationServiceImpl')
+    def test_execute_collect_runs_valuation_board_for_resolved_trade_dates(
+            self, service_class, resolve_target_dates):
+        resolve_target_dates.return_value = [date(2026, 5, 22), date(2026, 5, 25)]
+        job = CollectJob.objects.create(
+            data_type='valuation_board',
+            config={'symbols': [], 'params': {'start_date': '2026-05-22', 'end_date': '2026-05-25'}},
+        )
+
+        execute_collect(job)
+
+        resolve_target_dates.assert_called_once_with(date(2026, 5, 22), date(2026, 5, 25), 'daily')
+        service_class.return_value.collect_board.assert_any_call(datetime(2026, 5, 22))
+        service_class.return_value.collect_board.assert_any_call(datetime(2026, 5, 25))
+        self.assertEqual(service_class.return_value.collect_board.call_count, 2)
+        service_class.return_value.collect_industry.assert_not_called()
+
+    @patch('saa_collector.services.collect_plan_executor.resolve_stock_status_target_dates')
+    @patch('saa_collector.services.common.valuation_service.ValuationServiceImpl')
+    def test_execute_collect_runs_valuation_industry_for_resolved_trade_dates(
+            self, service_class, resolve_target_dates):
+        resolve_target_dates.return_value = [date(2026, 5, 22)]
+        job = CollectJob.objects.create(
+            data_type='valuation_industry',
+            config={'symbols': [], 'params': {'start_date': '2026-05-22'}},
+        )
+
+        execute_collect(job)
+
+        service_class.return_value.collect_industry.assert_called_once_with(datetime(2026, 5, 22))
+        service_class.return_value.collect_board.assert_not_called()
+
+    def test_execute_collect_rejects_unknown_data_type(self):
+        job = SimpleNamespace(
+            id=9999,
+            plan_id=None,
+            data_type='unknown_type',
+            config={'symbols': [], 'params': {}},
+        )
+
+        with self.assertRaisesMessage(ValueError, 'Unknown data type: unknown_type'):
+            execute_collect(job)

@@ -198,19 +198,25 @@ def execute_collect(job):
     from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
 
     data_type = job.data_type
-    factory = CompoundServiceFactory(data_type=data_type)
+    factory = None
     symbols = job.config.get('symbols') if job.config.get('symbols') else None
     params = normalize_schedule_params(job.config.get('params', {}))
     calendar_service = None
     stock_scope = get_job_stock_scope(job)
     index_code = get_job_index_code(job)
 
+    def get_factory():
+        nonlocal factory
+        if factory is None:
+            factory = CompoundServiceFactory(data_type=data_type)
+        return factory
+
     def refresh_trade_calendar(latest_trade_day, base_date):
         nonlocal calendar_service
         if latest_trade_day is None or base_date is None:
             return
         if calendar_service is None:
-            calendar_service = factory.create_calendar_service()
+            calendar_service = get_factory().create_calendar_service()
 
         refresh_start = latest_trade_day + timedelta(days=1)
         if refresh_start > base_date:
@@ -253,10 +259,10 @@ def execute_collect(job):
     )
     try:
         if data_type == 'trade_days':
-            service = factory.create_calendar_service()
+            service = get_factory().create_calendar_service()
             service.collect(start_date, end_date)
         elif data_type == 'stock_info':
-            service = factory.create_stock_info_service()
+            service = get_factory().create_stock_info_service()
             if stock_scope == 'INDEX':
                 symbols = resolve_index_scope_symbols_at(job, timezone.localdate()) or []
             symbols = build_symbols_for_service(service, symbols)
@@ -272,7 +278,7 @@ def execute_collect(job):
             from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
             SecurityMasterRefreshService().refresh_from_stocks()
         elif data_type == 'quote':
-            service = factory.create_quote_service()
+            service = get_factory().create_quote_service()
             if stock_scope == 'INDEX':
                 symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = build_symbols_for_service(service, symbols)
@@ -281,7 +287,7 @@ def execute_collect(job):
                 return
             service.collect(symbols)
         elif data_type == 'historical_quote':
-            service = factory.create_quote_service()
+            service = get_factory().create_quote_service()
             if stock_scope == 'INDEX':
                 collect_index_historical_quotes(job, service, start_date, end_date, index_code)
             else:
@@ -396,7 +402,7 @@ def execute_collect(job):
                     )
                     service.collect_industry_stocks(symbols, target_dates=trade_dates)
         elif data_type == 'financial_statements':
-            service = factory.create_statement_service()
+            service = get_factory().create_statement_service()
             if stock_scope == 'INDEX':
                 symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
@@ -436,7 +442,7 @@ def execute_collect(job):
                     )
                 )
         elif data_type in ('balance_sheet', 'income', 'cash_flow', 'dividend'):
-            service = factory.create_statement_service()
+            service = get_factory().create_statement_service()
             if stock_scope == 'INDEX':
                 symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
@@ -482,7 +488,7 @@ def execute_collect(job):
                     start_date=start_date,
                 )
         elif data_type == 'capital':
-            service = factory.create_capital_service()
+            service = get_factory().create_capital_service()
             if stock_scope == 'INDEX':
                 symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
@@ -496,7 +502,7 @@ def execute_collect(job):
                 start_date=start_date,
             )
         elif data_type == 'main_business':
-            service = factory.create_statement_service()
+            service = get_factory().create_statement_service()
             if stock_scope == 'INDEX':
                 symbols = resolve_index_scope_symbols_at(job, end_date or start_date or timezone.localdate()) or []
             symbols = apply_data_type_symbol_scope(data_type, service, symbols)
@@ -513,6 +519,22 @@ def execute_collect(job):
             from saa_collector.jobs.valuation_collect_job import ValuationCollectJob
             collect_job = ValuationCollectJob()
             collect_job()
+        elif data_type in ('valuation_board', 'valuation_industry'):
+            from saa_collector.services.common.valuation_service import ValuationServiceImpl
+            service = ValuationServiceImpl()
+            target_dates = resolve_stock_status_target_dates(start_date, end_date, 'daily')
+            logger.info(
+                'Resolved valuation target dates: data_type=%s count=%d sample=%s',
+                data_type,
+                len(target_dates),
+                target_dates[:5],
+            )
+            for target_date in target_dates:
+                target_datetime = datetime.combine(target_date, datetime.min.time())
+                if data_type == 'valuation_board':
+                    service.collect_board(target_datetime)
+                else:
+                    service.collect_industry(target_datetime)
         elif data_type == 'csrc_industry_classifications':
             from saa_collector.services.common.industry_classification_service import CsrcIndustryClassificationService
             service = CsrcIndustryClassificationService()
@@ -522,7 +544,7 @@ def execute_collect(job):
             collect_job = TickJob()
             collect_job()
         else:
-            logger.warning(f"[Job {job.id}] Unknown data type: {data_type}")
+            raise ValueError(f"Unknown data type: {data_type}")
     finally:
         reset_collect_execution_context(unit_context_token)
 
