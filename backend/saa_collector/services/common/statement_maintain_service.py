@@ -45,7 +45,7 @@ class StatementMaintainService:
 
         if symbols:
             sql = "SELECT * FROM saa_integrated_reports_interface " \
-                  "WHERE symbol IN (%s) AND date >= DATE_SUB(CURDATE(), INTERVAL 4 YEAR)"
+                  "WHERE symbol IN (%s) AND COALESCE(report_date, date) >= DATE_SUB(CURDATE(), INTERVAL 4 YEAR)"
             if isinstance(symbols, str):
                 param_count = 1
                 params = (symbols,)
@@ -55,7 +55,7 @@ class StatementMaintainService:
             sql = sql % ','.join(['%s'] * param_count)
         else:
             sql = "SELECT * FROM saa_integrated_reports_interface " \
-                  "WHERE date >= DATE_SUB(CURDATE(), INTERVAL 4 YEAR)"
+                  "WHERE COALESCE(report_date, date) >= DATE_SUB(CURDATE(), INTERVAL 4 YEAR)"
             params = ()
         cnx = mysql.connector.connect(**self.db_config)
         cursor = None
@@ -78,13 +78,14 @@ class StatementMaintainService:
             cnx.close()
 
     def gen_ttm_report(self, statements, non_balance_sheet_fields):
-        statements = sorted(statements, key=lambda i: i['date'], reverse=True)
+        statements = [self.normalize_report_date(statement) for statement in statements]
+        statements = sorted(statements, key=lambda i: i['report_date'], reverse=True)
         latest_integrate_report = statements[0]
-        if latest_integrate_report['date'].month == 12:
+        if latest_integrate_report['report_date'].month == 12:
             return latest_integrate_report
-        date_to_integrated_report_list = {r['date']: r for r in statements}
+        date_to_integrated_report_list = {r['report_date']: r for r in statements}
         current_quarter_report = latest_integrate_report
-        current_report_date = latest_integrate_report['date']
+        current_report_date = latest_integrate_report['report_date']
         previous_year_date = datetime.date(year=current_report_date.year - 1, month=12, day=31)
         previous_quarter_date = datetime.date(
             year=current_report_date.year - 1,
@@ -102,8 +103,13 @@ class StatementMaintainService:
             integrated_report[field] += (current_quarter_report[field] or 0) - (previous_quarter_report[field] or 0)
         return integrated_report
 
+    def normalize_report_date(self, statement):
+        if 'report_date' not in statement and 'date' in statement:
+            statement['report_date'] = statement['date']
+        return statement
+
     def get_fields(self, table):
         df = self.config_service.get_table_config(table)
         fields = df['Field'].tolist()
-        fields = [f for f in fields if f not in ('symbol', 'date')]
+        fields = [f for f in fields if f not in ('symbol', 'date', 'report_date', 'disclosure_date')]
         return fields

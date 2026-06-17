@@ -6,6 +6,13 @@ from .basic_stock_service import BasicStockService
 
 
 class StatementServiceImpl(StatementService, BasicStockService):
+    RAW_STATEMENT_TABLES = {
+        'saa_raw_balance_sheet',
+        'saa_raw_income_statement',
+        'saa_raw_cash_flow_statement',
+        'saa_raw_main_business',
+    }
+
     def __init__(self):
         super().__init__()
         self.maintain_service = StatementMaintainService()
@@ -65,4 +72,20 @@ class StatementServiceImpl(StatementService, BasicStockService):
         raise NotImplementedError
 
     def save_statements(self, records, statement):
-        self.save_records(records, statement, ['symbol', 'date'])
+        if statement in self.RAW_STATEMENT_TABLES:
+            records = self.normalize_statement_records(records)
+            primary_keys = ['symbol', 'report_date']
+            if statement == 'saa_raw_main_business':
+                primary_keys.extend(['item_name', 'category'])
+        else:
+            primary_keys = ['symbol', 'date']
+        self.save_records(records, statement, primary_keys)
+
+    def normalize_statement_records(self, records):
+        normalized_records = []
+        for record in records:
+            if 'date' in record and 'report_date' not in record:
+                record = dict(record)
+                record['report_date'] = record.pop('date')
+            normalized_records.append(record)
+        return normalized_records

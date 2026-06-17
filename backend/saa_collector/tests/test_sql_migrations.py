@@ -61,6 +61,42 @@ class SqlMigrationSearchTest(TestCase):
             self.assertIn('DEALLOCATE PREPARE', migration_text)
             self.assertNotIn('\nCOMMENT ', migration_text)
 
+    def test_financial_report_date_migration_covers_statement_tables(self):
+        backend_dir = Path(__file__).resolve().parents[2]
+        migration_text = (
+            backend_dir / 'sql' / 'migrations' / '20260618_refactor_financial_report_dates.sql'
+        ).read_text(encoding='utf-8')
+
+        for table_name in [
+            'saa_raw_balance_sheet',
+            'saa_raw_income_statement',
+            'saa_raw_cash_flow_statement',
+            'saa_raw_main_business',
+        ]:
+            self.assertIn(table_name, migration_text)
+            self.assertIn(
+                f'ALTER TABLE {table_name} CHANGE COLUMN date report_date date NOT NULL',
+                migration_text,
+            )
+            self.assertIn(
+                f'ALTER TABLE {table_name} ADD COLUMN disclosure_date date NULL AFTER report_date',
+                migration_text,
+            )
+            self.assertIn(
+                f'ALTER TABLE {table_name} ADD PRIMARY KEY',
+                migration_text,
+            )
+            self.assertIn(
+                f"DELETE FROM {table_name} WHERE CAST(`date` AS CHAR) = ''0000-00-00''",
+                migration_text,
+            )
+
+        self.assertIn('INTERVAL 120 DAY', migration_text)
+        self.assertIn('INTERVAL 60 DAY', migration_text)
+        self.assertIn('INTERVAL 90 DAY', migration_text)
+        self.assertIn("index_name = 'PRIMARY'", migration_text)
+        self.assertIn('@primary_exists = 0', migration_text)
+
 
 class SqlMigrationApplyTest(TestCase):
     def test_split_sql_statements_ignores_semicolons_inside_quotes(self):
@@ -142,6 +178,34 @@ class SqlMigrationApplyTest(TestCase):
         self.assertEqual(1, first_cursor.close.call_count)
         self.assertEqual(1, second_cursor.close.call_count)
         connection.close.assert_not_called()
+
+    def test_apply_sql_migrations_drains_select_results_between_statements(self):
+        connection = MagicMock()
+        ensure_cursor = MagicMock()
+        history_cursor = MagicMock()
+        history_cursor.fetchall.return_value = []
+        migration_cursor = MagicMock()
+        migration_cursor.with_rows = True
+        migration_cursor.fetchall.return_value = [(1,)]
+        migration_cursor.nextset.return_value = None
+        connection.cursor.side_effect = [
+            ensure_cursor,
+            history_cursor,
+            migration_cursor,
+        ]
+
+        with TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            migration = base_dir / 'guarded.sql'
+            migration.write_text('SELECT 1; SELECT 2;', encoding='utf-8')
+
+            applied = apply_sql_migrations([migration], connection=connection, base_dir=base_dir)
+
+        self.assertEqual([migration], applied)
+        self.assertEqual(3, migration_cursor.fetchall.call_count)
+        self.assertEqual(3, migration_cursor.nextset.call_count)
+        self.assertEqual(3, migration_cursor.execute.call_count)
+        connection.commit.assert_called_once()
 
     def test_apply_sql_migrations_skips_files_already_recorded(self):
         connection = MagicMock()

@@ -13,7 +13,7 @@ MFACTOR_SOURCE_REQUIREMENTS = [
     {'name': 'Index constituents and weights', 'object': 'saa_index_weights', 'date_column': 'date'},
     {'name': 'Industry dictionary', 'object': 'saa_industries'},
     {'name': 'Industry constituents', 'object': 'saa_industry_stocks', 'date_column': 'date'},
-    {'name': 'Combined financial statements', 'object': 'saa_financial_statements_combined', 'date_column': 'date'},
+    {'name': 'Combined financial statements', 'object': 'saa_financial_statements_combined', 'date_column': 'report_date'},
     {'name': 'Monthly prices', 'object': 'saa_monthly_prices', 'date_column': 'report_date'},
     {'name': 'Quarterly prices', 'object': 'saa_quarterly_prices', 'date_column': 'report_date'},
     {'name': 'Capital changes', 'object': 'saa_capitals', 'date_column': 'date'},

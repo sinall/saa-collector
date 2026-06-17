@@ -71,7 +71,7 @@ class MfactorReadinessServiceTest(SimpleTestCase):
             {
                 'name': 'Combined financial statements',
                 'object': 'saa_financial_statements_combined',
-                'date_column': 'date',
+                'date_column': 'report_date',
             },
         ]).check()
 

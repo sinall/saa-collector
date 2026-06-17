@@ -10,6 +10,13 @@ from ...common.stock_utils import StockUtils
 
 
 class StatementServiceImpl(StatementService, BasicStockService):
+    RAW_STATEMENT_TABLES = {
+        'saa_raw_balance_sheet',
+        'saa_raw_income_statement',
+        'saa_raw_cash_flow_statement',
+        'saa_raw_main_business',
+    }
+
     def __init__(self):
         super().__init__()
         self._logger = logging.getLogger()
@@ -108,7 +115,23 @@ class StatementServiceImpl(StatementService, BasicStockService):
         return df
 
     def save_statements(self, records, table):
-        self.save_records(records, table, ['symbol', 'date'])
+        if table in self.RAW_STATEMENT_TABLES:
+            records = self.normalize_statement_records(records)
+            primary_keys = ['symbol', 'report_date']
+            if table == 'saa_raw_main_business':
+                primary_keys.extend(['item_name', 'category'])
+        else:
+            primary_keys = ['symbol', 'date']
+        self.save_records(records, table, primary_keys)
+
+    def normalize_statement_records(self, records):
+        normalized_records = []
+        for record in records:
+            if 'date' in record and 'report_date' not in record:
+                record = dict(record)
+                record['report_date'] = record.pop('date')
+            normalized_records.append(record)
+        return normalized_records
 
     def _produce_one(self, symbol, start_date=None):
         self._logger.info('Start to produce statement for %s', symbol)

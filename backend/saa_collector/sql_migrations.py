@@ -153,6 +153,23 @@ def load_applied_sql_migrations(connection) -> dict[str, str]:
         cursor.close()
 
 
+def _drain_cursor_results(cursor) -> None:
+    """Consume result sets so mysql-connector can run the next statement."""
+    if getattr(cursor, 'with_rows', False) is True:
+        cursor.fetchall()
+
+    nextset = getattr(cursor, 'nextset', None)
+    if not callable(nextset):
+        return
+
+    while True:
+        has_next = nextset()
+        if has_next is not True:
+            break
+        if getattr(cursor, 'with_rows', False) is True:
+            cursor.fetchall()
+
+
 def apply_sql_migrations(
     migration_files: Iterable[Path],
     connection=None,
@@ -185,6 +202,7 @@ def apply_sql_migrations(
             try:
                 for statement in split_sql_statements(sql_text):
                     cursor.execute(statement)
+                    _drain_cursor_results(cursor)
                 cursor.execute(
                     f"""
                     INSERT INTO `{SQL_MIGRATION_HISTORY_TABLE}` (`filename`, `checksum`)
@@ -192,6 +210,7 @@ def apply_sql_migrations(
                     """,
                     (migration_key, checksum),
                 )
+                _drain_cursor_results(cursor)
                 connection.commit()
                 applied_files.append(migration_path)
                 print(f"__sql_migration_done__ file={migration_path.name}")

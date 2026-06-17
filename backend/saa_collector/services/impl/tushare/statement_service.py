@@ -9,6 +9,14 @@ from .basic_stock_service import BasicStockService
 
 
 class StatementServiceImpl(StatementService, BasicStockService):
+    RAW_STATEMENT_TABLES = {
+        'saa_raw_balance_sheet',
+        'saa_raw_income_statement',
+        'saa_raw_cash_flow_statement',
+        'saa_raw_main_business',
+    }
+    DISCLOSURE_FIELD_RESOURCES = {'balancesheet', 'income', 'cashflow'}
+
     def __init__(self):
         super().__init__()
         self._logger = logging.getLogger()
@@ -181,12 +189,41 @@ class StatementServiceImpl(StatementService, BasicStockService):
             raw_record['type'] = type
         return raw_records
 
-    def build_fields(self, table):
+    def build_fields(self, table, sub_resource=None):
         table_config_df = self.config_service.get_table_config(table)
         field_series = table_config_df['TushareField']
         fields = field_series[field_series.notna()].tolist()
         fields.append('update_flag')
+        if sub_resource in self.DISCLOSURE_FIELD_RESOURCES:
+            fields.extend(['ann_date', 'f_ann_date'])
+        fields = list(dict.fromkeys(fields))
         return ','.join(fields)
+
+    def transform_records(self, raw_records, table):
+        if table not in self.RAW_STATEMENT_TABLES:
+            return super().transform_records(raw_records, table)
+
+        table_config_df = self.config_service.get_table_config(table)
+        records = []
+        for raw_record in raw_records:
+            record = self.transform_record(raw_record, table_config_df)
+            if not record['date']:
+                continue
+            record.update({
+                'symbol': self.convert_code(record['symbol']),
+                'date': self.convert_date(record['date']),
+            })
+            records.append(self.normalize_statement_record(record, raw_record))
+        return records
+
+    def normalize_statement_record(self, record, raw_record):
+        report_date = record.pop('date', None)
+        record['report_date'] = report_date
+
+        disclosure_date = raw_record.get('f_ann_date') or raw_record.get('ann_date')
+        if disclosure_date and not (isinstance(disclosure_date, float) and math.isnan(disclosure_date)):
+            record['disclosure_date'] = self.convert_date(disclosure_date)
+        return record
 
     def query_record(self, sub_resource, symbol, **kwargs):
         df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
@@ -198,7 +235,10 @@ class StatementServiceImpl(StatementService, BasicStockService):
         return raw_records
 
     def save_statements(self, records, table):
-        self.save_records(records, table, ['symbol', 'date'])
+        primary_keys = ['symbol', 'report_date']
+        if table == 'saa_raw_main_business':
+            primary_keys.extend(['item_name', 'category'])
+        self.save_records(records, table, primary_keys)
 
     def collect_statement_resource(
             self, sub_resource, table, symbols, start_date=None,
@@ -208,7 +248,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
             symbols, self.get_statement_resource_profile(sub_resource),
             start_date, progress_enabled
         )
-        fields = self.build_fields(table)
+        fields = self.build_fields(table, sub_resource=sub_resource)
         start_date_param = self.build_date_param(start_date)
         batch_symbols = self.get_save_batch_symbols()
         batch_records = []

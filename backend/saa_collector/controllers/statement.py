@@ -146,13 +146,13 @@ class Statement(Basic):
             stocks_df['listing_date'] = Statement.clean_date_column(stocks_df['listing_date'])
             stocks_df = stocks_df.dropna(subset=['listing_date'])
 
-            where_reports = Statement.build_where_clause(symbols, "date", start_date)
+            where_reports = Statement.build_where_clause(symbols, "report_date", start_date)
             query = f"""
-            SELECT 'balance_sheet' AS table_type, symbol, date FROM saa_raw_balance_sheet {where_reports}
+            SELECT 'balance_sheet' AS table_type, symbol, report_date AS date FROM saa_raw_balance_sheet {where_reports}
             UNION ALL
-            SELECT 'cash_flow' AS table_type, symbol, date FROM saa_raw_cash_flow_statement {where_reports}
+            SELECT 'cash_flow' AS table_type, symbol, report_date AS date FROM saa_raw_cash_flow_statement {where_reports}
             UNION ALL
-            SELECT 'income_statement' AS table_type, symbol, date FROM saa_raw_income_statement {where_reports}
+            SELECT 'income_statement' AS table_type, symbol, report_date AS date FROM saa_raw_income_statement {where_reports}
             """
             records_df = pd.read_sql(query, conn)
             records_df['date'] = self.clean_date_column(records_df['date'])

@@ -176,7 +176,7 @@ DATA_TYPE_CONFIG = {
     },
     'balance_sheet': {
         'table': 'saa_raw_balance_sheet',
-        'date_column': 'date',
+        'date_column': 'report_date',
         'data_frequency': 'quarterly',
         'completeness_model': 'periodic_security',
         'stock_level': True,
@@ -190,7 +190,7 @@ DATA_TYPE_CONFIG = {
     },
     'income': {
         'table': 'saa_raw_income_statement',
-        'date_column': 'date',
+        'date_column': 'report_date',
         'data_frequency': 'quarterly',
         'completeness_model': 'periodic_security',
         'stock_level': True,
@@ -204,7 +204,7 @@ DATA_TYPE_CONFIG = {
     },
     'cash_flow': {
         'table': 'saa_raw_cash_flow_statement',
-        'date_column': 'date',
+        'date_column': 'report_date',
         'data_frequency': 'quarterly',
         'completeness_model': 'periodic_security',
         'stock_level': True,
@@ -218,7 +218,7 @@ DATA_TYPE_CONFIG = {
     },
     'main_business': {
         'table': 'saa_raw_main_business',
-        'date_column': 'date',
+        'date_column': 'report_date',
         'data_frequency': 'quarterly',
         'completeness_model': 'periodic_security',
         'stock_level': True,

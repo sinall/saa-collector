@@ -76,6 +76,10 @@ class DataTypesConfigTest(TestCase):
         self.assertEqual(data_types['trade_days']['completeness_model'], 'calendar')
         self.assertEqual(data_types['stock_info']['completeness_model'], 'snapshot_security')
         self.assertEqual(data_types['balance_sheet']['completeness_model'], 'periodic_security')
+        self.assertEqual(data_types['balance_sheet']['date_column'], 'report_date')
+        self.assertEqual(data_types['income']['date_column'], 'report_date')
+        self.assertEqual(data_types['cash_flow']['date_column'], 'report_date')
+        self.assertEqual(data_types['main_business']['date_column'], 'report_date')
         self.assertEqual(data_types['dividend']['completeness_model'], 'event_security')
 
     def test_internal_data_type_visibility_is_context_driven(self):

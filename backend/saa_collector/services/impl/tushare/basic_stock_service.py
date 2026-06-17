@@ -97,7 +97,7 @@ class BasicStockService(BasicService):
     def filter_records(self, records, start_date=None):
         if not start_date:
             return records
-        records = [x for x in records if x['date'] >= start_date]
+        records = [x for x in records if (x.get('date') or x.get('report_date')) >= start_date]
         return records
 
     def get_save_batch_symbols(self):
