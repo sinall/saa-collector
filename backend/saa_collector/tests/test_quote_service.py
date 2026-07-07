@@ -25,6 +25,15 @@ class TushareQuoteServiceTest(SimpleTestCase):
         self.assertEqual(config['data_frequency'], 'monthly')
         self.assertEqual(config['label'], '历史行情')
 
+    def test_price_adjust_factor_is_configured_as_monthly_source_data(self):
+        config = DATA_TYPE_CONFIG['price_adjust_factor']
+
+        self.assertEqual(config['table'], 'saa_price_adjust_factors')
+        self.assertEqual(config['date_column'], 'date')
+        self.assertEqual(config['stock_column'], 'code')
+        self.assertEqual(config['data_frequency'], 'monthly')
+        self.assertEqual(config['label'], '复权因子')
+
     def test_collect_saves_latest_quotes_without_quarter_filtering(self):
         service = self._make_service()
         service.pro.query.return_value = pd.DataFrame([
@@ -198,3 +207,35 @@ class TushareQuoteServiceTest(SimpleTestCase):
         service.save_records.assert_called_once()
         records = service.save_records.call_args.args[0]
         self.assertEqual([record['code'] for record in records], ['000001'])
+
+    def test_collect_adjust_factors_saves_monthly_adjustment_records(self):
+        service = self._make_service()
+        service.pro.query.return_value = pd.DataFrame([
+            {'ts_code': '000001.SZ', 'trade_date': '20260331', 'adj_factor': 145.32},
+            {'ts_code': '000002.SZ', 'trade_date': '20260331', 'adj_factor': 98.76},
+            {'ts_code': '000004.SZ', 'trade_date': '20260331', 'adj_factor': 12.34},
+        ])
+
+        service.collect_adjust_factors(
+            symbols=['000001', '000002', '000003'],
+            start_date=pd.Timestamp('2026-03-01'),
+            end_date=pd.Timestamp('2026-03-31'),
+        )
+
+        service.pro.query.assert_called_once_with(
+            'stk_factor',
+            ts_code=['000001', '000002', '000003'],
+            start_date='20260301',
+            end_date='20260331',
+            fields='ts_code,trade_date,adj_factor',
+        )
+        service.save_records.assert_called_once()
+        records = service.save_records.call_args.args[0]
+        self.assertEqual(records, [
+            {'code': '000001', 'date': '2026-03-31', 'adj_factor': 145.32},
+            {'code': '000002', 'date': '2026-03-31', 'adj_factor': 98.76},
+        ])
+        self.assertEqual(
+            service.save_records.call_args.args[1:],
+            ('saa_price_adjust_factors', ['code', 'date']),
+        )

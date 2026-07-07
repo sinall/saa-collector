@@ -49,7 +49,9 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         for symbol in symbols:
             df1 = akshare.stock_zh_a_hist(
                 symbol=symbol, period='monthly',
-                start_date=start_date.strftime('%Y%m%d'), end_date=end_date.strftime('%Y%m%d')
+                start_date=start_date.strftime('%Y%m%d'),
+                end_date=end_date.strftime('%Y%m%d'),
+                adjust=''
             )
             df = pd.concat([df, df1])
         if df.empty:

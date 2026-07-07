@@ -130,6 +130,7 @@ const STOCK_SCOPE_DATA_TYPES = new Set([
   'stock_info',
   'quote',
   'historical_quote',
+  'price_adjust_factor',
   'extras',
   'index_weights',
   'financial_statements',

@@ -80,6 +80,39 @@ class TypeBrowseDataViewTest(TestCase):
         self.assertEqual(params[:3], ['2026-06-01', '2026-06-01', '%000906%'])
 
     @patch('saa_collector.views.connection')
+    def test_price_adjust_factor_browse_filters_by_code_and_joins_stock_name(self, connection):
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.return_value = [1]
+        cursor.fetchall.return_value = [
+            ('000001', date(2026, 5, 29), 1.234567, '平安银行'),
+        ]
+        cursor.description = [
+            ('code',),
+            ('date',),
+            ('adj_factor',),
+            ('stock_name',),
+        ]
+
+        response = self.client.get('/api/type-browse-data/saa_price_adjust_factors/', {
+            'keyword': '000001',
+            'start_date': '2026-05-01',
+            'end_date': '2026-05-31',
+            'page': 1,
+            'page_size': 20,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['results'][0]['stock_name'], '平安银行')
+
+        sql = connection.cursor.return_value.__enter__.return_value.execute.call_args_list[1].args[0]
+        params = connection.cursor.return_value.__enter__.return_value.execute.call_args_list[1].args[1]
+        self.assertIn('LEFT JOIN saa_stocks s ON t.code = s.symbol', sql)
+        self.assertIn('t.code LIKE %s', sql)
+        self.assertEqual(params[:3], ['2026-05-01', '2026-05-31', '%000001%'])
+
+    @patch('saa_collector.views.connection')
     def test_statement_browse_filters_by_report_date(self, connection):
         cursor = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor

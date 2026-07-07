@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+import pandas as pd
 from django.db import connection as django_connection
 
+from saa_collector.services.common.price_adjustment_service import find_adjusted_price_discontinuities
 from saa_collector.utils.db import DB
 
 
@@ -8,13 +10,20 @@ MFACTOR_SOURCE_REQUIREMENTS = [
     {'name': 'Trading calendar', 'object': 'saa_trade_days', 'date_column': 'date'},
     {'name': 'Security master', 'object': 'saa_securities'},
     {'name': 'Monthly historical prices', 'object': 'saa_prices_ex', 'date_column': 'date'},
+    {'name': 'Price adjustment factors', 'object': 'saa_price_adjust_factors', 'date_column': 'date'},
     {'name': 'Stock status metadata', 'object': 'saa_extras', 'date_column': 'date'},
     {'name': 'Index quotes', 'object': 'saa_index_quotes', 'date_column': 'date'},
     {'name': 'Index constituents and weights', 'object': 'saa_index_weights', 'date_column': 'date'},
     {'name': 'Industry dictionary', 'object': 'saa_industries'},
     {'name': 'Industry constituents', 'object': 'saa_industry_stocks', 'date_column': 'date'},
     {'name': 'Combined financial statements', 'object': 'saa_financial_statements_combined', 'date_column': 'report_date'},
-    {'name': 'Monthly prices', 'object': 'saa_monthly_prices', 'date_column': 'report_date'},
+    {
+        'name': 'Monthly prices',
+        'object': 'saa_monthly_prices',
+        'date_column': 'report_date',
+        'continuity_check': True,
+        'continuity_price_column': 'post_adjusted_price',
+    },
     {'name': 'Quarterly prices', 'object': 'saa_quarterly_prices', 'date_column': 'report_date'},
     {'name': 'Capital changes', 'object': 'saa_capitals', 'date_column': 'date'},
     {'name': 'Dividends', 'object': 'saa_dividends', 'date_column': 'date'},
@@ -79,6 +88,17 @@ class MfactorReadinessService:
                     self.db.quote_table_name(object_name),
                 ))
 
+            continuity_message = self.check_continuity(cursor, requirement)
+            if continuity_message:
+                return self.build_item(
+                    requirement,
+                    status='ERROR',
+                    object_type=object_type,
+                    row_count=row_count,
+                    max_date=max_date,
+                    message=continuity_message,
+                )
+
             return self.build_item(
                 requirement,
                 status='OK',
@@ -100,6 +120,33 @@ class MfactorReadinessService:
         )
         row = cursor.fetchone()
         return row[0] if row else None
+
+    def check_continuity(self, cursor, requirement):
+        if not requirement.get('continuity_check'):
+            return ''
+
+        object_name = requirement['object']
+        price_column = requirement.get('continuity_price_column') or 'price'
+        cursor.execute(
+            'SELECT symbol AS code, date, {} AS price FROM {} WHERE {} IS NOT NULL ORDER BY symbol, date'.format(
+                self.db.quote_identifier(price_column),
+                self.db.quote_table_name(object_name),
+                self.db.quote_identifier(price_column),
+            )
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return ''
+
+        frame = pd.DataFrame(rows, columns=['code', 'date', 'price'])
+        discontinuities = find_adjusted_price_discontinuities(frame)
+        if discontinuities.empty:
+            return ''
+
+        samples = []
+        for row in discontinuities.head(3).to_dict('records'):
+            samples.append('{code}:{previous_date}->{date} ratio={ratio:.6f}'.format(**row))
+        return 'adjusted price continuity check failed: {}'.format(', '.join(samples))
 
     def object_has_rows(self, cursor, object_name):
         return self.query_scalar(cursor, 'SELECT 1 FROM {} LIMIT 1'.format(

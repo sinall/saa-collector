@@ -37,6 +37,7 @@ urlpatterns = [
     path('collect/securities/', views.CollectSecuritiesView.as_view(), name='collect-securities'),
     path('collect/quotes/', views.CollectQuotesView.as_view(), name='collect-quotes'),
     path('collect/historical-quotes/', views.CollectHistoricalQuotesView.as_view(), name='collect-historical-quotes'),
+    path('collect/price-adjust-factors/', views.CollectPriceAdjustFactorsView.as_view(), name='collect-price-adjust-factors'),
     path('collect/statements/', views.CollectStatementsView.as_view(), name='collect-statements'),
     path('collect/capital/', views.CollectCapitalView.as_view(), name='collect-capital'),
     path('collect/valuation/', views.CollectValuationView.as_view(), name='collect-valuation'),

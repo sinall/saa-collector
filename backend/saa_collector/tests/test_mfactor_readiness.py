@@ -99,6 +99,34 @@ class MfactorReadinessServiceTest(SimpleTestCase):
         self.assertEqual(results['items'][0]['row_count'], 0)
         self.assertEqual(results['items'][0]['message'], 'object is empty')
 
+    def test_deep_check_reports_adjusted_price_discontinuities(self):
+        cursor = Mock()
+        cursor.fetchone.side_effect = [
+            ('VIEW',), (1,), (3,), ('2025-04-30',),
+        ]
+        cursor.fetchall.return_value = [
+            ('000001', '2025-03-31', 1564.80),
+            ('000001', '2025-04-30', 10.91),
+            ('600000', '2025-03-31', 168.03),
+            ('600000', '2025-04-30', 10.96),
+        ]
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+
+        results = MfactorReadinessService(connection=connection, deep=True, requirements=[
+            {
+                'name': 'Monthly prices',
+                'object': 'saa_monthly_prices',
+                'date_column': 'report_date',
+                'continuity_check': True,
+                'continuity_price_column': 'post_adjusted_price',
+            },
+        ]).check()
+
+        self.assertEqual(results['status'], 'ERROR')
+        self.assertEqual(results['items'][0]['status'], 'ERROR')
+        self.assertIn('adjusted price continuity check failed', results['items'][0]['message'])
+
     def test_check_reports_missing_objects_as_errors(self):
         cursor = Mock()
         cursor.fetchone.side_effect = [None]

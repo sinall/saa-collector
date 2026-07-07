@@ -10,6 +10,7 @@ from .basic_stock_service import BasicStockService
 
 class QuoteServiceImpl(QuoteService, BasicStockService):
     BATCH_SIZE = 50
+    ADJUST_FACTOR_FIELDS = 'ts_code,trade_date,adj_factor'
 
     def __init__(self):
         super().__init__()
@@ -151,6 +152,62 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
             end_date,
         )
         self.save_records(records, 'saa_prices_ex', ['code', 'date'])
+
+    def collect_adjust_factors(self, symbols=None, trade_date=None, start_date=None, end_date=None):
+        dates = [d for d in [trade_date, start_date, end_date] if d is not None]
+        if not dates:
+            return
+
+        start_date = min(dates)
+        end_date = max(dates)
+        symbols = self.build_symbols(symbols)
+        query_kwargs = {
+            'ts_code': symbols,
+            'start_date': start_date.strftime('%Y%m%d') if start_date else None,
+            'end_date': end_date.strftime('%Y%m%d') if end_date else None,
+            'fields': self.ADJUST_FACTOR_FIELDS,
+        }
+        if trade_date is not None:
+            query_kwargs['trade_date'] = trade_date.strftime('%Y%m%d')
+
+        self._logger.info(
+            "Querying Tushare stock adjustment factors: symbols=%d start_date=%s end_date=%s trade_date=%s",
+            len(symbols),
+            query_kwargs.get('start_date'),
+            query_kwargs.get('end_date'),
+            query_kwargs.get('trade_date'),
+        )
+        df = self.pro.query('stk_factor', **query_kwargs)
+        if df.empty:
+            self._logger.warning(
+                "No Tushare stock adjustment factors returned: symbols=%d start_date=%s end_date=%s trade_date=%s",
+                len(symbols),
+                query_kwargs.get('start_date'),
+                query_kwargs.get('end_date'),
+                query_kwargs.get('trade_date'),
+            )
+            return
+
+        df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
+        df = df[df['code'].isin(symbols)].copy()
+        if df.empty:
+            self._logger.warning(
+                "Tushare adjustment factors returned no requested symbols after filtering: symbols=%d",
+                len(symbols),
+            )
+            return
+
+        df['date'] = df['trade_date'].apply(lambda x: "{}-{}-{}".format(x[:4], x[4:6], x[6:]))
+        df = df.rename(columns={'adj_factor': 'adj_factor'})
+        df = df[['code', 'date', 'adj_factor']]
+        records = df.to_dict('records')
+        records = self.filter_records(records, start_date)
+        self._logger.info(
+            "Saving %d Tushare adjustment factor records to saa_price_adjust_factors: symbols=%d",
+            len(records),
+            len(symbols),
+        )
+        self.save_records(records, 'saa_price_adjust_factors', ['code', 'date'])
 
     def filter_records(self, records, start_date=None):
         return [record for record in records if record.get('date') is not None]

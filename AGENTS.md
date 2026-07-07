@@ -4,6 +4,36 @@
 
 This is a SAA (Strategic Asset Allocation) Collector project with a Vue 3 frontend and Django backend.
 
+## AI Agent Database Access
+
+When an AI agent needs database data or runs Django commands/tests that require
+a database, use the parent repository helper from `saa-parent`, not the local
+development `.env` defaults:
+
+```bash
+cd ..
+python3 scripts/db_query.py saa tables
+python3 scripts/db_query.py saa describe saa_price_adjust_factors
+python3 scripts/db_query.py saa query "SELECT COUNT(*) AS count FROM saa_price_adjust_factors"
+PYENV_VERSION=collector-env python3 scripts/db_query.py saa exec \
+  --cwd saa-collector/backend \
+  --django-settings-module config.settings.development \
+  -- pyenv exec python manage.py test saa_collector.tests.test_data_types_config
+```
+
+- The development database host, user, password, and port come from
+  `saa-conf/ansible/group_vars/dev/vault.yml`.
+- Do not manually decrypt the vault, print credentials, export passwords in the
+  shell, or put a full connection string in logs, files, commands, or replies.
+- Do not fall back to `localhost:3306` for agent-run tests or diagnostics; use
+  `scripts/db_query.py saa exec` so `DATABASE_*` is injected from the
+  development vault into the child process.
+- The helper uses the development/public database endpoint reachable from a
+  developer machine. Do not SSH through production servers or use production
+  internal database addresses for agent investigation.
+- Detailed rules and setup live in
+  `../docs/operations/ai-database-query.md`.
+
 ## AI Agent Codegraph
 
 When investigating cross-file dependencies, backend/frontend API impact, data completeness flow, collect plan execution, cache invalidation, or data type configuration impact, generate the parent-level lightweight codegraph first:

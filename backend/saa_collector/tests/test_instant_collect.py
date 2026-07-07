@@ -90,6 +90,22 @@ class InstantCollectAPITest(TestCase):
         self.assertEqual(job.config['params']['end_date_mode'], 'EXECUTION_DAY')
         self.assertIsNone(job.config['params'].get('end_date'))
 
+    def test_collect_price_adjust_factors_creates_job(self):
+        with patch('saa_collector.views.threading.Thread.start', return_value=None):
+            response = self.client.post('/api/collect/price-adjust-factors/', {
+                'symbols': ['000001'],
+                'start_date': '2024-01-01',
+                'end_date': '2024-12-31',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data['success'])
+        job = CollectJob.objects.get()
+        self.assertEqual(job.data_type, 'price_adjust_factor')
+        self.assertEqual(job.config['symbols'], ['000001'])
+        self.assertEqual(job.config['params']['start_date'], '2024-01-01')
+        self.assertEqual(job.config['params']['end_date'], '2024-12-31')
+
     def test_create_plan_job_persists_index_scope(self):
         response = self.client.post('/api/collect-plans/', {
             'name': '指数范围计划',

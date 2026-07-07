@@ -74,6 +74,7 @@ import {
   collectSecurities,
   collectQuotes,
   collectHistoricalQuotes,
+  collectAdjustFactors,
   collectStatements,
   collectCapital,
   collectValuation,
@@ -141,6 +142,9 @@ const handleCollect = async (params: FilterParams) => {
         break
       case 'historical_quote':
         response = await collectHistoricalQuotes(collectParams)
+        break
+      case 'price_adjust_factor':
+        response = await collectAdjustFactors(collectParams)
         break
       case 'balance_sheet':
       case 'income':

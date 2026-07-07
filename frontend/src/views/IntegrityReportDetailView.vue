@@ -179,6 +179,7 @@ const columnDefs = [
       const typeLabels: Record<string, string> = {
         'quote': '最新行情',
         'historical_quote': '历史行情',
+        'price_adjust_factor': '复权因子',
         'balance_sheet': '资产负债表',
         'income': '利润表',
         'cash_flow': '现金流量表',
@@ -192,6 +193,7 @@ const columnDefs = [
       const typeColors: Record<string, string> = {
         'quote': '#409eff',
         'historical_quote': '#67c23a',
+        'price_adjust_factor': '#13c2c2',
         'balance_sheet': '#e6a23c',
         'income': '#f56c6c',
         'cash_flow': '#909399',
@@ -373,6 +375,7 @@ const getDataTypeLabel = (dataType: string) => {
     'trade_days': '交易日',
     'quote': '最新行情',
     'historical_quote': '历史行情',
+    'price_adjust_factor': '复权因子',
     'balance_sheet': '资产负债表',
     'income': '利润表',
     'cash_flow': '现金流量表',

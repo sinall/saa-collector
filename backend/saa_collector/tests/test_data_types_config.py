@@ -38,6 +38,21 @@ class DataTypesConfigTest(TestCase):
         self.assertEqual(data_types['extras']['completeness_model'], 'trading_day_security')
         self.assertTrue(data_types['extras']['need_date'])
 
+    def test_price_adjust_factor_data_type_is_available_for_adjusted_prices(self):
+        response = self.client.get('/api/data-types/')
+
+        self.assertEqual(response.status_code, 200)
+        data_types = {
+            item['key']: item
+            for item in response.data['data_types']
+        }
+        self.assertEqual(data_types['price_adjust_factor']['label'], '复权因子')
+        self.assertEqual(data_types['price_adjust_factor']['table'], 'saa_price_adjust_factors')
+        self.assertEqual(data_types['price_adjust_factor']['stock_column'], 'code')
+        self.assertEqual(data_types['price_adjust_factor']['frequency'], 'monthly')
+        self.assertEqual(data_types['price_adjust_factor']['date_column'], 'date')
+        self.assertTrue(data_types['price_adjust_factor']['supports_integrity_check'])
+
     def test_securities_data_type_exposes_security_master_refresh(self):
         response = self.client.get('/api/data-types/')
 

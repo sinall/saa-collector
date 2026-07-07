@@ -95,6 +95,7 @@ const generateReportName = (params: any) => {
     'trade_days': '交易日',
     'quote': '最新行情',
     'historical_quote': '历史行情',
+    'price_adjust_factor': '复权因子',
     'balance_sheet': '资产负债表',
     'income': '利润表',
     'cash_flow': '现金流量表',

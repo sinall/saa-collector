@@ -193,6 +193,16 @@ export const collectHistoricalQuotes = async (params: {
   return response.data
 }
 
+export const collectAdjustFactors = async (params: {
+  symbols?: string[]
+  start_date?: string
+  end_date?: string
+  end_date_mode?: 'FIXED' | 'EXECUTION_DAY'
+}): Promise<ApiResponse<CollectJob>> => {
+  const response = await api.post('/collect/price-adjust-factors/', params)
+  return response.data
+}
+
 export const collectStatements = async (params: {
   symbols?: string[]
   start_date?: string
@@ -324,6 +334,7 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
     { key: 'stock_info', label: '股票基本信息', frequency: null },
     { key: 'quote', label: '最新行情', frequency: null },
     { key: 'historical_quote', label: '历史行情', frequency: 'daily' },
+    { key: 'price_adjust_factor', label: '复权因子', frequency: 'monthly' },
     { key: 'balance_sheet', label: '资产负债表', frequency: 'quarterly' },
     { key: 'income', label: '利润表', frequency: 'quarterly' },
     { key: 'cash_flow', label: '现金流量表', frequency: 'quarterly' },
@@ -572,6 +583,15 @@ function generateMockTypeBrowseData(dataType: string): TypeBrowseRow[] {
         stock_name: stock.name,
         date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
         price: Math.round(basePrice * 100) / 100,
+      })
+    }
+  } else if (dataType === 'price_adjust_factor') {
+    for (let i = 0; i < count; i++) {
+      const stock = stocks[Math.floor(Math.random() * stocks.length)]!
+      rows.push({
+        code: stock.code,
+        date: new Date(Date.now() - Math.random() * 365 * 24 * 3600000).toISOString().split('T')[0] ?? '',
+        adj_factor: Math.round((0.8 + Math.random() * 3) * 1000000) / 1000000,
       })
     }
   } else if (dataType === 'balance_sheet') {
@@ -861,8 +881,8 @@ export interface CollectSchedule {
 
 function generateMockCollectSchedules(): CollectSchedule[] {
   const schedules: CollectSchedule[] = []
-  const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
-  const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
+  const dataTypes = ['quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow']
+  const dataTypeDisplays = ['行情数据', '历史行情', '复权因子', '资产负债表', '利润表', '现金流量表']
   const frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
   const stockCodes = ['000001', '000002', '600000', '600001', '600036']
   const statuses: Array<'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'STOPPED', 'COMPLETED', 'FAILED']
@@ -917,8 +937,8 @@ function generateMockCollectSchedules(): CollectSchedule[] {
 
 function generateMockCollectPlans(): CollectPlan[] {
   const plans: CollectPlan[] = []
-  const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
-  const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
+  const dataTypes = ['quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow']
+  const dataTypeDisplays = ['行情数据', '历史行情', '复权因子', '资产负债表', '利润表', '现金流量表']
   const stockCodes = ['000001', '000002', '600000', '600001', '600036']
   const statuses: Array<'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'STOPPED', 'COMPLETED', 'FAILED']
   const statusDisplays = ['待执行', '执行中', '已停止', '已完成', '执行失败']
@@ -1058,8 +1078,8 @@ export const fetchCollectPlanMock = async (id: number): Promise<ApiResponse<Coll
   if (!plan) {
     const statuses: Array<'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'> = ['PENDING', 'RUNNING', 'STOPPED', 'COMPLETED', 'FAILED']
     const statusDisplays = ['待执行', '执行中', '已停止', '已完成', '执行失败']
-    const dataTypes = ['quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow']
-    const dataTypeDisplays = ['行情数据', '历史行情', '资产负债表', '利润表', '现金流量表']
+    const dataTypes = ['quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow']
+    const dataTypeDisplays = ['行情数据', '历史行情', '复权因子', '资产负债表', '利润表', '现金流量表']
     const stockCodes = ['000001', '000002', '600000', '600001', '600036']
     const statusIdx = id % 4
     const status = statuses[statusIdx] ?? 'PENDING'
@@ -1147,7 +1167,7 @@ function generateMockIntegrityReports(): IntegrityReport[] {
   const statuses: Array<'GENERATING' | 'COMPLETED' | 'FAILED'> = ['COMPLETED', 'COMPLETED', 'FAILED']
   const frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
   const frequencyDisplays = ['日度', '周度', '月度', '季度', '年度']
-  const dataTypeOptions = ['trade_days', 'stock_info', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend', 'valuation_board', 'valuation_industry']
+  const dataTypeOptions = ['trade_days', 'stock_info', 'quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend', 'valuation_board', 'valuation_industry']
 
   for (let i = 1; i <= 8; i++) {
     const statusIndex = Math.min(i - 1, 2)
@@ -1192,7 +1212,7 @@ function generateMockIntegrityReportItems(
   }
 ): { items: IntegrityReportItem[], total: number, selected_count: number } {
   const allItems: IntegrityReportItem[] = []
-  const dataTypes = ['trade_days', 'stock_info', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend', 'valuation_board', 'valuation_industry']
+  const dataTypes = ['trade_days', 'stock_info', 'quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend', 'valuation_board', 'valuation_industry']
   const stockCodes = ['000001', '000002', '000003', '000004', '000005', '600000', '600001', '600002', '600003', '600004', '600005']
 
   let itemId = 1
@@ -1507,6 +1527,7 @@ export const fetchIntegrityReportHeatmapMock = async (reportId: number): Promise
   const dataTypes = [
     { key: 'quote', label: '行情数据' },
     { key: 'historical_quote', label: '历史行情' },
+    { key: 'price_adjust_factor', label: '复权因子' },
     { key: 'balance_sheet', label: '资产负债表' },
     { key: 'income', label: '利润表' },
     { key: 'cash_flow', label: '现金流量表' },
@@ -1623,6 +1644,16 @@ const DEFAULT_DISPLAY_CONFIGS: Record<string, {
         { name: 'low', label: '最低价', visible: true, order: 6, width: 100, format: 'price' },
         { name: 'volume', label: '成交量', visible: true, order: 7, width: 120, format: 'volume' },
         { name: 'money', label: '成交额', visible: true, order: 8, width: 140, format: 'money' },
+      ]
+    }
+  },
+  'saa_price_adjust_factors': {
+    table_label: '复权因子',
+    config: {
+      fields: [
+        { name: 'code', label: '股票代码', visible: true, fixed: true, order: 1, width: 100 },
+        { name: 'date', label: '日期', visible: true, fixed: true, order: 2, width: 110, format: 'date' },
+        { name: 'adj_factor', label: '复权因子', visible: true, order: 3, width: 120, format: 'price' },
       ]
     }
   },
@@ -1774,6 +1805,7 @@ const DATA_TYPE_GROUPS: DataTypeGroup[] = [
     items: [
       { key: 'quote', label: '最新行情', table: 'saa_latest_prices' },
       { key: 'historical_quote', label: '历史行情', table: 'saa_prices_ex' },
+      { key: 'price_adjust_factor', label: '复权因子', table: 'saa_price_adjust_factors' },
     ]
   },
   {
@@ -1919,6 +1951,9 @@ function generateMockStockData(tableName: string, symbol: string): Record<string
 
     if (tableName === 'saa_prices_ex') {
       row.price = 10 + Math.random() * 90
+    } else if (tableName === 'saa_price_adjust_factors') {
+      row.code = symbol
+      row.adj_factor = Math.round((0.8 + Math.random() * 3) * 1000000) / 1000000
     } else if (tableName === 'saa_raw_balance_sheet') {
       row.total_assets = 1000000000 + Math.random() * 10000000000
       row.total_current_assets = 500000000 + Math.random() * 5000000000

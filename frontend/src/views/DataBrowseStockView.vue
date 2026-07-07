@@ -346,7 +346,7 @@ watch(showColumnSettings, (val) => {
 
 const getActiveDataType = (dataType?: string): string => {
   if (!dataType) return 'info'
-  const validTypes = ['info', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend']
+  const validTypes = ['info', 'quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow', 'main_business', 'capital', 'dividend']
   return validTypes.includes(dataType) ? dataType : 'info'
 }
 

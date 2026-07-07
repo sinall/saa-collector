@@ -202,7 +202,8 @@ class DataStatusView(APIView):
             'saa_securities': None,
             'saa_trade_days': 'date',
             'saa_latest_prices': 'date',
-'saa_prices_ex': 'date',
+            'saa_prices_ex': 'date',
+            'saa_price_adjust_factors': 'date',
             'saa_raw_balance_sheet': 'report_date',
             'saa_raw_income_statement': 'report_date',
             'saa_raw_cash_flow_statement': 'report_date',
@@ -380,6 +381,19 @@ class CollectHistoricalQuotesView(BaseCollectView):
         job.complete(success=True, message=f"Collected historical quotes")
 
 
+class CollectPriceAdjustFactorsView(BaseCollectView):
+    data_type = 'price_adjust_factor'
+
+    def _execute_collect(self, job):
+        from saa_collector.services.factory.compound_service_factory import CompoundServiceFactory
+        factory = CompoundServiceFactory()
+        service = factory.create_quote_service()
+        symbols = job.config.get('symbols') if job.config.get('symbols') else None
+        start_date, end_date, _ = resolve_collect_dates_from_job(job)
+        service.collect_adjust_factors(symbols, start_date=start_date, end_date=end_date)
+        job.complete(success=True, message=f"Collected price adjustment factors")
+
+
 class CollectStatementsView(BaseCollectView):
     data_type = 'balance_sheet'
 
@@ -511,6 +525,7 @@ class TypeBrowseDataView(APIView):
         'saa_securities': {'date_column': None, 'order': 'code ASC', 'search_column': 'code'},
         'saa_latest_prices': {'date_column': 'date', 'order': 'symbol ASC, date DESC'},
         'saa_prices_ex': {'date_column': 'date', 'order': 'code ASC, date DESC'},
+        'saa_price_adjust_factors': {'date_column': 'date', 'order': 'code ASC, date DESC', 'search_column': 'code', 'join_column': 'code'},
         'saa_index_quotes': {'date_column': 'date', 'order': 'code ASC, date DESC', 'search_column': 'code'},
         'saa_index_weights': {'date_column': 'date', 'order': '`index` ASC, date DESC', 'search_column': 'index', 'join_column': 'code'},
         'saa_industries': {'date_column': 'start_date', 'order': '`index` ASC, start_date DESC'},
@@ -527,6 +542,7 @@ class TypeBrowseDataView(APIView):
     NEEDS_STOCK_NAME = {
         'saa_latest_prices',
         'saa_prices_ex',
+        'saa_price_adjust_factors',
         'saa_index_weights',
         'saa_industry_stocks',
         'saa_raw_balance_sheet',
@@ -805,6 +821,7 @@ class DataCompletenessCheckView(APIView):
     def check_data_missing_batch(self, stocks, trade_dates, data_type, frequency, start_date=None, end_date=None):
         table_mapping = {
             'historical_quote': ('saa_prices_ex', 'date'),
+            'price_adjust_factor': ('saa_price_adjust_factors', 'date'),
             'balance_sheet': ('saa_raw_balance_sheet', 'report_date'),
             'income': ('saa_raw_income_statement', 'report_date'),
             'cash_flow': ('saa_raw_cash_flow_statement', 'report_date'),
@@ -1078,7 +1095,7 @@ class DataIntegrityReportListView(APIView):
         stocks = self._get_stocks_with_listing_dates(report)
         items_to_create = []
 
-        data_types = report.data_types if report.data_types else ['trade_days', 'quote', 'historical_quote', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital']
+        data_types = report.data_types if report.data_types else ['trade_days', 'quote', 'historical_quote', 'price_adjust_factor', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital']
         data_types = [dt for dt in data_types if is_data_type_visible(dt, 'integrity_report')]
 
         for data_type in data_types:
@@ -1895,6 +1912,7 @@ class DataIntegrityReportHeatmapView(APIView):
 DATA_TYPE_LABELS = {
     'quote': '最新行情',
     'historical_quote': '历史行情',
+    'price_adjust_factor': '复权因子',
     'balance_sheet': '资产负债表',
     'income': '利润表',
     'cash_flow': '现金流量表',
@@ -2561,6 +2579,9 @@ class CollectPlanResetView(APIView):
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type == 'price_adjust_factor':
+            service = factory.create_quote_service()
+            service.collect_adjust_factors(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             service.produce(symbols, start_date)
@@ -2930,12 +2951,23 @@ class DisplayFieldConfigView(APIView):
         'saa_securities': '证券主数据',
         'saa_latest_prices': '最新行情',
         'saa_prices_ex': '历史行情',
+        'saa_price_adjust_factors': '复权因子',
         'saa_raw_balance_sheet': '资产负债表',
         'saa_raw_income_statement': '利润表',
         'saa_raw_cash_flow_statement': '现金流量表',
         'saa_raw_main_business': '主营业务',
         'saa_capitals': '股本变动',
         'saa_dividends': '分红数据',
+    }
+
+    DEFAULT_CONFIGS = {
+        'saa_price_adjust_factors': {
+            'fields': [
+                {'name': 'code', 'label': '股票代码', 'visible': True, 'fixed': True, 'order': 1, 'width': 100},
+                {'name': 'date', 'label': '日期', 'visible': True, 'fixed': True, 'order': 2, 'width': 110, 'format': 'date'},
+                {'name': 'adj_factor', 'label': '复权因子', 'visible': True, 'order': 3, 'width': 120, 'format': 'price'},
+            ]
+        },
     }
 
     DATA_TYPE_GROUPS = [
@@ -2953,6 +2985,7 @@ class DisplayFieldConfigView(APIView):
             'items': [
                 {'key': 'quote', 'label': '最新行情', 'table': 'saa_latest_prices'},
                 {'key': 'historical_quote', 'label': '历史行情', 'table': 'saa_prices_ex'},
+                {'key': 'price_adjust_factor', 'label': '复权因子', 'table': 'saa_price_adjust_factors'},
             ]
         },
         {
@@ -2994,10 +3027,25 @@ class DisplayFieldConfigView(APIView):
                             'config': json.loads(row[2]) if isinstance(row[2], str) else row[2]
                         }
                     })
+                if table_name in self.DEFAULT_CONFIGS:
+                    return Response({
+                        'success': True,
+                        'data': {
+                            'table_name': table_name,
+                            'table_label': self.TABLE_LABEL_MAP.get(table_name, table_name),
+                            'config': self.DEFAULT_CONFIGS[table_name],
+                        }
+                    })
                 return Response({'success': False, 'error': 'Table not found'}, status=404)
             else:
                 cursor.execute("SELECT table_name, table_label, config FROM display_field_config")
-                configs = {}
+                configs = {
+                    table: {
+                        'table_label': self.TABLE_LABEL_MAP.get(table, table),
+                        'config': config,
+                    }
+                    for table, config in self.DEFAULT_CONFIGS.items()
+                }
                 for row in cursor.fetchall():
                     configs[row[0]] = {
                         'table_label': row[1],
@@ -3024,7 +3072,13 @@ class DisplayFieldConfigView(APIView):
                 [json.dumps(config), table_name]
             )
             if cursor.rowcount == 0:
-                return Response({'success': False, 'error': 'Table not found'}, status=404)
+                table_label = self.TABLE_LABEL_MAP.get(table_name)
+                if not table_label:
+                    return Response({'success': False, 'error': 'Table not found'}, status=404)
+                cursor.execute(
+                    "INSERT INTO display_field_config (table_name, table_label, config) VALUES (%s, %s, %s)",
+                    [table_name, table_label, json.dumps(config)]
+                )
 
         return Response({'success': True})
 
@@ -3037,6 +3091,7 @@ class StockDataView(APIView):
         'saa_securities': None,
         'saa_latest_prices': 'date',
         'saa_prices_ex': 'date',
+        'saa_price_adjust_factors': 'date',
         'saa_raw_balance_sheet': 'report_date',
         'saa_raw_income_statement': 'report_date',
         'saa_raw_cash_flow_statement': 'report_date',
@@ -3048,6 +3103,7 @@ class StockDataView(APIView):
     NEEDS_STOCK_NAME = {
         'saa_latest_prices',
         'saa_prices_ex',
+        'saa_price_adjust_factors',
         'saa_raw_balance_sheet',
         'saa_raw_income_statement',
         'saa_raw_cash_flow_statement',
@@ -3056,18 +3112,24 @@ class StockDataView(APIView):
         'saa_dividends',
     }
 
+    STOCK_COLUMN_MAP = {
+        'saa_prices_ex': 'code',
+        'saa_price_adjust_factors': 'code',
+    }
+
     def get(self, request, symbol, table_name):
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 50))
         offset = (page - 1) * page_size
 
         date_column = self.DATE_COLUMN_MAP.get(table_name, 'date')
+        stock_column = self.STOCK_COLUMN_MAP.get(table_name, 'symbol')
         order_clause = f"ORDER BY t.{date_column} DESC" if date_column else ""
 
         with connection.cursor() as cursor:
             if table_name in self.NEEDS_STOCK_NAME:
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {table_name} WHERE symbol = %s",
+                    f"SELECT COUNT(*) FROM {table_name} WHERE {stock_column} = %s",
                     [symbol]
                 )
                 total = cursor.fetchone()[0]
@@ -3076,8 +3138,8 @@ class StockDataView(APIView):
                     f"""
                     SELECT t.*, s.name as stock_name
                     FROM {table_name} t
-                    LEFT JOIN saa_stocks s ON t.symbol = s.symbol
-                    WHERE t.symbol = %s
+                    LEFT JOIN saa_stocks s ON t.{stock_column} = s.symbol
+                    WHERE t.{stock_column} = %s
                     {order_clause}
                     LIMIT %s OFFSET %s
                     """,
@@ -3085,14 +3147,14 @@ class StockDataView(APIView):
                 )
             else:
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {table_name} WHERE symbol = %s",
+                    f"SELECT COUNT(*) FROM {table_name} WHERE {stock_column} = %s",
                     [symbol]
                 )
                 total = cursor.fetchone()[0]
 
                 order_clause_simple = f"ORDER BY {date_column} DESC" if date_column else ""
                 cursor.execute(
-                    f"SELECT * FROM {table_name} WHERE symbol = %s {order_clause_simple} LIMIT %s OFFSET %s",
+                    f"SELECT * FROM {table_name} WHERE {stock_column} = %s {order_clause_simple} LIMIT %s OFFSET %s",
                     [symbol, page_size, offset]
                 )
 
@@ -3332,6 +3394,9 @@ class CollectScheduleTriggerView(APIView):
         elif data_type == 'historical_quote':
             service = factory.create_quote_service()
             service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type == 'price_adjust_factor':
+            service = factory.create_quote_service()
+            service.collect_adjust_factors(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'financial_statements':
             service = factory.create_statement_service()
             service.produce(symbols, start_date)

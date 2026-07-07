@@ -245,7 +245,7 @@ def execute_collect(job):
         raise ValueError('结束日期不能早于开始日期')
 
     unit = 'symbol' if data_type in (
-        'stock_info', 'quote', 'historical_quote', 'financial_statements',
+        'stock_info', 'quote', 'historical_quote', 'price_adjust_factor', 'financial_statements',
         'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital',
         'main_business'
     ) else 'job'
@@ -296,6 +296,13 @@ def execute_collect(job):
                 if not symbols:
                     return
                 service.collect_historical(symbols, start_date=start_date, end_date=end_date)
+        elif data_type == 'price_adjust_factor':
+            service = get_factory().create_quote_service()
+            symbols = build_symbols_for_service(service, symbols)
+            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+            if not symbols:
+                return
+            service.collect_adjust_factors(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'extras':
             from saa_collector.services.common.stock_status_service import StockStatusService
             data_frequency = str(params.get('data_frequency') or 'daily').lower()

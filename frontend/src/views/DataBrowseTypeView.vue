@@ -146,6 +146,7 @@ const DATA_TYPE_TO_TABLE: Record<string, string> = {
   info: 'saa_stocks',
   quote: 'saa_latest_prices',
   historical_quote: 'saa_prices_ex',
+  price_adjust_factor: 'saa_price_adjust_factors',
   balance_sheet: 'saa_raw_balance_sheet',
   income: 'saa_raw_income_statement',
   cash_flow: 'saa_raw_cash_flow_statement',
@@ -217,7 +218,7 @@ const createColDefFromConfig = (field: DisplayFieldConfig): ColDef => {
     colDef.cellStyle = { color: '#409eff', cursor: 'pointer' }
     colDef.onCellClicked = (params) => onStockClick(params.value)
   }
-  if (field.name === 'code' && ['historical_quote', 'index_weights', 'industry_stocks'].includes(selectedDataType.value)) {
+  if (field.name === 'code' && ['historical_quote', 'price_adjust_factor', 'index_weights', 'industry_stocks'].includes(selectedDataType.value)) {
     colDef.cellStyle = { color: '#409eff', cursor: 'pointer' }
     colDef.onCellClicked = (params) => onStockClick(params.value)
   }
