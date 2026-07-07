@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -10,16 +11,23 @@ ENV SAA_SQL_MIGRATION_SEARCH=sql/migrations:*.sql,.:upgrade_*.sql
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
+        git \
         default-libmysqlclient-dev \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-COPY third_party/ucenter-python ./third_party/ucenter-python
 COPY requirements.txt .
 
-RUN pip install --upgrade pip \
+RUN --mount=type=secret,id=GITHUB_TOKEN \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+        git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "ssh://git@github.com/"; \
+    fi \
+    && pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install gunicorn
+    && pip install gunicorn \
+    && if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+        git config --global --unset-all url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf; \
+    fi
 
 COPY . .
 

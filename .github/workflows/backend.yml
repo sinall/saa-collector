@@ -56,3 +56,5 @@ jobs:
           org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           org.opencontainers.image.version=${{ github.run_number }}
           org.opencontainers.image.created=${{ steps.image_meta.outputs.created }}
+        secrets: |
+          GITHUB_TOKEN=${{ secrets.PAT_TOKEN }}

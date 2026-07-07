@@ -1,3 +1,0 @@
-[submodule "backend/third_party/ucenter-python"]
-	path = backend/third_party/ucenter-python
-	url = git@github.com:sinall/ucenter-python.git
