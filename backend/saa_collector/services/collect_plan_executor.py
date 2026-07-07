@@ -298,11 +298,14 @@ def execute_collect(job):
                 service.collect_historical(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'price_adjust_factor':
             service = get_factory().create_quote_service()
-            symbols = build_symbols_for_service(service, symbols)
-            symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
-            if not symbols:
-                return
-            service.collect_adjust_factors(symbols, start_date=start_date, end_date=end_date)
+            if stock_scope == 'INDEX':
+                collect_index_adjust_factors(job, service, start_date, end_date, index_code)
+            else:
+                symbols = build_symbols_for_service(service, symbols)
+                symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
+                if not symbols:
+                    return
+                service.collect_adjust_factors(symbols, start_date=start_date, end_date=end_date)
         elif data_type == 'extras':
             from saa_collector.services.common.stock_status_service import StockStatusService
             data_frequency = str(params.get('data_frequency') or 'daily').lower()
@@ -735,6 +738,63 @@ def collect_index_historical_quotes(job, service, start_date, end_date, index_co
         service.collect_historical(
             scoped_symbols,
             trade_date=quote_trade_date,
+            start_date=period_start,
+            end_date=period_end,
+        )
+
+
+def collect_index_adjust_factors(job, service, start_date, end_date, index_code):
+    if start_date is None and end_date is None:
+        end_date = timezone.localdate()
+        start_date = end_date
+    elif start_date is None:
+        start_date = end_date
+    elif end_date is None:
+        end_date = start_date
+
+    date_ranges = generate_monthly_date_ranges(start_date, end_date)
+    if not date_ranges:
+        return
+
+    anchor_dates = [period_end for _, period_end in date_ranges]
+    with connection.cursor() as cursor:
+        payloads_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, anchor_dates)
+        trade_dates_by_period_end = resolve_last_trade_days_for_ranges(cursor, date_ranges)
+
+    for period_start, period_end in date_ranges:
+        index_date, scoped_symbol_set = payloads_by_date.get(period_end, (None, set()))
+        trade_date = trade_dates_by_period_end.get(period_end) or period_end
+        scoped_symbols = sorted(scoped_symbol_set)
+        if not scoped_symbols:
+            logger.info(
+                'Skipping price_adjust_factor collect for range=%s..%s index_code=%s: no index constituents',
+                period_start,
+                period_end,
+                index_code,
+            )
+            continue
+
+        requested_count = len(scoped_symbols)
+        scoped_symbols = build_symbols_for_service(service, scoped_symbols)
+        scoped_symbols = filter_existing_symbols_for_job(job, scoped_symbols, period_start, period_end)
+        if not scoped_symbols:
+            continue
+
+        logger.info(
+            'Collecting price_adjust_factor period: range=%s..%s index_code=%s index_date=%s trade_date=%s '
+            'requested=%d kept=%d symbols_sample=%s',
+            period_start,
+            period_end,
+            index_code,
+            index_date,
+            trade_date,
+            requested_count,
+            len(scoped_symbols),
+            scoped_symbols[:10],
+        )
+        service.collect_adjust_factors(
+            scoped_symbols,
+            trade_date=trade_date,
             start_date=period_start,
             end_date=period_end,
         )

@@ -335,6 +335,48 @@ class SkipExistingCollectTest(TestCase):
         })
         self.assertEqual(filter_existing_symbols_for_job.call_count, 2)
 
+    @patch('saa_collector.services.collect_plan_executor.resolve_index_constituent_payloads_by_dates')
+    @patch('saa_collector.services.collect_plan_executor.filter_existing_symbols_for_job', side_effect=lambda job, symbols, start_date, end_date: symbols)
+    @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
+    def test_price_adjust_factor_index_scope_collects_monthly_constituents(
+            self, factory_class, filter_existing_symbols_for_job, resolve_payloads):
+        job = CollectJob.objects.create(
+            data_type='price_adjust_factor',
+            config={
+                'symbols': [],
+                'stock_scope': 'INDEX',
+                'stock_list_code': '000906',
+                'params': {
+                    'start_date': '2025-04-01',
+                    'end_date': '2025-05-31',
+                },
+            },
+        )
+        service = factory_class.return_value.create_quote_service.return_value
+        service.build_symbols.side_effect = lambda symbols: sorted(symbols)
+        resolve_payloads.return_value = {
+            date(2025, 4, 30): (date(2025, 4, 30), {'000001', '000002'}),
+            date(2025, 5, 31): (date(2025, 5, 31), {'000002', '000003'}),
+        }
+
+        execute_collect(job)
+
+        self.assertEqual(
+            [call.args[0] for call in service.collect_adjust_factors.call_args_list],
+            [['000001', '000002'], ['000002', '000003']],
+        )
+        self.assertEqual(service.collect_adjust_factors.call_args_list[0].kwargs, {
+            'trade_date': date(2025, 4, 30),
+            'start_date': date(2025, 4, 1),
+            'end_date': date(2025, 4, 30),
+        })
+        self.assertEqual(service.collect_adjust_factors.call_args_list[1].kwargs, {
+            'trade_date': date(2025, 5, 31),
+            'start_date': date(2025, 5, 1),
+            'end_date': date(2025, 5, 31),
+        })
+        self.assertEqual(filter_existing_symbols_for_job.call_count, 2)
+
     @patch('saa_collector.services.collect_plan_executor.find_symbols_missing_data')
     @patch('saa_collector.services.factory.compound_service_factory.CompoundServiceFactory')
     def test_historical_quote_skip_existing_collects_only_symbols_with_missing_periods(

@@ -223,8 +223,7 @@ class TushareQuoteServiceTest(SimpleTestCase):
         )
 
         service.pro.query.assert_called_once_with(
-            'stk_factor',
-            ts_code=['000001', '000002', '000003'],
+            'adj_factor',
             start_date='20260301',
             end_date='20260331',
             fields='ts_code,trade_date,adj_factor',

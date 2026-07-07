@@ -162,13 +162,13 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         end_date = max(dates)
         symbols = self.build_symbols(symbols)
         query_kwargs = {
-            'ts_code': symbols,
-            'start_date': start_date.strftime('%Y%m%d') if start_date else None,
-            'end_date': end_date.strftime('%Y%m%d') if end_date else None,
             'fields': self.ADJUST_FACTOR_FIELDS,
         }
         if trade_date is not None:
             query_kwargs['trade_date'] = trade_date.strftime('%Y%m%d')
+        else:
+            query_kwargs['start_date'] = start_date.strftime('%Y%m%d') if start_date else None
+            query_kwargs['end_date'] = end_date.strftime('%Y%m%d') if end_date else None
 
         self._logger.info(
             "Querying Tushare stock adjustment factors: symbols=%d start_date=%s end_date=%s trade_date=%s",
@@ -177,7 +177,7 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
             query_kwargs.get('end_date'),
             query_kwargs.get('trade_date'),
         )
-        df = self.pro.query('stk_factor', **query_kwargs)
+        df = self.pro.query('adj_factor', **query_kwargs)
         if df.empty:
             self._logger.warning(
                 "No Tushare stock adjustment factors returned: symbols=%d start_date=%s end_date=%s trade_date=%s",
