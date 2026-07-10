@@ -9,7 +9,8 @@ from saa_collector.services.impl.tushare.statement_service import StatementServi
 
 class StatementServiceDateMappingTest(TestCase):
     def build_service(self):
-        with patch.object(module.BasicStockService, '__init__', return_value=None):
+        with patch.object(module.BasicStockService, '__init__', return_value=None), \
+             patch.object(module, 'StatementMaintainService'):
             service = StatementServiceImpl()
             service._logger = MagicMock()
             service.config_service = MagicMock()
