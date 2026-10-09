@@ -218,14 +218,12 @@ class TushareQuoteServiceTest(SimpleTestCase):
 
         service.collect_adjust_factors(
             symbols=['000001', '000002', '000003'],
-            start_date=pd.Timestamp('2026-03-01'),
-            end_date=pd.Timestamp('2026-03-31'),
+            trade_date=pd.Timestamp('2026-03-31'),
         )
 
         service.pro.query.assert_called_once_with(
             'adj_factor',
-            start_date='20260301',
-            end_date='20260331',
+            trade_date='20260331',
             fields='ts_code,trade_date,adj_factor',
         )
         service.save_records.assert_called_once()

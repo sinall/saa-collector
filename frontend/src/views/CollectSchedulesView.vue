@@ -14,7 +14,8 @@
         <el-table-column prop="data_type_display" label="数据类型" width="120" />
         <el-table-column label="股票范围" width="120">
           <template #default="{ row }">
-            {{ row.symbols && row.symbols.length > 0 ? `${row.symbols.length}只股票` : '全部股票' }}
+            {{ row.params?.stock_scope === 'INDEX' ? `指数${row.params.stock_list_code}` : row.symbols && row.symbols.length > 0 ? `${row.symbols.length}只股票` : '全部股票' }}
+            <div v-if="row.params?.index_lookback_months">回看{{ row.params.index_lookback_months }}个月</div>
           </template>
         </el-table-column>
         <el-table-column prop="cron_expression" label="Cron表达式" width="130" />

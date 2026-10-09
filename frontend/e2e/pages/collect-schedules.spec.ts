@@ -44,33 +44,14 @@ test('collect-schedules page should explain cron expressions', async ({ page }) 
 })
 
 test('collect-schedules page should display schedules from API', async ({ page }) => {
-  await page.goto('http://localhost:3000/collect-schedules');
-  
-  await page.waitForTimeout(2000);
-  
-  const tableBody = page.locator('.el-table__body');
-  await expect(tableBody).toBeVisible();
-  
-  const rows = page.locator('.el-table__body tbody tr');
-  const rowCount = await rows.count();
-  console.log(`Found ${rowCount} schedule rows`);
-  
-  expect(rowCount).toBeGreaterThan(0);
-  
-  const firstRow = rows.first();
-  await expect(firstRow).toContainText('Tick');
-  
-  const errors: string[] = [];
-  page.on('console', msg => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
-  
-  if (errors.length > 0) {
-    console.log('Console errors:', errors);
-  }
-});
+  await page.route('**/api/data-types/', route => route.fulfill({ json: { data_types: [{ key: 'historical_quote', label: '历史行情' }], groups: [] } }))
+  await page.route('**/api/collect-schedules/', route => route.fulfill({ json: { success: true, data: [{
+    id: 1, name: 'Tick', data_type: 'historical_quote', symbols: [], params: {},
+    cron_expression: '0 0 1 * *', status: 'ENABLED',
+  }] } }))
+  await page.goto('/admin/collector/collect-schedules')
+  await expect(page.locator('.el-table__body').getByText('Tick', { exact: true })).toBeVisible()
+})
 
 test('collect-schedules page should refresh after creating a schedule', async ({ page }) => {
   let schedulesCallCount = 0
@@ -175,4 +156,69 @@ test('collect-schedules page should refresh after creating a schedule', async ({
   await expect(page).toHaveURL(/\/collect-schedules$/)
   await expect(page.getByText('新建日程')).toBeVisible()
   await expect(page.locator('.el-table__body tbody tr')).toHaveCount(2)
+})
+
+test('editing a holding-price schedule preserves index scope and window', async ({ page }) => {
+  await page.route('**/api/**', async route => {
+    if (route.request().url().includes('data-types')) {
+      await route.fulfill({ json: { data_types: [{ key: 'price_adjust_factor', label: '复权因子', need_date: true }], groups: [] } })
+    } else if (route.request().url().includes('collect-schedules/77/')) {
+      await route.fulfill({ json: { success: true, data: { id: 77, name: '持有期复权', data_type: 'price_adjust_factor', symbols: [], cron_expression: '0 0 1 * *', status: 'ENABLED', params: { start_date: 'T-2', end_date: 'T', stock_scope: 'INDEX', stock_list_code: '000906', index_lookback_months: 3, skip_existing: true, api_cache_enabled: false } } } })
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } })
+    }
+  })
+  await page.goto('/admin/collector/collect-schedules/77/edit')
+  const windowInput = page.locator('.el-form-item', { hasText: '回看月数' }).getByRole('spinbutton')
+  await expect(windowInput).toHaveValue('3')
+  const pending = page.waitForRequest(request => request.method() === 'PUT' && request.url().includes('collect-schedules/77/'))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const payload = (await pending).postDataJSON()
+  expect(payload.params.stock_scope).toBe('INDEX')
+  expect(payload.params.index_lookback_months).toBe(3)
+  expect(payload.params.api_cache_enabled).toBe(false)
+})
+
+test('editing a nondated schedule preserves cache and skip options', async ({ page }) => {
+  await page.route('**/api/**', async route => {
+    if (route.request().url().includes('data-types')) {
+      await route.fulfill({ json: { data_types: [{ key: 'stock_info', label: '股票基本信息', need_date: false }], groups: [] } })
+    } else if (route.request().url().includes('collect-schedules/78/')) {
+      await route.fulfill({ json: { success: true, data: { id: 78, name: '股票', data_type: 'stock_info', symbols: [], cron_expression: '0 0 1 * *', status: 'ENABLED', params: { skip_existing: true, api_cache_enabled: false } } } })
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } })
+    }
+  })
+  await page.goto('/admin/collector/collect-schedules/78/edit')
+  await expect(page.getByPlaceholder('请输入日程名称')).toHaveValue('股票')
+  const pending = page.waitForRequest(request => request.method() === 'PUT' && request.url().includes('collect-schedules/78/'))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const params = (await pending).postDataJSON().params
+  expect(params.api_cache_enabled).toBe(false)
+  expect(params.skip_existing).toBe(true)
+})
+
+test('switching an index price schedule to financial data keeps index scope', async ({ page }) => {
+  await page.route('**/api/**', async route => {
+    if (route.request().url().includes('data-types')) {
+      await route.fulfill({ json: { data_types: [
+        { key: 'price_adjust_factor', label: '复权因子', need_date: true },
+        { key: 'balance_sheet', label: '资产负债表', need_date: true },
+      ], groups: [] } })
+    } else if (route.request().url().includes('collect-schedules/79/')) {
+      await route.fulfill({ json: { success: true, data: { id: 79, name: '指数日程', data_type: 'price_adjust_factor', symbols: [], cron_expression: '0 0 1 * *', status: 'ENABLED', params: { stock_scope: 'INDEX', stock_list_code: '000906', index_lookback_months: 3 } } } })
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } })
+    }
+  })
+  await page.goto('/admin/collector/collect-schedules/79/edit')
+  await expect(page.getByPlaceholder('请输入日程名称')).toHaveValue('指数日程')
+  await page.locator('.el-form-item', { hasText: '数据类型' }).locator('.el-select__wrapper').click()
+  await page.locator('.el-select-dropdown:visible').getByText('资产负债表', { exact: true }).click()
+  const pending = page.waitForRequest(request => request.method() === 'PUT' && request.url().includes('collect-schedules/79/'))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const params = (await pending).postDataJSON().params
+  expect(params.stock_scope).toBe('INDEX')
+  expect(params.stock_list_code).toBe('000906')
+  expect(params.index_lookback_months).toBe(0)
 })

@@ -135,6 +135,10 @@
             <el-option label="中证800 (000906)" value="000906" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="instantForm.stock_scope === 'INDEX' && ['historical_quote', 'price_adjust_factor'].includes(instantForm.data_type)" label="回看月数">
+          <el-input-number v-model="instantForm.index_lookback_months" :min="0" :max="36" :precision="0" />
+          <span class="ml-2">0仅当期；3含此前三个月成分股</span>
+        </el-form-item>
         <el-form-item v-if="instantForm.data_type === 'extras'" label="补全周期">
           <el-radio-group v-model="instantForm.data_frequency">
             <el-radio-button value="daily">按天</el-radio-button>
@@ -237,6 +241,7 @@ const instantForm = ref({
   data_type: '',
   stock_scope: 'ALL' as 'ALL' | 'SELECTED' | 'INDEX',
   stock_list_code: '000906',
+  index_lookback_months: 0,
   data_frequency: 'daily' as 'daily' | 'monthly',
   symbols: [] as string[],
   start_date: '',
@@ -453,6 +458,7 @@ const showInstantCollectDialog = () => {
     data_type: '',
     stock_scope: 'ALL' as 'ALL' | 'SELECTED' | 'INDEX',
     stock_list_code: '000906',
+    index_lookback_months: 0,
     data_frequency: 'daily' as 'daily' | 'monthly',
     symbols: [],
     start_date: '',
@@ -487,6 +493,7 @@ const createInstantPlan = async () => {
         data_type: instantForm.value.data_type,
         stock_scope: stockScope,
         stock_list_code: stockScope === 'INDEX' ? instantForm.value.stock_list_code : null,
+        index_lookback_months: stockScope === 'INDEX' && ['historical_quote', 'price_adjust_factor'].includes(instantForm.value.data_type) ? instantForm.value.index_lookback_months : 0,
         data_frequency: instantForm.value.data_type === 'extras' ? instantForm.value.data_frequency : undefined,
         end_date_mode: instantForm.value.end_date_mode,
         symbols: stockScope === 'SELECTED' ? instantForm.value.symbols : [],

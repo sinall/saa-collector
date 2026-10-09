@@ -27,6 +27,9 @@
           <el-option label="季度" value="quarterly" />
           <el-option label="年度" value="yearly" />
         </el-select>
+        <el-tooltip v-if="selectedScope.startsWith('index:') && selectedFrequency === 'monthly'" content="仅行情与复权：含此前N个月成分股，检查精确月末交易日">
+          <el-input-number v-model="indexLookbackMonths" :min="0" :max="36" :precision="0" size="small" aria-label="回看月数" @change="loadHeatmapData()" />
+        </el-tooltip>
         <el-tag v-if="cacheLabel" size="small" type="info" effect="plain">
           {{ cacheLabel }}
         </el-tag>
@@ -121,6 +124,7 @@ const readStoredFrequency = (): string => {
 }
 
 const selectedFrequency = ref(readStoredFrequency())
+const indexLookbackMonths = ref(0)
 const selectedScope = ref(readStoredValue(HEATMAP_SCOPE_STORAGE_KEY, DEFAULT_SCOPE))
 const scopeOptions = ref<HeatmapScopeOption[]>([
   { key: DEFAULT_SCOPE, label: '全市场', type: 'all' }
@@ -235,7 +239,7 @@ const loadHeatmapData = async (refresh = false) => {
   loading.value = true
   if (refresh) refreshing.value = true
   try {
-    const response = await fetchCompletenessHeatmap(selectedFrequency.value, selectedScope.value, refresh)
+    const response = await fetchCompletenessHeatmap(selectedFrequency.value, selectedScope.value, refresh, selectedScope.value.startsWith('index:') && selectedFrequency.value === 'monthly' ? indexLookbackMonths.value : 0)
     if (response.success && response.data) {
       cacheState.value = typeof response.meta?.cache === 'string' ? response.meta.cache : ''
       initFromData(response.data, selectedFrequency.value)

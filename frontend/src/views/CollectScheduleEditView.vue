@@ -33,6 +33,7 @@
           <el-radio-group v-model="stockScope">
             <el-radio value="all">全部股票</el-radio>
             <el-radio value="selected">指定股票</el-radio>
+            <el-radio v-if="supportsIndexScope || stockScope === 'index'" value="index">指数成分股</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -46,6 +47,18 @@
             style="width: 100%"
           />
         </el-form-item>
+
+        <template v-if="stockScope === 'index'">
+          <el-form-item label="指数代码">
+            <el-select v-model="form.params.stock_list_code">
+              <el-option label="中证800 (000906)" value="000906" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="supportsHoldingWindow" label="回看月数">
+            <el-input-number v-model="form.params.index_lookback_months" :min="0" :max="36" :precision="0" />
+            <span>0仅当期；3含此前三个月成分股</span>
+          </el-form-item>
+        </template>
 
         <el-form-item label="Cron表达式" prop="cron_expression">
           <el-input v-model="form.cron_expression" placeholder="例如: 0 9 * * 1-5">
@@ -118,7 +131,12 @@ const currentDataTypeNeedsDate = computed(() => {
   return dataType?.need_date !== false
 })
 
-const stockScope = ref<'all' | 'selected'>('all')
+const stockScope = ref<'all' | 'selected' | 'index'>('all')
+const supportsIndexScope = computed(() => [
+  'stock_info', 'quote', 'historical_quote', 'price_adjust_factor', 'extras', 'index_weights',
+  'financial_statements', 'balance_sheet', 'income', 'cash_flow', 'dividend', 'capital', 'main_business',
+].includes(form.value.data_type))
+const supportsHoldingWindow = computed(() => ['historical_quote', 'price_adjust_factor'].includes(form.value.data_type))
 
 const buildDefaultForm = () => ({
   name: '',
@@ -127,8 +145,10 @@ const buildDefaultForm = () => ({
   cron_expression: '',
   params: {
     start_date: 'today',
-    end_date: 'today'
-  },
+    end_date: 'today',
+    stock_list_code: '000906',
+    index_lookback_months: 0,
+  } as Record<string, any>,
   enabled: true
 })
 
@@ -170,12 +190,15 @@ const fetchSchedule = async () => {
         symbols: schedule.symbols || [],
         cron_expression: schedule.cron_expression,
         params: {
+          ...scheduleParams,
           start_date: startDate ?? '',
-          end_date: endDate ?? ''
+          end_date: endDate ?? '',
+          stock_list_code: scheduleParams?.stock_list_code ?? '000906',
+          index_lookback_months: scheduleParams?.index_lookback_months ?? 0,
         },
         enabled: schedule.status === 'ENABLED'
       }
-      stockScope.value = (schedule.symbols && schedule.symbols.length > 0) ? 'selected' : 'all'
+      stockScope.value = scheduleParams?.stock_scope === 'INDEX' ? 'index' : (schedule.symbols && schedule.symbols.length > 0) ? 'selected' : 'all'
     } else {
       ElMessage.error(response.error || '获取采集日程失败')
       router.push('/collect-schedules')
@@ -196,12 +219,24 @@ const handleSubmit = async () => {
 
     submitting.value = true
     try {
+      const params = { ...form.value.params }
+      if (!currentDataTypeNeedsDate.value) {
+        delete params.start_date
+        delete params.end_date
+        delete params.date_start
+        delete params.date_end
+      }
       const payload = {
         name: form.value.name,
         data_type: form.value.data_type,
-        symbols: stockScope.value === 'all' ? [] : form.value.symbols,
+        symbols: stockScope.value === 'selected' ? form.value.symbols : [],
         cron_expression: form.value.cron_expression,
-        params: currentDataTypeNeedsDate.value ? form.value.params : {},
+        params: {
+          ...params,
+          stock_scope: stockScope.value === 'index' ? 'INDEX' : stockScope.value === 'selected' ? 'SELECTED' : 'ALL',
+          stock_list_code: stockScope.value === 'index' ? form.value.params.stock_list_code : null,
+          index_lookback_months: stockScope.value === 'index' && supportsHoldingWindow.value ? form.value.params.index_lookback_months : 0,
+        },
         status: form.value.enabled ? 'ENABLED' as const : 'DISABLED' as const
       }
 
@@ -222,6 +257,12 @@ const handleSubmit = async () => {
     }
   })
 }
+
+watch(supportsHoldingWindow, supported => {
+  if (!supported) {
+    form.value.params.index_lookback_months = 0
+  }
+})
 
 onMounted(() => {
   loadDataTypes()

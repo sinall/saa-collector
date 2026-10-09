@@ -16,7 +16,11 @@ from saa_collector.date_expressions import (
     resolve_schedule_date_range,
 )
 from saa_collector.models import CollectJob, CollectPlan, DataIntegrityItem
-from saa_collector.services.common.index_scope_utils import resolve_index_constituent_payloads_by_dates
+from saa_collector.services.common.index_scope_utils import (
+    resolve_index_constituent_payloads_by_dates,
+    resolve_index_holding_payloads_by_dates,
+    validate_index_lookback_months,
+)
 from saa_collector.services.common.period_utils import (
     generate_monthly_date_ranges,
     resolve_month_end_trade_dates,
@@ -205,6 +209,10 @@ def execute_collect(job):
     stock_scope = get_job_stock_scope(job)
     index_code = get_job_index_code(job)
 
+    window = validate_index_lookback_months(params.get('index_lookback_months', 0))
+    if window and (data_type not in ('historical_quote', 'price_adjust_factor') or stock_scope != 'INDEX' or not index_code):
+        raise ValueError('持有期窗口仅适用于指定指数的历史行情和复权任务')
+
     def get_factory():
         nonlocal factory
         if factory is None:
@@ -290,6 +298,8 @@ def execute_collect(job):
             service = get_factory().create_quote_service()
             if stock_scope == 'INDEX':
                 collect_index_historical_quotes(job, service, start_date, end_date, index_code)
+            elif params.get('data_frequency') == 'monthly':
+                collect_selected_monthly_prices(job, service, symbols, start_date, end_date)
             else:
                 symbols = build_symbols_for_service(service, symbols)
                 symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
@@ -300,6 +310,8 @@ def execute_collect(job):
             service = get_factory().create_quote_service()
             if stock_scope == 'INDEX':
                 collect_index_adjust_factors(job, service, start_date, end_date, index_code)
+            elif params.get('data_frequency') == 'monthly':
+                collect_selected_monthly_prices(job, service, symbols, start_date, end_date)
             else:
                 symbols = build_symbols_for_service(service, symbols)
                 symbols = filter_existing_symbols_for_job(job, symbols, start_date, end_date)
@@ -686,6 +698,35 @@ def resolve_index_scope_symbols_at(job, as_of_date):
         return sorted(payload[1])
 
 
+def collect_selected_monthly_prices(job, service, symbols, start_date, end_date):
+    """One database job, bounded month-end API requests, fixed explicit stock universe."""
+    dates = [value for value in (start_date, end_date) if value is not None]
+    if not dates:
+        raise ValueError('Monthly price collection requires a date range')
+    start_date, end_date = min(dates), max(dates)
+    ranges = generate_monthly_date_ranges(start_date, end_date)
+    symbols = build_symbols_for_service(service, symbols)
+    if not symbols:
+        return
+    with connection.cursor() as cursor:
+        trade_dates = resolve_last_trade_days_for_ranges(cursor, ranges)
+    collect = service.collect_historical if job.data_type == 'historical_quote' else service.collect_adjust_factors
+    for period_start, period_end in ranges:
+        selected = filter_existing_symbols_for_job(job, symbols, period_start, period_end)
+        if selected:
+            collect(
+                selected, trade_date=trade_dates[period_end],
+                start_date=period_start, end_date=period_end,
+            )
+
+
+def resolve_price_scope_payloads(job, cursor, index_code, anchor_dates):
+    window = validate_index_lookback_months((job.config.get('params') or {}).get('index_lookback_months', 0))
+    if window:
+        return resolve_index_holding_payloads_by_dates(cursor, index_code, anchor_dates, window)
+    return resolve_index_constituent_payloads_by_dates(cursor, index_code, anchor_dates)
+
+
 def collect_index_historical_quotes(job, service, start_date, end_date, index_code):
     if start_date is None and end_date is None:
         end_date = timezone.localdate()
@@ -701,7 +742,7 @@ def collect_index_historical_quotes(job, service, start_date, end_date, index_co
 
     anchor_dates = [period_end for _, period_end in date_ranges]
     with connection.cursor() as cursor:
-        payloads_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, anchor_dates)
+        payloads_by_date = resolve_price_scope_payloads(job, cursor, index_code, anchor_dates)
         quote_trade_dates_by_period_end = resolve_last_trade_days_for_ranges(cursor, date_ranges)
 
     for period_start, period_end in date_ranges:
@@ -758,7 +799,7 @@ def collect_index_adjust_factors(job, service, start_date, end_date, index_code)
 
     anchor_dates = [period_end for _, period_end in date_ranges]
     with connection.cursor() as cursor:
-        payloads_by_date = resolve_index_constituent_payloads_by_dates(cursor, index_code, anchor_dates)
+        payloads_by_date = resolve_price_scope_payloads(job, cursor, index_code, anchor_dates)
         trade_dates_by_period_end = resolve_last_trade_days_for_ranges(cursor, date_ranges)
 
     for period_start, period_end in date_ranges:
@@ -841,13 +882,17 @@ def filter_existing_symbols_for_job(job, symbols, start_date, end_date):
     if not symbols:
         return symbols
 
-    result = find_symbols_missing_data(
-        job.data_type,
-        symbols,
-        start_date,
-        end_date,
-        include_details=True,
-    )
+    params = job.config.get('params') or {}
+    if (params.get('index_lookback_months') or params.get('data_frequency') == 'monthly') and job.data_type in ('historical_quote', 'price_adjust_factor'):
+        result = find_symbols_missing_price_anchors(job.data_type, symbols, start_date, end_date)
+    else:
+        result = find_symbols_missing_data(
+            job.data_type,
+            symbols,
+            start_date,
+            end_date,
+            include_details=True,
+        )
     if len(result) == 3:
         kept_symbols, skipped_count, reason = result
         details = {}
@@ -887,6 +932,34 @@ def filter_existing_symbols_for_job(job, symbols, start_date, end_date):
             details.get('period_window') or details.get('expected_period_count'),
         )
     return kept_symbols
+
+
+def find_symbols_missing_price_anchors(data_type, symbols, start_date, end_date):
+    config = DATA_TYPE_CONFIG[data_type]
+    ranges = generate_monthly_date_ranges(start_date, end_date)
+    with connection.cursor() as cursor:
+        anchors = set(resolve_last_trade_days_for_ranges(cursor, ranges).values())
+        if not anchors:
+            raise ValueError('Cannot resolve price repair anchors')
+        date_values = sorted(anchors)
+        codes = sorted(set(symbols))
+        value_column = 'close' if data_type == 'historical_quote' else 'adj_factor'
+        date_slots = ','.join(['%s'] * len(date_values))
+        code_slots = ','.join(['%s'] * len(codes))
+        cursor.execute(
+            f"SELECT code, date, {value_column} FROM {config['table']} "
+            f"WHERE date IN ({date_slots}) AND code IN ({code_slots})",
+            date_values + codes,
+        )
+        actual = {}
+        for code, value_date, value in cursor.fetchall():
+            if value is not None and value > 0:
+                actual.setdefault(code, set()).add(value_date)
+    kept = [code for code in codes if not anchors.issubset(actual.get(code, set()))]
+    expected = {value.isoformat() for value in anchors}
+    existing = {code: {value.isoformat() for value in values} for code, values in actual.items()}
+    details = build_skip_existing_details(codes, kept, expected, existing)
+    return kept, len(codes) - len(kept), 'exact-month-end-price-missing', details
 
 
 def record_skip_existing_summary(job_id, requested_count, kept_count, skipped_count, reason, details=None):

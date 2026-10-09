@@ -63,12 +63,11 @@ test.describe('Instant Collect Feature', () => {
 
     await expect(page.locator('.el-dialog')).toBeVisible()
     await expect(page.locator('.el-dialog .el-dialog__title')).toContainText('即时采集')
-    await expect(page.locator('.el-dialog')).toContainText('全市场')
-    await expect(page.locator('.el-dialog')).toContainText('中证800')
-
     await page.locator('.el-dialog .el-select__wrapper').click()
     await expect(page.locator('.el-select-dropdown')).toBeVisible()
     await page.locator('.el-select-dropdown').getByText('最新行情', { exact: true }).click()
+    await expect(page.locator('.el-dialog')).toContainText('全市场')
+    await expect(page.locator('.el-dialog')).toContainText('中证800')
 
     await page.click('.el-dialog button:has-text("创建并执行")')
 
@@ -137,4 +136,29 @@ test.describe('Instant Collect Feature', () => {
     expect(createBody.jobs[0].end_date_mode).toBe('EXECUTION_DAY')
     expect(createBody.jobs[0].end_date).toBeNull()
   })
+})
+
+test('index historical quotes expose and submit the holding window', async ({ page }) => {
+  await page.route('**/api/**', async route => {
+    const url = route.request().url()
+    if (url.includes('data-types')) {
+      await route.fulfill({ json: { data_types: [{ key: 'historical_quote', label: '历史行情', visibility: { collect_plan: true } }], groups: [] } })
+    } else if (url.includes('collect-plans') && route.request().method() === 'POST') {
+      await route.fulfill({ json: { success: true, data: { id: 999 } } })
+    } else {
+      await route.fulfill({ json: { count: 0, results: [], success: true, data: [] } })
+    }
+  })
+  await page.goto('/admin/collector/collect-plans')
+  await page.getByRole('button', { name: '即时采集' }).click()
+  const dialog = page.locator('.el-dialog')
+  await dialog.locator('.el-select__wrapper').first().click()
+  await page.locator('.el-select-dropdown:visible').getByText('历史行情', { exact: true }).click()
+  await dialog.getByText('中证800', { exact: true }).click()
+  const windowInput = dialog.locator('.el-form-item', { hasText: '回看月数' }).getByRole('spinbutton')
+  await expect(windowInput).toBeVisible()
+  await windowInput.fill('3')
+  const requestPromise = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/collect-plans/'))
+  await dialog.getByRole('button', { name: '创建并执行' }).click()
+  expect((await requestPromise).postDataJSON().jobs[0].index_lookback_months).toBe(3)
 })

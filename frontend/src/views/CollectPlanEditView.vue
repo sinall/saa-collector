@@ -87,6 +87,10 @@
                 <el-option label="中证800 (000906)" value="000906" />
               </el-select>
             </el-form-item>
+            <el-form-item v-if="job.stock_scope === 'INDEX' && ['historical_quote', 'price_adjust_factor'].includes(job.data_type)" label="回看月数">
+              <el-input-number v-model="job.index_lookback_months" :min="0" :max="36" :precision="0" />
+              <span class="ml-2">0仅当期；3含此前三个月成分股</span>
+            </el-form-item>
             <el-form-item v-if="job.data_type === 'extras'" label="补全周期">
               <el-radio-group v-model="job.data_frequency">
                 <el-radio-button value="daily">按天</el-radio-button>
@@ -162,6 +166,7 @@ const addJob = () => {
     data_type: 'quote',
     stock_scope: 'ALL',
     stock_list_code: '000906',
+    index_lookback_months: 0,
     end_date_mode: 'EXECUTION_DAY',
     symbols_input: '',
     date_start: null,
@@ -182,6 +187,7 @@ const buildJobsPayload = (): CollectPlanJobPayload[] => form.value.jobs.map((job
     data_type: job.data_type,
     stock_scope: stockScope,
     stock_list_code: stockScope === 'INDEX' ? job.stock_list_code : null,
+    index_lookback_months: stockScope === 'INDEX' && ['historical_quote', 'price_adjust_factor'].includes(job.data_type) ? job.index_lookback_months : 0,
     symbols: stockScope === 'SELECTED' && job.symbols_input
       ? job.symbols_input.split('\n').map((s: string) => s.trim()).filter(Boolean)
       : [],
@@ -231,6 +237,7 @@ const fetchPlan = async () => {
       data_type: job.data_type,
       stock_scope: job.config?.stock_scope || job.config?.params?.stock_scope || 'ALL',
       stock_list_code: job.config?.stock_list_code || job.config?.params?.stock_list_code || '000906',
+      index_lookback_months: job.config?.params?.index_lookback_months ?? 0,
       end_date_mode: job.config?.params?.end_date_mode || (getJobParam(job, 'end_date') ? 'FIXED' : 'EXECUTION_DAY'),
       symbols_input: job.config?.symbols?.join('\n') || '',
       date_start: getJobParam(job, 'start_date'),

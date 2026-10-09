@@ -161,33 +161,42 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
         start_date = min(dates)
         end_date = max(dates)
         symbols = self.build_symbols(symbols)
-        query_kwargs = {
-            'fields': self.ADJUST_FACTOR_FIELDS,
-        }
         if trade_date is not None:
-            query_kwargs['trade_date'] = trade_date.strftime('%Y%m%d')
+            trade_dates = [trade_date]
         else:
-            query_kwargs['start_date'] = start_date.strftime('%Y%m%d') if start_date else None
-            query_kwargs['end_date'] = end_date.strftime('%Y%m%d') if end_date else None
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    'SELECT date FROM saa_trade_days WHERE date BETWEEN %s AND %s ORDER BY date',
+                    [start_date, end_date],
+                )
+                trade_dates = [row[0] for row in cursor.fetchall()]
+            if not trade_dates:
+                self._logger.warning('No trade calendar dates for adjustment range %s..%s', start_date, end_date)
+                return
 
-        self._logger.info(
-            "Querying Tushare stock adjustment factors: symbols=%d start_date=%s end_date=%s trade_date=%s",
-            len(symbols),
-            query_kwargs.get('start_date'),
-            query_kwargs.get('end_date'),
-            query_kwargs.get('trade_date'),
-        )
-        df = self.pro.query('adj_factor', **query_kwargs)
-        if df.empty:
+        frames = []
+        for target_date in trade_dates:
+            frame = self.pro.query(
+                'adj_factor', fields=self.ADJUST_FACTOR_FIELDS,
+                trade_date=target_date.strftime('%Y%m%d'),
+            )
+            if not frame.empty:
+                # Filter each response before retaining it; long repairs stay bounded in memory.
+                frame = frame[frame['ts_code'].str[:6].isin(symbols)]
+                if not frame.empty:
+                    frames.append(frame)
+        if not frames:
             self._logger.warning(
                 "No Tushare stock adjustment factors returned: symbols=%d start_date=%s end_date=%s trade_date=%s",
                 len(symbols),
-                query_kwargs.get('start_date'),
-                query_kwargs.get('end_date'),
-                query_kwargs.get('trade_date'),
+                start_date,
+                end_date,
+                trade_date,
             )
             return
 
+        df = pd.concat(frames, ignore_index=True)
         df['code'] = df['ts_code'].apply(lambda x: x.split('.')[0])
         df = df[df['code'].isin(symbols)].copy()
         if df.empty:

@@ -44,6 +44,8 @@ jobs:
       with:
         context: ./frontend
         push: true
+        provenance: false
+        sbom: false
         tags: |
           ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ github.run_number }}
           ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:sha-${{ steps.image_meta.outputs.short_sha }}

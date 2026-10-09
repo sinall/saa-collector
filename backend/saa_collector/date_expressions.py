@@ -77,6 +77,9 @@ def normalize_schedule_params(params):
 
 def validate_schedule_params(params):
     normalized = normalize_schedule_params(params)
+    from saa_collector.services.common.index_scope_utils import validate_index_lookback_months
+    if 'index_lookback_months' in normalized:
+        validate_index_lookback_months(normalized['index_lookback_months'])
 
     for key in ('start_date', 'end_date'):
         value = normalized.get(key)

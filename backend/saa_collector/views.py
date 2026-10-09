@@ -2393,6 +2393,8 @@ class CollectPlanDetailView(APIView):
                         params['end_date_mode'] = job_data.get('end_date_mode', 'EXECUTION_DAY')
                     if 'stock_scope' in job_data:
                         params['stock_scope'] = job_data.get('stock_scope', 'ALL')
+                    if 'index_lookback_months' in job_data:
+                        params['index_lookback_months'] = job_data['index_lookback_months']
                     if 'stock_list_code' in job_data:
                         params['stock_list_code'] = job_data.get('stock_list_code') or None
 
@@ -2722,6 +2724,18 @@ class DataCompletenessHeatmapView(APIView):
         if scope is None:
             return Response({'success': False, 'error': 'Invalid scope'}, status=400)
 
+        window_text = request.query_params.get('index_lookback_months', '0')
+        try:
+            window = int(window_text)
+        except (TypeError, ValueError):
+            window = -1
+        if not 0 <= window <= 36:
+            return Response({'success': False, 'error': 'index_lookback_months须为0～36整数'}, status=400)
+        if window and (not scope['index_code'] or frequency != 'monthly'):
+            return Response({'success': False, 'error': '持有期窗口仅支持指数月度完整度'}, status=400)
+        if window:
+            scope = dict(scope, key=f"{scope['key']}:holding:{window}")
+
         cache_key, latest_cache_key = build_heatmap_cache_keys(
             frequency,
             scope['key'],
@@ -2749,6 +2763,7 @@ class DataCompletenessHeatmapView(APIView):
         service = CompletenessService(
             stock_codes=scope['stock_codes'],
             index_code=scope['index_code'],
+            **({'index_lookback_months': window} if window else {}),
         )
         periods = service.generate_periods(frequency)
 

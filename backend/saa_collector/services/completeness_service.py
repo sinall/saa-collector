@@ -10,7 +10,10 @@ from django.db import connection
 from calendar import monthrange
 
 from ..constants import DATA_TYPE_CONFIG, EARLIEST_YEAR
-from .common.index_scope_utils import resolve_index_constituent_payloads_by_dates, resolve_index_constituents_by_dates
+from .common.index_scope_utils import (
+    resolve_index_constituent_payloads_by_dates, resolve_index_constituents_by_dates,
+    resolve_index_holding_payloads_by_dates, validate_index_lookback_months,
+)
 from .common.period_utils import get_period_label_for_date, get_period_range
 
 logger = logging.getLogger(__name__)
@@ -24,7 +27,10 @@ class CompletenessService:
         for key, config in DATA_TYPE_CONFIG.items()
     ]
 
-    def __init__(self, stock_codes=None, index_code=None, date_end=None):
+    def __init__(self, stock_codes=None, index_code=None, date_end=None, index_lookback_months=0):
+        self.index_lookback_months = validate_index_lookback_months(index_lookback_months)
+        if self.index_lookback_months and not index_code:
+            raise ValueError('持有期窗口需要指定指数')
         self.stock_codes = stock_codes
         self.index_code = index_code
         self.date_end = date_end or date.today()
@@ -262,6 +268,11 @@ class CompletenessService:
                 )
 
                 try:
+                    if self.index_lookback_months and key in ('historical_quote', 'price_adjust_factor'):
+                        if frequency != 'monthly':
+                            raise ValueError('持有期行情完整度目前仅支持月度')
+                        matrix[key] = self._calculate_holding_price_completeness(cursor, key, periods)
+                        continue
                     if date_column is None:
                         if completeness_model == 'snapshot_security':
                             matrix[key] = self._calculate_snapshot_security_completeness(
@@ -333,6 +344,39 @@ class CompletenessService:
             ],
             'matrix': matrix,
         }
+
+    def _calculate_holding_price_completeness(self, cursor, data_type, periods):
+        if not periods:
+            return []
+        start_date, _ = self._get_period_range(periods[0], 'monthly')
+        _, end_date = self._get_period_range(periods[-1], 'monthly')
+        anchors = self._get_period_anchor_trade_days(cursor, periods, 'monthly', start_date, end_date)
+        payloads = resolve_index_holding_payloads_by_dates(
+            cursor, self.index_code, anchors.values(), self.index_lookback_months
+        )
+        codes = sorted(set().union(*(payload[1] for payload in payloads.values())))
+        if not codes or not anchors:
+            return [-1] * len(periods)
+        config = DATA_TYPE_CONFIG[data_type]
+        value_column = 'close' if data_type == 'historical_quote' else 'adj_factor'
+        date_params = sorted(set(anchors.values()))
+        date_slots = ','.join(['%s'] * len(date_params))
+        code_slots = ','.join(['%s'] * len(codes))
+        cursor.execute(
+            f"SELECT code, date, {value_column} FROM {config['table']} "
+            f"WHERE date IN ({date_slots}) AND code IN ({code_slots})",
+            date_params + codes,
+        )
+        actual = {}
+        for code, value_date, value in cursor.fetchall():
+            if value is not None and value > 0:
+                actual.setdefault(self._coerce_date(value_date), set()).add(code)
+        result = []
+        for period in periods:
+            anchor = anchors.get(period)
+            expected = payloads.get(anchor, (None, set()))[1]
+            result.append(round(len(actual.get(anchor, set()) & expected) / len(expected), 4) if expected else -1)
+        return result
 
     def generate_periods(self, frequency, start_date=None, end_date=None):
         """生成周期列表"""

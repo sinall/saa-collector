@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from calendar import monthrange
 from datetime import date as date_type, datetime
 
 
@@ -78,3 +79,33 @@ def resolve_index_constituent_payloads_by_dates(cursor, index_code, target_dates
 
 def resolve_index_constituents_as_of(cursor, index_code, target_date):
     return resolve_index_constituents_by_dates(cursor, index_code, [target_date]).get(coerce_date(target_date), set())
+
+
+def validate_index_lookback_months(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 36:
+        raise ValueError('index_lookback_months must be an integer between 0 and 36')
+    return value
+
+
+def resolve_index_holding_payloads_by_dates(cursor, index_code, target_dates, lookback_months):
+    """Union current and previous N month-end universes, without future membership."""
+    validate_index_lookback_months(lookback_months)
+    targets = sorted({coerce_date(value) for value in target_dates if value})
+    anchors_by_target = {}
+    for target in targets:
+        anchors = [target]
+        for offset in range(1, lookback_months + 1):
+            year, month = divmod(target.year * 12 + target.month - 1 - offset, 12)
+            month += 1
+            anchors.append(date_type(year, month, monthrange(year, month)[1]))
+        anchors_by_target[target] = anchors
+    payloads = resolve_index_constituent_payloads_by_dates(
+        cursor, index_code, [anchor for anchors in anchors_by_target.values() for anchor in anchors]
+    )
+    return {
+        target: (
+            payloads.get(target, (None, set()))[0],
+            set().union(*(payloads.get(anchor, (None, set()))[1] for anchor in anchors)),
+        )
+        for target, anchors in anchors_by_target.items()
+    }

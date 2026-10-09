@@ -431,9 +431,10 @@ function generateMockHeatmapData(frequency: string): HeatmapResponse {
 export const fetchCompletenessHeatmap = async (
   frequency: string = 'monthly',
   scope: string = 'all',
-  refresh: boolean = false
+  refresh: boolean = false,
+  indexLookbackMonths: number = 0
 ): Promise<ApiResponse<HeatmapResponse>> => {
-  const response = await api.get('/data-completeness/heatmap/', { params: { frequency, scope, refresh: refresh ? 1 : undefined } })
+  const response = await api.get('/data-completeness/heatmap/', { params: { frequency, scope, refresh: refresh ? 1 : undefined, index_lookback_months: indexLookbackMonths || undefined } })
   return response.data
 }
 
@@ -854,6 +855,7 @@ export interface CollectPlanJobPayload {
   data_type: string
   stock_scope?: 'ALL' | 'SELECTED' | 'INDEX'
   stock_list_code?: string | null
+  index_lookback_months?: number
   data_frequency?: 'daily' | 'monthly'
   symbols?: string[]
   start_date?: string | null

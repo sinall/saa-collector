@@ -146,7 +146,8 @@ class CollectScheduleRelativeDateAPITest(TestCase):
             for trade_day in ('2026-05-21', '2026-05-22', '2026-05-25', '2026-05-26'):
                 cursor.execute('INSERT INTO saa_trade_days (date) VALUES (%s)', [trade_day])
 
-    def test_create_schedule_canonicalizes_relative_date_expressions(self):
+    @patch('saa_collector.date_expressions.resolve_trade_day_offset', return_value=date(2026, 5, 22))
+    def test_create_schedule_canonicalizes_relative_date_expressions(self, trade_day_offset):
         response = self.client.post('/api/collect-schedules/', {
             'name': 'Relative date schedule',
             'data_type': 'historical_quote',

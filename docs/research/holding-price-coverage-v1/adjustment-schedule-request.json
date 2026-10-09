@@ -1,0 +1,15 @@
+{
+  "name": "中证800持有期复权月末采集",
+  "data_type": "price_adjust_factor",
+  "symbols": [],
+  "params": {
+    "stock_scope": "INDEX",
+    "stock_list_code": "000906",
+    "index_lookback_months": 3,
+    "start_date": "T-3",
+    "end_date": "T-1",
+    "skip_existing": true
+  },
+  "cron_expression": "10 0 1 * *",
+  "status": "DISABLED"
+}

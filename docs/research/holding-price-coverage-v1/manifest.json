@@ -1,0 +1,31 @@
+{
+  "source_file": "holding-price-gap-request.csv",
+  "source_sha256": "66210c829ccf012dfecca7b94d37ba9cdb4379816eedbf415033413b4b1f17e7",
+  "unique_stock_dates": 206,
+  "stocks": 130,
+  "jobs": 2,
+  "target_counts": {
+    "historical_quote": 183,
+    "price_adjust_factor": 206
+  },
+  "job_scopes": [
+    {
+      "data_type": "historical_quote",
+      "stocks": 111,
+      "start_date": "2015-06-30",
+      "end_date": "2026-01-30",
+      "months": 128,
+      "max_stock_month_targets": 14208
+    },
+    {
+      "data_type": "price_adjust_factor",
+      "stocks": 130,
+      "start_date": "2015-06-30",
+      "end_date": "2026-02-27",
+      "months": 129,
+      "max_stock_month_targets": 16770
+    }
+  ],
+  "max_stock_month_targets": 30978,
+  "executed": false
+}

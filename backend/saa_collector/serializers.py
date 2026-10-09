@@ -61,11 +61,12 @@ class InstantCollectJobSerializer(serializers.Serializer):
         allow_null=True,
         help_text='Index code when stock_scope is INDEX'
     )
+    index_lookback_months = serializers.IntegerField(required=False, min_value=0, max_value=36)
     data_frequency = serializers.ChoiceField(
         choices=['daily', 'monthly'],
         required=False,
         default='daily',
-        help_text='Collection frequency for stock status jobs'
+        help_text='Collection frequency for stock status and price jobs'
     )
     symbols = serializers.ListField(
         child=serializers.CharField(max_length=20),
@@ -94,6 +95,12 @@ class InstantCollectJobSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
+        if attrs.get('index_lookback_months') and (
+            attrs.get('stock_scope') != 'INDEX'
+            or not attrs.get('stock_list_code')
+            or attrs.get('data_type') not in ('historical_quote', 'price_adjust_factor')
+        ):
+            raise serializers.ValidationError('持有期窗口仅适用于指定指数的历史行情和复权因子任务')
         start_date = attrs.get('start_date')
         end_date = attrs.get('end_date')
         end_date_mode = attrs.get('end_date_mode', 'EXECUTION_DAY')
@@ -296,6 +303,7 @@ class CollectPlanCreateSerializer(serializers.Serializer):
                     params={
                         'stock_scope': job_data.get('stock_scope', 'ALL'),
                         'stock_list_code': job_data.get('stock_list_code') or None,
+                        'index_lookback_months': job_data.get('index_lookback_months', 0),
                         'data_frequency': job_data.get('data_frequency', 'daily'),
                         'end_date_mode': job_data.get('end_date_mode', 'EXECUTION_DAY'),
                         'start_date': str(job_data['start_date']) if job_data.get('start_date') else None,
@@ -348,6 +356,17 @@ class CollectScheduleCreateSerializer(serializers.ModelSerializer):
         except ValueError as exc:
             raise serializers.ValidationError(str(exc)) from exc
 
+    def validate(self, attrs):
+        params = attrs.get('params', getattr(self.instance, 'params', {}) or {})
+        data_type = attrs.get('data_type', getattr(self.instance, 'data_type', None))
+        if params.get('index_lookback_months') and (
+            data_type not in ('historical_quote', 'price_adjust_factor')
+            or params.get('stock_scope') != 'INDEX'
+            or not params.get('stock_list_code')
+        ):
+            raise serializers.ValidationError('持有期窗口仅适用于指定指数的历史行情和复权因子日程')
+        return attrs
+
     class Meta:
         model = CollectSchedule
         fields = ['name', 'data_type', 'symbols', 'params', 'cron_expression', 'status']
@@ -364,6 +383,17 @@ class CollectScheduleUpdateSerializer(serializers.ModelSerializer):
             return validate_schedule_params(value)
         except ValueError as exc:
             raise serializers.ValidationError(str(exc)) from exc
+
+    def validate(self, attrs):
+        params = attrs.get('params', getattr(self.instance, 'params', {}) or {})
+        data_type = attrs.get('data_type', getattr(self.instance, 'data_type', None))
+        if params.get('index_lookback_months') and (
+            data_type not in ('historical_quote', 'price_adjust_factor')
+            or params.get('stock_scope') != 'INDEX'
+            or not params.get('stock_list_code')
+        ):
+            raise serializers.ValidationError('持有期窗口仅适用于指定指数的历史行情和复权因子日程')
+        return attrs
 
     class Meta:
         model = CollectSchedule
