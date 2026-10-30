@@ -142,7 +142,42 @@ class TypeBrowseDataViewTest(TestCase):
         sql = connection.cursor.return_value.__enter__.return_value.execute.call_args_list[1].args[0]
         self.assertIn('t.report_date >= %s', sql)
         self.assertIn('t.report_date <= %s', sql)
-        self.assertIn('ORDER BY symbol ASC, report_date DESC', sql)
+        self.assertIn('ORDER BY t.symbol ASC, t.report_date DESC, t.disclosure_date DESC', sql)
+        self.assertEqual(response.data['data']['report_period_count'], 1)
+        self.assertEqual(response.data['data']['version_count'], 1)
+
+    @patch('saa_collector.views.connection')
+    def test_versions_do_not_inflate_report_period_count(self, connection):
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.side_effect = [[3], [2]]
+        cursor.description = [('symbol',), ('report_date',), ('disclosure_date',)]
+        cursor.fetchall.return_value = [
+            ('600036', date(2023, 12, 31), date(2024, 4, 1)),
+            ('600036', date(2023, 12, 31), date(2024, 3, 1)),
+            ('600036', date(2022, 12, 31), date(2023, 3, 1)),
+        ]
+        response = self.client.get('/api/type-browse-data/saa_raw_income_statement/')
+        self.assertEqual(response.status_code, 200)
+        data = response.data['data']
+        self.assertEqual((data['total'], data['version_count'], data['report_period_count']), (3, 3, 2))
+        self.assertIn('COUNT(DISTINCT t.symbol, t.report_date)', cursor.execute.call_args.args[0])
+
+    @patch('saa_collector.views.connection')
+    def test_stock_versions_have_distinct_period_count(self, connection):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from saa_collector.views import StockDataView
+
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.side_effect = [[2], [1]]
+        cursor.description = [('symbol',)]
+        cursor.fetchall.return_value = [('600036',), ('600036',)]
+        request = APIRequestFactory().get('/')
+        force_authenticate(request, user=self.user)
+        response = StockDataView.as_view()(request, symbol='600036', table_name='saa_raw_balance_sheet')
+        self.assertEqual(response.data['data']['version_count'], 2)
+        self.assertEqual(response.data['data']['report_period_count'], 1)
+        self.assertIn('ORDER BY t.report_date DESC, t.disclosure_date DESC',
+                      cursor.execute.call_args_list[1].args[0])
 
     @patch('saa_collector.views.connection')
     def test_industry_stocks_browse_filters_by_industry_code_and_joins_stock_name(self, connection):

@@ -117,6 +117,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="message" label="消息" />
+        <el-table-column label="结果" width="72">
+          <template #default="{ row }"><CollectJobResult :job-id="row.id" /></template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -127,6 +130,7 @@ import { ref, onActivated, onDeactivated, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchCollectPlan, fetchIntegrityReportSummary, continueCollectPlan, resetCollectPlan, stopCollectPlan, executeCollectPlan } from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import CollectJobResult from '@/components/CollectJobResult.vue'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()

@@ -31,6 +31,8 @@ from saa_collector.services.collect_execution_context import (
     set_collect_execution_context,
 )
 from saa_collector.services.common.progress import ProgressLogger
+from saa_collector.services.collect_job_result import record_issue, resolve_symbol, result_message
+from saa_collector.services.common.statement_ingestion import version_ingestion_enabled
 from saa_collector.services.factory.provider_config import require_provider
 from saa_collector.services.heatmap_cache import invalidate_heatmap_cache
 
@@ -159,7 +161,8 @@ def execute_job(job_id, task_id=None, plan_id=None):
         logger.info('Starting collect job')
         execute_collect(job)
         refresh_django_db_connections('before marking job success')
-        job.complete(success=True, message='执行完成')
+        job = CollectJob.objects.get(id=job_id)
+        job.complete(success=True, message=result_message(job.result) or '执行完成')
         logger.info('Finished collect job: status=SUCCESS')
     except PlanExecutionStopped:
         logger.info('Collect job %s stopped', job_id)
@@ -173,8 +176,11 @@ def execute_job(job_id, task_id=None, plan_id=None):
         logger.exception('Collect job execution failed: %s', e)
         try:
             refresh_django_db_connections('before marking job failed')
+            if getattr(e, 'issue', None):
+                record_issue(job_id, e.issue)
             job = CollectJob.objects.get(id=job_id)
-            job.complete(success=False, message=str(e))
+            summary = result_message(job.result)
+            job.complete(success=False, message=(summary + '；' if summary else '') + str(e))
         except Exception:
             logger.exception('Failed to mark collect job as failed: job_id=%s', job_id)
     finally:
@@ -448,6 +454,9 @@ def execute_collect(job):
                 mark_symbol_failure(job.id, symbol)
                 ensure_plan_not_stopped(job.plan_id)
 
+            result_callbacks = {}
+            if version_ingestion_enabled(getattr(service, 'config', {})):
+                result_callbacks['on_symbol_issue'] = lambda issue: record_issue(job.id, issue)
             service.produce(
                 remaining_symbols,
                 start_date,
@@ -456,6 +465,7 @@ def execute_collect(job):
                 after_symbol=release_process_memory,
                 progress_total_symbols=len(symbols),
                 progress_completed_symbols=len(symbols) - len(remaining_symbols),
+                **result_callbacks,
                 )
             if failed_symbols:
                 raise RuntimeError(
@@ -594,13 +604,11 @@ def get_remaining_symbols(job, symbols):
     return [symbol for symbol in symbols if symbol not in completed_symbols]
 
 
+@transaction.atomic
 def initialize_symbol_progress(job_id, symbols):
-    job = CollectJob.objects.get(id=job_id)
+    job = CollectJob.objects.select_for_update().get(id=job_id)
     config = dict(job.config or {})
     remaining_symbols = get_remaining_symbols(job, symbols)
-
-    if REMAINING_SYMBOLS_KEY in config and COMPLETED_SYMBOLS_KEY not in config:
-        return remaining_symbols
 
     config.pop(COMPLETED_SYMBOLS_KEY, None)
     if remaining_symbols:
@@ -608,7 +616,16 @@ def initialize_symbol_progress(job_id, symbols):
     else:
         config.pop(REMAINING_SYMBOLS_KEY, None)
     job.config = config
-    job.save(update_fields=['config'])
+    result = dict(job.result or {})
+    result.setdefault('schema_version', 1)
+    result['summary'] = {
+        'total_symbols': len(set(symbols)),
+        'succeeded_symbols': len(set(symbols) - set(remaining_symbols)),
+        'failed_symbols': len(set(config.get(FAILED_SYMBOLS_KEY, [])) & set(remaining_symbols)),
+    }
+    job.result = result
+    job.message = result_message(result)
+    job.save(update_fields=['config', 'result', 'message'])
     return remaining_symbols
 
 
@@ -1292,6 +1309,8 @@ def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, star
             raise
         except Exception as e:
             logger.exception('Failed to collect %s for symbol %s', data_type_label, symbol)
+            if getattr(e, 'issue', None):
+                record_issue(job.id, e.issue)
             failed_symbols.append((symbol, str(e)))
             mark_symbol_failure(job.id, symbol)
             progress.failed('Failed collecting {}'.format(data_type_label), symbol)
@@ -1335,8 +1354,9 @@ def mark_symbol_failure(job_id, symbol):
     update_symbol_progress(job_id, failed_symbol=symbol)
 
 
+@transaction.atomic
 def update_symbol_progress(job_id, completed_symbol=None, failed_symbol=None):
-    job = CollectJob.objects.get(id=job_id)
+    job = CollectJob.objects.select_for_update().get(id=job_id)
     config = dict(job.config or {})
     all_symbols = build_config_symbols(config)
     remaining_symbols = unique_list(config.get(REMAINING_SYMBOLS_KEY, all_symbols))
@@ -1364,11 +1384,24 @@ def update_symbol_progress(job_id, completed_symbol=None, failed_symbol=None):
         config.pop(FAILED_SYMBOLS_KEY, None)
 
     job.config = config
-    job.save(update_fields=['config'])
+    result = dict(job.result or {})
+    result.setdefault('schema_version', 1)
+    total = result.get('summary', {}).get('total_symbols', len(all_symbols))
+    result['summary'] = {
+        'total_symbols': total,
+        'succeeded_symbols': max(0, total - len(set(remaining_symbols))),
+        'failed_symbols': len(set(failed_symbols)),
+    }
+    if completed_symbol:
+        result = resolve_symbol(result, completed_symbol, timezone.now().isoformat())
+    job.result = result
+    job.message = result_message(result)
+    job.save(update_fields=['config', 'result', 'message'])
 
 
+@transaction.atomic
 def clear_symbol_progress(job_id):
-    job = CollectJob.objects.get(id=job_id)
+    job = CollectJob.objects.select_for_update().get(id=job_id)
     config = dict(job.config or {})
     changed = False
     for key in (REMAINING_SYMBOLS_KEY, COMPLETED_SYMBOLS_KEY, FAILED_SYMBOLS_KEY):

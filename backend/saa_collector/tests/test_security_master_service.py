@@ -1,11 +1,16 @@
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from unittest import TestCase
 
 from saa_collector.services.common.security_master_service import SecurityMasterRefreshService
 
 
 class SecurityMasterRefreshServiceTest(TestCase):
+    def setUp(self):
+        config = patch('saa_collector.services.common.security_master_service.ConfigService')
+        config.start().return_value.get_db_config.return_value = {}
+        self.addCleanup(config.stop)
+
     def test_refresh_from_stocks_uses_existing_connection_and_keeps_it_open(self):
         connection = MagicMock()
         cursor = connection.cursor.return_value
@@ -22,8 +27,9 @@ class SecurityMasterRefreshServiceTest(TestCase):
         self.assertIn('s.delisting_date AS end_date', sql)
         self.assertIn("s.type = 'STOCK'", sql)
         self.assertIn("s.market = 'A'", sql)
-        self.assertIn("name = COALESCE(NULLIF(name, ''), VALUES(name))", sql)
-        self.assertIn("end_date = COALESCE(VALUES(end_date), end_date)", sql)
+        self.assertIn("name = COALESCE(NULLIF(saa_securities.name, ''), VALUES(name))", sql)
+        self.assertIn("start_date = COALESCE(VALUES(start_date), saa_securities.start_date)", sql)
+        self.assertIn("end_date = COALESCE(VALUES(end_date), saa_securities.end_date)", sql)
         connection.commit.assert_called_once()
         cursor.close.assert_called_once()
         connection.close.assert_not_called()

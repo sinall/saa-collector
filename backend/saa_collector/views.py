@@ -251,7 +251,7 @@ class CollectJobListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        jobs = CollectJob.objects.all()
+        jobs = CollectJob.objects.defer('result').all()
 
         data_type = request.query_params.get('data_type')
         if data_type:
@@ -279,7 +279,8 @@ class CollectJobDetailView(APIView):
                 'error': 'Job not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = CollectJobSerializer(job)
+        from .serializers import CollectJobDetailSerializer
+        serializer = CollectJobDetailSerializer(job)
         return Response({'success': True, 'data': serializer.data})
 
 
@@ -520,6 +521,10 @@ class StockDetailView(APIView):
 class TypeBrowseDataView(APIView):
     permission_classes = [IsAuthenticated]
 
+    STATEMENT_TABLES = {
+        'saa_raw_balance_sheet', 'saa_raw_income_statement', 'saa_raw_cash_flow_statement',
+    }
+
     TABLE_CONFIG = {
         'saa_stocks': {'date_column': None, 'order': 'symbol ASC'},
         'saa_securities': {'date_column': None, 'order': 'code ASC', 'search_column': 'code'},
@@ -567,8 +572,11 @@ class TypeBrowseDataView(APIView):
 
         date_column = config['date_column']
         order_clause = f"ORDER BY {config['order']}"
+        if table_name in self.STATEMENT_TABLES:
+            order_clause = 'ORDER BY t.symbol ASC, t.report_date DESC, t.disclosure_date DESC'
         search_column = config.get('search_column')
         join_column = config.get('join_column', 'symbol')
+        coverage = {}
 
         with connection.cursor() as cursor:
             where_clauses = []
@@ -625,6 +633,13 @@ class TypeBrowseDataView(APIView):
             rows = cursor.fetchall()
             results = [dict(zip(columns, row)) for row in rows]
 
+            if table_name in self.STATEMENT_TABLES:
+                cursor.execute(
+                    f"SELECT COUNT(DISTINCT t.symbol, t.report_date) FROM {table_name} t {where_clause}",
+                    params,
+                )
+                coverage = {'version_count': total, 'report_period_count': cursor.fetchone()[0]}
+
             for row in results:
                 for key, value in row.items():
                     if isinstance(value, date):
@@ -638,7 +653,8 @@ class TypeBrowseDataView(APIView):
                 'results': results,
                 'total': total,
                 'page': page,
-                'page_size': page_size
+                'page_size': page_size,
+                **coverage,
             }
         })
 
@@ -3133,6 +3149,8 @@ class StockDataView(APIView):
     }
 
     def get(self, request, symbol, table_name):
+        if table_name not in self.DATE_COLUMN_MAP:
+            return Response({'success': False, 'error': 'Invalid table name'}, status=400)
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 50))
         offset = (page - 1) * page_size
@@ -3140,6 +3158,10 @@ class StockDataView(APIView):
         date_column = self.DATE_COLUMN_MAP.get(table_name, 'date')
         stock_column = self.STOCK_COLUMN_MAP.get(table_name, 'symbol')
         order_clause = f"ORDER BY t.{date_column} DESC" if date_column else ""
+        is_statement = table_name in TypeBrowseDataView.STATEMENT_TABLES
+        if is_statement:
+            order_clause = 'ORDER BY t.report_date DESC, t.disclosure_date DESC'
+        coverage = {}
 
         with connection.cursor() as cursor:
             if table_name in self.NEEDS_STOCK_NAME:
@@ -3177,6 +3199,13 @@ class StockDataView(APIView):
             rows = cursor.fetchall()
             results = [dict(zip(columns, row)) for row in rows]
 
+            if is_statement:
+                cursor.execute(
+                    f"SELECT COUNT(DISTINCT report_date) FROM {table_name} WHERE {stock_column} = %s",
+                    [symbol],
+                )
+                coverage = {'version_count': total, 'report_period_count': cursor.fetchone()[0]}
+
             for row in results:
                 for key, value in row.items():
                     if isinstance(value, date):
@@ -3190,7 +3219,8 @@ class StockDataView(APIView):
                 'results': results,
                 'total': total,
                 'page': page,
-                'page_size': page_size
+                'page_size': page_size,
+                **coverage,
             }
         })
 

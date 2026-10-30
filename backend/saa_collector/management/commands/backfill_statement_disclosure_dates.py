@@ -186,6 +186,8 @@ def update_disclosure_dates(table, records):
     if not records:
         return 0
     with connection.cursor() as cursor:
+        from saa_collector.services.common.statement_legacy_guard import assert_legacy_write_allowed
+        assert_legacy_write_allowed(cursor, table)
         updated = 0
         for record in records:
             cursor.execute(

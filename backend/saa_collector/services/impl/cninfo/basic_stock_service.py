@@ -103,6 +103,8 @@ class BasicStockService(BasicService):
     def to_sql(self, rows, cnx, table, primary_keys):
         if len(rows) == 0:
             return
+        from saa_collector.services.common.statement_legacy_guard import guard_legacy_connection
+        guard_legacy_connection(cnx, table)
         fields = list(rows[0].keys())
         normal_fields = copy.deepcopy(fields)
         normal_fields = [k for k in normal_fields if k not in primary_keys]

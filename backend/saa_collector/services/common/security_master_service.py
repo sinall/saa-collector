@@ -37,9 +37,9 @@ class SecurityMasterRefreshService:
                   AND s.symbol IS NOT NULL
                 ON DUPLICATE KEY UPDATE
                     display_name = VALUES(display_name),
-                    name = COALESCE(NULLIF(name, ''), VALUES(name)),
-                    start_date = COALESCE(VALUES(start_date), start_date),
-                    end_date = COALESCE(VALUES(end_date), end_date),
+                    name = COALESCE(NULLIF(saa_securities.name, ''), VALUES(name)),
+                    start_date = COALESCE(VALUES(start_date), saa_securities.start_date),
+                    end_date = COALESCE(VALUES(end_date), saa_securities.end_date),
                     type = VALUES(type)
                 """
             )

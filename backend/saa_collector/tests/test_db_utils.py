@@ -5,6 +5,27 @@ from saa_collector.utils.db import DB
 
 
 class DBToSqlTest(TestCase):
+    def test_caller_owned_transaction_is_not_committed(self):
+        connection = MagicMock(in_transaction=True, autocommit=False)
+        DB().to_sql([{'symbol': 'A', 'value': 1}], connection, 'cache',
+                    ['symbol'], commit=False)
+        connection.commit.assert_not_called()
+        connection.rollback.assert_not_called()
+        connection.cursor.return_value.close.assert_called_once()
+
+    def test_caller_owned_mode_requires_an_explicit_transaction(self):
+        for active, autocommit in [(False, False), (True, True)]:
+            connection = MagicMock(in_transaction=active, autocommit=autocommit)
+            with self.assertRaises(ValueError):
+                DB().to_sql([{'symbol': 'A'}], connection, 'cache',
+                            ['symbol'], commit=False)
+            connection.cursor.assert_not_called()
+
+    def test_default_mode_still_commits(self):
+        connection = MagicMock()
+        DB().to_sql([{'symbol': 'A'}], connection, 'cache', ['symbol'])
+        connection.commit.assert_called_once()
+
     def test_to_sql_closes_prepared_cursor_after_success(self):
         connection = MagicMock()
         cursor = connection.cursor.return_value

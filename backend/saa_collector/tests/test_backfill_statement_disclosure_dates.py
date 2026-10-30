@@ -7,6 +7,17 @@ from django.test import SimpleTestCase
 
 
 class BackfillStatementDisclosureDatesCommandTest(SimpleTestCase):
+    @patch('saa_collector.management.commands.backfill_statement_disclosure_dates.connection')
+    def test_version_schema_refuses_report_period_date_update(self, connection):
+        from saa_collector.management.commands.backfill_statement_disclosure_dates import update_disclosure_dates
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchall.return_value = [('id',), ('symbol',), ('report_date',)]
+        with self.assertRaisesRegex(ValueError, 'version'):
+            update_disclosure_dates('saa_raw_income_statement', [
+                dict(symbol='000001', report_date=date(2023, 12, 31),
+                     disclosure_date=date(2024, 3, 15))])
+        self.assertFalse(any('UPDATE' in str(call) for call in cursor.execute.call_args_list))
+
     def call_command(self, *args):
         out = StringIO()
         call_command('backfill_statement_disclosure_dates', *args, stdout=out)

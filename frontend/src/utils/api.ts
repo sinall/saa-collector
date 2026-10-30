@@ -132,6 +132,22 @@ export interface CollectJob {
   start_time: string | null
   end_time: string | null
   message: string | null
+  result?: {
+    schema_version?: number
+    summary?: Record<string, number>
+    truncated?: boolean
+    issues?: Array<{
+      code: string
+      symbol?: string
+      provider?: string
+      table?: string
+      report_date?: string
+      disclosure_date?: string
+      occurrences?: number
+      resolved_at?: string | null
+      differences?: Record<string, unknown>
+    }>
+  }
   created_at: string
 }
 

@@ -14,6 +14,12 @@ class CollectJobSerializer(serializers.ModelSerializer):
             'message', 'created_at'
         ]
         read_only_fields = ['id', 'status', 'start_time', 'end_time', 'message', 'created_at']
+class CollectJobDetailSerializer(CollectJobSerializer):
+    class Meta(CollectJobSerializer.Meta):
+        fields = CollectJobSerializer.Meta.fields + ['result']
+        read_only_fields = CollectJobSerializer.Meta.read_only_fields + ['result']
+
+
 class CollectJobCreateSerializer(serializers.Serializer):
     symbols = serializers.ListField(
         child=serializers.CharField(max_length=20),

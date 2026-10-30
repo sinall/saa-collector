@@ -19,6 +19,7 @@ class CollectJob(models.Model):
     id = models.BigAutoField(primary_key=True)
     data_type = models.CharField('数据类型', max_length=50, choices=DATA_TYPE_CHOICES)
     config = models.JSONField('任务配置', default=dict)
+    result = models.JSONField('执行结果', default=dict, blank=True)
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
     start_time = models.DateTimeField('开始时间', null=True, blank=True)
     end_time = models.DateTimeField('结束时间', null=True, blank=True)

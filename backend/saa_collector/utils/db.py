@@ -4,15 +4,21 @@ import logging
 from datetime import datetime
 
 import pandas as pd
+from saa_collector.services.common.statement_legacy_guard import guard_legacy_connection
 
 
 class DB(object):
     def __init__(self):
         self._logger = logging.getLogger()
 
-    def to_sql(self, rows, con, table, primary_keys):
+    def to_sql(self, rows, con, table, primary_keys, *, commit=True):
+        # Atomic publishers must own an explicit transaction; never silently
+        # accept autocommit when they ask this helper not to commit.
+        if not commit and (con.autocommit or not con.in_transaction):
+            raise ValueError('commit=False requires an explicit caller-owned transaction')
         if len(rows) == 0:
             return
+        guard_legacy_connection(con, table)
         fields = list(rows[0].keys())
         normal_fields = copy.deepcopy(fields)
         if isinstance(primary_keys, str):
@@ -43,7 +49,8 @@ class DB(object):
                 except:
                     self._logger.info("Failed to save %s", stock_info)
                     raise
-            con.commit()
+            if commit:
+                con.commit()
         finally:
             cursor.close()
 
