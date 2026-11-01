@@ -40,6 +40,98 @@ from saa_collector.services.common.statement_locks import statement_locks
 @unittest.skipUnless(os.environ.get('PIT_MYSQL_DOCKER_TESTS') == '1',
                      'Requires explicit disposable MySQL opt-in')
 class IsolatedStatementMySQLTest(unittest.TestCase):
+    def test_derived_latest_lifecycle_preserves_history_and_rolls_back(self):
+        from saa_collector.services.common.statement_kind_migration import render_packet
+        table = 'saa_raw_income_statement'
+        packet = render_packet()
+        self.query(packet['01-version-kinds.sql'])
+        self.query(packet['02-latest-views.sql'])
+        row = dict.fromkeys(contract.financial_fields(table))
+        row.update(symbol='600036', report_date=date(2012, 12, 31),
+                   disclosure_date=date(2014, 3, 29), provider='tushare',
+                   version_type='RESTATED', source_metadata={'report_type': '4'}, net_profit=110)
+        derived = dict(row, version_type='LATEST', source_metadata=dict(
+            snapshot_origin='derived_latest', derived_from_type='RESTATED',
+            derived_from_hash=contract.content_hash(table, row)))
+        connection = self.connection()
+        connection.rollback()
+        connection.start_transaction()
+        write_versions(connection, table, [row, derived])
+        connection.commit()
+        before = self.query('SELECT id,version_type,net_profit FROM ' + table + ' ORDER BY id').stdout
+        real = dict(row, version_type='LATEST', disclosure_date=date(2013, 3, 29),
+                    source_metadata={'report_type': '1'}, net_profit=100)
+        connection.start_transaction()
+        result = write_versions(connection, table, [real])
+        self.assertEqual(len(result[0]['superseded_derived_latest']), 1)
+        connection.rollback()
+        self.assertEqual(before, self.query('SELECT id,version_type,net_profit FROM ' + table + ' ORDER BY id').stdout)
+        connection.start_transaction()
+        write_versions(connection, table, [real])
+        connection.commit()
+        self.assertEqual(self.query('SELECT net_profit FROM saa_latest_income_statement').stdout.strip(), '100.00')
+        self.assertEqual(self.query("SELECT net_profit FROM " + table + " WHERE version_type='RESTATED'").stdout.strip(), '110.00')
+        connection.start_transaction()
+        self.assertEqual(write_versions(connection, table, [derived])[0]['reason'], 'GENUINE_LATEST_EXISTS')
+        connection.commit()
+        self.assertEqual(self.query('SELECT COUNT(*) FROM ' + table).stdout.strip(), '2')
+        connection.close()
+
+    def test_genuine_latest_same_value_promotes_provenance_and_preserves_id(self):
+        from saa_collector.services.common.statement_kind_migration import render_packet
+        table = 'saa_raw_income_statement'
+        self.query(render_packet()['01-version-kinds.sql'])
+        row = dict.fromkeys(contract.financial_fields(table))
+        row.update(symbol='600036', report_date=date(2012, 12, 31),
+                   disclosure_date=date(2014, 3, 29), provider='tushare',
+                   version_type='LATEST', net_profit=110)
+        row['source_metadata'] = dict(snapshot_origin='derived_latest',
+            derived_from_type='RESTATED', derived_from_hash=contract.content_hash(table, row))
+        connection = self.connection()
+        connection.rollback()
+        connection.start_transaction()
+        first = write_versions(connection, table, [row])[0]
+        connection.commit()
+        connection.start_transaction()
+        real = dict(row, source_metadata={'report_type': '1'})
+        second = write_versions(connection, table, [real])[0]
+        connection.commit()
+        self.assertEqual(first['id'], second['id'])
+        self.assertTrue(second['updated'])
+        self.assertEqual(self.query("SELECT JSON_UNQUOTE(JSON_EXTRACT(source_metadata, '$.report_type')) FROM " + table).stdout.strip(), '1')
+        connection.close()
+
+    def test_version_kind_migration_and_typed_collection(self):
+        from saa_collector.services.common.statement_kind_migration import render_packet
+        from saa_collector.services.common.statement_version_writer import prepare_version
+        table = 'saa_raw_income_statement'
+        self.insert(table, 'net_profit', 100, '2013-03-29')
+        before = self.query('SELECT id,net_profit,content_hash FROM ' + table).stdout
+        packet = render_packet()
+        self.query(packet['01-version-kinds.sql'])
+        self.assertEqual(before, self.query('SELECT id,net_profit,content_hash FROM ' + table).stdout)
+        self.assertEqual(self.query('SELECT version_type FROM ' + table).stdout.strip(), 'LATEST')
+        self.query(packet['02-latest-views.sql'])
+        connection = self.connection()
+        connection.rollback()
+        row = dict.fromkeys(contract.financial_fields(table))
+        row.update(symbol='600036', report_date=date(2012, 12, 31),
+                   disclosure_date=date(2013, 3, 29), provider='tushare',
+                   source_metadata={'report_type': '5'}, version_type='ORIGINAL', net_profit=90)
+        adjusted = dict(row, version_type='RESTATED', net_profit=110,
+                        source_metadata={'report_type': '4'})
+        connection.start_transaction()
+        result = write_versions(connection, table, [row, adjusted])
+        connection.commit()
+        self.assertTrue(all(r['created'] for r in result))
+        self.assertEqual(self.query('SELECT COUNT(*) FROM ' + table).stdout.strip(), '3')
+        self.assertEqual(self.query('SELECT net_profit FROM saa_latest_income_statement').stdout.strip(), '100.00')
+        connection.start_transaction()
+        self.assertTrue(all(not r['created'] for r in write_versions(connection, table, [row, adjusted])))
+        connection.commit()
+        self.assertEqual(prepare_version(table, row)['content_hash'], contract.content_hash(table, row))
+        self.assertNotEqual(self.query("UPDATE {} SET version_type='INVALID'".format(table), False).returncode, 0)
+
     def test_inplace_receipt_rejects_new_versions_and_rolls_back_bad_backfill(self):
         from saa_collector.services.common.statement_inplace_migration import (
             backfill_legacy_inplace, verify_inplace,

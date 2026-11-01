@@ -38,8 +38,12 @@ def save_version_bundle(db_config, bundle):
             'Financial version bundle committed: tables=%d rows=%d created=%d',
             len(result), sum(len(rows) for rows in result.values()),
             sum(row['created'] for rows in result.values() for row in rows))
-        for rows in result.values():
+        for table, rows in result.items():
             for row in rows:
+                if row.get('superseded_derived_latest'):
+                    logging.getLogger(__name__).warning(
+                        'Derived latest snapshots superseded: table=%s replacement_id=%s rows=%s',
+                        table, row['id'], json.dumps(row['superseded_derived_latest'], sort_keys=True))
                 if row.get('updated'):
                     logging.getLogger(__name__).warning(
                         'Financial same-day replacement committed: %s',

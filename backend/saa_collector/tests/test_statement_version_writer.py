@@ -60,6 +60,48 @@ class StatementVersionWriterTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare_version(self.table, row)
 
+    def typed_connection(self, latest):
+        connection, cursor = self.connection()
+        indexes = list(cursor.fetchall.return_value)
+        indexes.append({'Key_name': 'uq_disclosure', 'Non_unique': 0,
+                        'Seq_in_index': 4, 'Column_name': 'version_type', 'Sub_part': None})
+        cursor.fetchall.side_effect = [indexes, latest]
+        return connection, cursor
+
+    def derived(self):
+        row = dict(self.row(), version_type='LATEST')
+        row['source_metadata'] = dict(snapshot_origin='derived_latest',
+            derived_from_type='RESTATED', derived_from_hash=contract.content_hash(self.table, row))
+        return row
+
+    def test_derived_latest_never_overwrites_stored_genuine_latest(self):
+        stored = dict(prepare_version(self.table, dict(self.row(), version_type='LATEST')), id=4)
+        connection, cursor = self.typed_connection([stored])
+        result = write_versions(connection, self.table, [self.derived()])
+        self.assertEqual(result[0]['reason'], 'GENUINE_LATEST_EXISTS')
+        self.assertFalse(any('INSERT' in c.args[0] or 'DELETE' in c.args[0]
+                             for c in cursor.execute.call_args_list))
+
+    def test_genuine_latest_retires_newer_derived_snapshot(self):
+        derived = dict(prepare_version(self.table, self.derived()), id=4)
+        derived['disclosure_date'] = date(2014, 3, 29)
+        connection, cursor = self.typed_connection([derived])
+        result = write_versions(connection, self.table, [dict(self.row(), version_type='LATEST')])
+        self.assertEqual(result[0]['superseded_derived_latest'][0]['id'], 4)
+        deletions = [c for c in cursor.execute.call_args_list if c.args[0].startswith('DELETE')]
+        self.assertEqual(len(deletions), 1)
+        self.assertIn("version_type='LATEST'", deletions[0].args[0])
+        connection.commit.assert_not_called()
+
+    def test_older_derived_snapshot_does_not_replace_newer_stored_one(self):
+        existing = dict(prepare_version(self.table, self.derived()), id=4)
+        existing['disclosure_date'] = date(2014, 3, 29)
+        connection, cursor = self.typed_connection([existing])
+        result = write_versions(connection, self.table, [self.derived()])
+        self.assertEqual(result[0]['reason'], 'NEWER_DERIVED_LATEST_EXISTS')
+        self.assertFalse(any(c.args[0].startswith(('INSERT', 'DELETE'))
+                             for c in cursor.execute.call_args_list))
+
     def test_omitted_field_does_not_inherit_or_query_older_values(self):
         connection, cursor = self.connection()
         row = self.row()

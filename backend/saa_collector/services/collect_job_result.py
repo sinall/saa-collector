@@ -5,7 +5,7 @@ import json
 
 
 ISSUE_FIELDS = {'code', 'provider', 'symbol', 'table', 'report_date',
-                'disclosure_date', 'differences', 'action'}
+                'disclosure_date', 'version_type', 'differences', 'action'}
 
 
 def _encoded(value):

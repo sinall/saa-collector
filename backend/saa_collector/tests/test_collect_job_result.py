@@ -4,6 +4,18 @@ from saa_collector.services.collect_job_result import merge_issue, resolve_symbo
 
 
 class CollectJobResultTest(TestCase):
+    def test_version_types_are_preserved_as_distinct_conflicts(self):
+        result = {}
+        for kind in ('LATEST', 'ORIGINAL', 'RESTATED'):
+            issue = dict(code='STATEMENT_VERSION_CONFLICT', symbol='600036',
+                         version_type=kind)
+            result = merge_issue(result, issue, 'now')
+            result = merge_issue(result, issue, 'later')
+        self.assertEqual(result['issue_count'], 3)
+        self.assertEqual([item['version_type'] for item in result['issues']],
+                         ['LATEST', 'ORIGINAL', 'RESTATED'])
+        self.assertEqual([item['occurrences'] for item in result['issues']], [2, 2, 2])
+
     def test_duplicate_retries_and_resolution_preserve_evidence(self):
         issue = {'code': 'SOURCE_FAILURE', 'symbol': '600036'}
         first = merge_issue({}, issue, '2026-10-31T00:00:00Z')

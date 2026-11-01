@@ -28,6 +28,29 @@ class TushareStatementVersionsTest(TestCase):
     def convert(self, rows):
         return tushare_snapshots(TABLE, rows, self.mapping)
 
+    def test_confirmed_absence_derives_latest_without_relabelling_history(self):
+        rows = [dict(self.raw, report_type='5'),
+                dict(self.raw, report_type='4', net_profit=200)]
+        out = tushare_snapshots(TABLE, rows, self.mapping, latest_query_complete=True)
+        self.assertEqual(len(out), 3)
+        latest = next(r for r in out if r['version_type'] == 'LATEST')
+        self.assertEqual(latest['net_profit'], Decimal('200.00'))
+        self.assertEqual(latest['source_metadata']['derived_from_type'], 'RESTATED')
+        self.assertEqual(latest['source_metadata']['snapshot_origin'], 'derived_latest')
+        self.assertNotIn('report_type', latest['source_metadata'])
+        self.assertEqual(rows[1]['report_type'], '4')
+
+    def test_incomplete_query_does_not_derive_latest(self):
+        out = self.convert([dict(self.raw, report_type='4')])
+        self.assertEqual([r['version_type'] for r in out], ['RESTATED'])
+
+    def test_real_latest_wins_even_if_historical_disclosure_is_newer(self):
+        out = tushare_snapshots(TABLE, [self.raw, dict(self.raw, report_type='4',
+            f_ann_date='20250328', net_profit=200)], self.mapping, latest_query_complete=True)
+        latest = [r for r in out if r['version_type'] == 'LATEST']
+        self.assertEqual(len(latest), 1)
+        self.assertEqual(latest[0]['source_metadata']['report_type'], '1')
+
     def test_original_and_revision_both_survive_and_are_ordered(self):
         original = dict(self.raw, report_type='5')
         revision = dict(self.raw, report_type='4', f_ann_date='20250328', net_profit=130)
@@ -66,22 +89,26 @@ class TushareStatementVersionsTest(TestCase):
             self.convert([dict(self.raw, update_flag='1'),
                           dict(self.raw, update_flag='1', net_profit=999)])
 
-    def test_report_type_priority_is_order_independent_and_keeps_whole_snapshot(self):
+    def test_report_types_coexist_independent_of_order(self):
         latest = dict(self.raw, report_type='1', update_flag='0', net_profit=None)
         adjusted = dict(self.raw, report_type='4', update_flag='1', net_profit=200)
         original = dict(self.raw, report_type='5', update_flag='1', net_profit=300)
         for records in permutations([latest, adjusted, original]):
             with self.subTest(order=[r['report_type'] for r in records]):
-                row = self.convert(records)[0]
+                rows = {r['version_type']: r for r in self.convert(records)}
+                self.assertEqual(set(rows), {'LATEST', 'RESTATED', 'ORIGINAL'})
+                row = rows['LATEST']
                 self.assertIsNone(row['net_profit'])
                 self.assertEqual(row['source_metadata']['report_type'], '1')
                 self.assertEqual(row['source_metadata']['update_flag'], '0')
 
-    def test_adjusted_precedes_original_when_latest_is_absent(self):
+    def test_adjusted_does_not_replace_original_when_latest_is_absent(self):
         adjusted = dict(self.raw, report_type='4', update_flag='0', net_profit=200)
         original = dict(self.raw, report_type='5', update_flag='1', net_profit=300)
         for records in ([adjusted, original], [original, adjusted]):
-            row = self.convert(records)[0]
+            rows = self.convert(records)
+            self.assertEqual(len(rows), 2)
+            row = next(r for r in rows if r['version_type'] == 'RESTATED')
             self.assertEqual(row['net_profit'], Decimal('200.00'))
             self.assertEqual(row['source_metadata']['report_type'], '4')
 
@@ -90,7 +117,9 @@ class TushareStatementVersionsTest(TestCase):
                    dict(self.raw, report_type='1', update_flag='1', net_profit=20),
                    dict(self.raw, report_type='4', update_flag='1', net_profit=30)]
         for ordered in permutations(records):
-            self.assertEqual(self.convert(ordered)[0]['net_profit'], Decimal('20.00'))
+            rows = {r['version_type']: r for r in self.convert(ordered)}
+            self.assertEqual(rows['LATEST']['net_profit'], Decimal('20.00'))
+            self.assertEqual(rows['RESTATED']['net_profit'], Decimal('30.00'))
 
     def test_same_rank_adjusted_sign_conflict_is_still_rejected(self):
         records = [dict(self.raw, report_type='4', update_flag='1', net_profit=value)
@@ -106,13 +135,12 @@ class TushareStatementVersionsTest(TestCase):
         rows = self.convert(records)
         self.assertEqual([r['net_profit'] for r in rows], list(map(Decimal, ('10', '20', '30'))))
 
-    def test_lower_priority_resolution_is_logged_without_financial_values(self):
-        with self.assertLogs('saa_collector.services.common.statement_source_adapter', level='INFO') as logs:
-            self.convert([self.raw, dict(self.raw, report_type='4', net_profit=987654321)])
-        output = '\n'.join(logs.output)
-        self.assertIn('selected_report_type=1', output)
-        self.assertIn('600036', output)
-        self.assertNotIn('987654321', output)
+    def test_source_dates_preserved_even_when_latest_content_has_older_f_ann_date(self):
+        raw = dict(self.raw, ann_date='20250329', f_ann_date='20240329')
+        row = self.convert([raw])[0]
+        self.assertEqual(row['version_type'], 'LATEST')
+        self.assertEqual(row['source_metadata']['ann_date'], '20250329')
+        self.assertEqual(row['source_metadata']['f_ann_date'], '20240329')
 
     def test_nan_disclosure_falls_back_but_bad_date_does_not(self):
         rows = self.convert([dict(self.raw, f_ann_date=float('nan'))])
@@ -230,13 +258,48 @@ class TushareVersionServiceTest(TestCase):
         return service
 
     def test_query_requests_each_consolidated_version_type_without_period_dedup(self):
+        from saa_collector.services.common.statement_source_adapter import CompleteStatementHistory
         service = self.service()
         service.pro.query.side_effect = [pd.DataFrame([dict(ts_code='600036.SH',
             end_date='20231231', f_ann_date=day, report_type=kind, update_flag='1')])
             for day, kind in [('20240329', '1'), ('20250328', '4'), ('20240329', '5')]]
         rows = service.query_record('income', '600036', fields='ts_code,end_date')
         self.assertEqual(len(rows), 3)
+        self.assertIsInstance(rows, CompleteStatementHistory)
         self.assertEqual([c.kwargs['report_type'] for c in service.pro.query.call_args_list], ['1', '4', '5'])
+
+    def test_partial_type_query_does_not_certify_latest_absence(self):
+        from saa_collector.services.common.statement_source_adapter import CompleteStatementHistory
+        service = self.service()
+        service.pro.query.return_value = pd.DataFrame([dict(ts_code='600036.SH', report_type='4')])
+        self.assertNotIsInstance(service.query_record('income', '600036', report_type='4'),
+                                 CompleteStatementHistory)
+
+    def test_failed_historical_query_cannot_certify_empty_latest(self):
+        service = self.service()
+        service.pro.query.side_effect = [pd.DataFrame(), RuntimeError('upstream unavailable')]
+        with self.assertRaisesRegex(RuntimeError, 'upstream unavailable'):
+            service.query_record('income', '600036')
+
+    def test_announcement_date_slice_cannot_certify_latest_absence(self):
+        from saa_collector.services.common.statement_source_adapter import CompleteStatementHistory
+        for params in ({'start_date': '20240101'}, {'end_date': '20241231'}):
+            service = self.service()
+            service.pro.query.side_effect = [pd.DataFrame(), pd.DataFrame([
+                dict(ts_code='600036.SH', report_type='4')]), pd.DataFrame()]
+            with self.subTest(params=params):
+                self.assertNotIsInstance(service.query_record('income', '600036', **params),
+                                         CompleteStatementHistory)
+
+    def test_transform_derives_only_from_completed_query(self):
+        from saa_collector.services.common.statement_source_adapter import CompleteStatementHistory
+        service = self.service()
+        fixture = TushareStatementVersionsTest()
+        fixture.setUp()
+        service.config_service.get_table_config.return_value = fixture.mapping
+        raw = [dict(fixture.raw, report_type='4')]
+        self.assertEqual(len(service.transform_records(raw, TABLE)), 1)
+        self.assertEqual(len(service.transform_records(CompleteStatementHistory(raw), TABLE)), 2)
 
     def test_version_request_failure_is_not_converted_into_successful_empty_result(self):
         service = self.service()
@@ -277,6 +340,35 @@ class TushareVersionServiceTest(TestCase):
         with patch('saa_collector.services.impl.tushare.statement_service.ProgressLogger'):
             with self.assertRaisesRegex(RuntimeError, '600036'):
                 service.produce(['600036'])
+
+    def test_typed_conflict_is_recorded_and_next_symbol_is_processed(self):
+        from saa_collector.services.collect_job_result import merge_issue
+        from saa_collector.services.common.statement_version_writer import (
+            StatementVersionConflict, conflict_issue,
+        )
+        row = dict.fromkeys(financial_fields(TABLE), None)
+        row.update(symbol='600036', provider='tushare', version_type='LATEST',
+                   report_date=date(2023, 12, 31), disclosure_date=date(2024, 3, 29),
+                   net_profit=Decimal('100'))
+        issue = conflict_issue(TABLE, row, dict(row, net_profit=Decimal('200')))
+        service = self.service()
+        service._produce_one = MagicMock(side_effect=[
+            StatementVersionConflict('conflict', issue=issue), None])
+        result = {}
+
+        def record(payload):
+            nonlocal result
+            result = merge_issue(result, payload, 'now')
+
+        failed, success = MagicMock(), MagicMock()
+        with patch('saa_collector.services.impl.tushare.statement_service.ProgressLogger'):
+            service.produce(['600036', '600000'], on_symbol_issue=record,
+                            on_symbol_failure=failed, on_symbol_success=success)
+        failed.assert_called_once_with('600036')
+        success.assert_called_once_with('600000')
+        self.assertEqual(service._produce_one.call_count, 2)
+        self.assertEqual(result['issues'][0]['version_type'], 'LATEST')
+        self.assertEqual(result['issues'][0]['differences'], issue['differences'])
 
     def test_produce_failure_callback_remains_owner_of_job_failure(self):
         service = self.service()

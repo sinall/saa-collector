@@ -92,6 +92,12 @@ def combined_view_cutover_sql(show_create):
     Existing DEFINER, ALGORITHM and SQL SECURITY are retained verbatim. Capture
     and verify session charset/collation and grants separately before execution.
     """
+    header, body = view_definition_parts(show_create, 'saa_financial_statements_combined')
+    return header + latest_combined_definition(body)
+
+
+def view_definition_parts(show_create, expected_name):
+    """Preserve SHOW CREATE privileges and separate the SELECT body."""
     statements = sqlparse.parse(show_create)
     if len(statements) != 1 or statements[0].get_type() != 'CREATE':
         raise ValueError('Expected one SHOW CREATE VIEW statement')
@@ -106,14 +112,14 @@ def combined_view_cutover_sql(show_create):
     name = significant[views[0] + 1][1]
     as_index, as_token = significant[views[0] + 2]
     if (not isinstance(name, Identifier)
-            or name.get_real_name() != 'saa_financial_statements_combined'
+            or name.get_real_name() != expected_name
             or name.get_parent_name() not in (None, 'saa')
             or as_token.ttype not in Keyword or as_token.normalized != 'AS'):
-        raise ValueError('Unexpected combined view identity or definition')
+        raise ValueError('Unexpected view identity or definition')
     header = ''.join(token.value for token in tokens[:as_index + 1])
     body = ''.join(token.value for token in tokens[as_index + 1:])
     header = re.sub(r'\bCREATE\b', 'CREATE OR REPLACE', header, count=1, flags=re.IGNORECASE)
-    return header + latest_combined_definition(body)
+    return header, body
 
 
 def latest_combined_definition(definition):

@@ -11,7 +11,7 @@ from saa_collector.services.common.statement_ingestion import (
     save_version_bundle, version_ingestion_enabled,
 )
 from saa_collector.services.common.statement_source_adapter import (
-    TUSHARE_RESOURCES, TUSHARE_REPORT_TYPES, tushare_snapshots,
+    TUSHARE_RESOURCES, TUSHARE_REPORT_TYPES, tushare_snapshots, CompleteStatementHistory,
 )
 from .basic_stock_service import BasicStockService
 
@@ -229,7 +229,8 @@ class StatementServiceImpl(StatementService, BasicStockService):
     def transform_records(self, raw_records, table):
         if table in TUSHARE_RESOURCES and version_ingestion_enabled(self.config):
             return tushare_snapshots(
-                table, raw_records, self.config_service.get_table_config(table))
+                table, raw_records, self.config_service.get_table_config(table),
+                latest_query_complete=isinstance(raw_records, CompleteStatementHistory))
         if table not in self.RAW_STATEMENT_TABLES:
             return super().transform_records(raw_records, table)
 
@@ -289,7 +290,11 @@ class StatementServiceImpl(StatementService, BasicStockService):
                     raise ValueError('Financial source pagination exceeded safety limit')
             if not records:
                 raise ValueError('No financial versions returned for ' + symbol)
-            return records
+            # An announcement-date slice may omit an older genuine LATEST for
+            # a period whose revision is returned. It cannot prove absence.
+            complete = (requested is None and not kwargs.get('start_date')
+                        and not kwargs.get('end_date'))
+            return CompleteStatementHistory(records) if complete else records
         df = self.pro.query(sub_resource, ts_code=self.to_code(symbol), **kwargs)
         df = df.loc[:, ~df.columns.duplicated()].copy()
         if {'ts_code', 'end_date', 'update_flag'}.issubset(df.columns):

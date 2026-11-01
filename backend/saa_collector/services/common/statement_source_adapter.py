@@ -7,7 +7,6 @@ they are never inherited from another disclosure or provider.
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 import re
-import logging
 
 import pandas as pd
 
@@ -21,10 +20,7 @@ TUSHARE_RESOURCES = {
     'saa_raw_cash_flow_statement': 'cashflow',
 }
 TUSHARE_REPORT_TYPES = ('1', '4', '5')
-# Daily projection policy: latest consolidated, adjusted comparative, pre-adjustment.
-# This is not a chronology across disclosure dates, nor an upstream tie-break guarantee.
-TUSHARE_REPORT_PRIORITY = {'1': 0, '4': 1, '5': 2}
-logger = logging.getLogger(__name__)
+TUSHARE_VERSION_TYPES = {'1': 'LATEST', '4': 'RESTATED', '5': 'ORIGINAL'}
 # Existing XLS coverage, not a blanket policy for newly missing fields.
 TUSHARE_UNMAPPED = {
     'saa_raw_balance_sheet': frozenset({
@@ -51,7 +47,11 @@ def disclosure_date(value):
     raise ValueError('Missing or invalid source date')
 
 
-def tushare_snapshots(table, raw_records, mapping):
+class CompleteStatementHistory(list):
+    """Returned only after all three type queries and their pages succeeded."""
+
+
+def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=False):
     endpoint = TUSHARE_RESOURCES[table]
     fields = financial_fields(table)
     selected = mapping[mapping['Field'].isin(fields)]
@@ -80,9 +80,13 @@ def tushare_snapshots(table, raw_records, mapping):
         if _missing(published) or published == '':
             published = raw.get('ann_date')
         row = dict(symbol=code[:6], report_date=period,
+                   version_type=TUSHARE_VERSION_TYPES[report_type],
                    disclosure_date=disclosure_date(published), provider='tushare',
                    source_metadata=dict(upstream='tushare', endpoint=endpoint,
                                         report_type=report_type))
+        for name in ('ann_date', 'f_ann_date'):
+            if not _missing(raw.get(name)) and raw[name] != '':
+                row['source_metadata'][name] = disclosure_date(raw[name]).strftime('%Y%m%d')
         if not _missing(raw.get('update_flag')):
             row['source_metadata']['update_flag'] = str(raw['update_flag'])
         omitted = sorted(field for field, config in configs.items()
@@ -116,17 +120,14 @@ def tushare_snapshots(table, raw_records, mapping):
             except InvalidOperation as exc:
                 raise ValueError('Invalid source financial value: ' + field) from exc
         prepare_version(table, row)
-        key = (row['symbol'], row['report_date'], row['disclosure_date'])
+        key = (row['symbol'], row['report_date'], row['disclosure_date'], row['version_type'])
         versions.setdefault(key, []).append(row)
 
     result = []
     for key in sorted(versions):
         candidates = versions[key]
-        best_type = min((row['source_metadata']['report_type'] for row in candidates),
-                        key=TUSHARE_REPORT_PRIORITY.__getitem__)
-        typed = [row for row in candidates if row['source_metadata']['report_type'] == best_type]
-        updated = [row for row in typed if row['source_metadata'].get('update_flag') == '1']
-        eligible = updated or typed
+        updated = [row for row in candidates if row['source_metadata'].get('update_flag') == '1']
+        eligible = updated or candidates
         row = eligible[0]
         conflicting = next((other for other in eligible
                             if content_hash(table, other) != content_hash(table, row)), None)
@@ -136,11 +137,23 @@ def tushare_snapshots(table, raw_records, mapping):
                 'Same-day source content conflict: table={} key={} fields={}'.format(
                     table, key, ','.join(changed)),
                 issue=conflict_issue(table, row, conflicting))
-        if len(typed) < len(candidates):
-            logger.info('Resolved same-day statement candidates: table=%s key=%s '
-                        'selected_report_type=%s update_flag=%s discarded_types=%s',
-                        table, key, best_type, row['source_metadata'].get('update_flag'),
-                        sorted({r['source_metadata']['report_type'] for r in candidates
-                                if r['source_metadata']['report_type'] != best_type}))
         result.append(row)
+    if latest_query_complete:
+        by_period = {}
+        for row in result:
+            by_period.setdefault((row['symbol'], row['report_date']), []).append(row)
+        for rows in by_period.values():
+            if any(row['version_type'] == 'LATEST' for row in rows):
+                continue
+            source = max(rows, key=lambda row: (
+                row['disclosure_date'], row['version_type'] == 'RESTATED'))
+            metadata = dict(source['source_metadata'])
+            for key in ('report_type', 'update_flag'):
+                metadata.pop(key, None)
+            metadata.update(snapshot_origin='derived_latest',
+                            derived_from_type=source['version_type'],
+                            derived_from_hash=content_hash(table, source))
+            derived = dict(source, version_type='LATEST', source_metadata=metadata)
+            prepare_version(table, derived)
+            result.append(derived)
     return result

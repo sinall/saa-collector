@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 _FIELDS = json.loads(Path(__file__).with_name('financial_statement_fields.json').read_text())
+VERSION_TYPES = frozenset({'LATEST', 'ORIGINAL', 'RESTATED'})
 
 
 def financial_fields(table):
@@ -76,7 +77,7 @@ def content_hash(table, row):
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
-def latest_view_sql(table, legacy_columns):
+def latest_view_sql(table, legacy_columns, *, versioned=False):
     """Render a read-only projection; does not connect or execute SQL.
 
     The migration caller supplies the verified legacy column order. Applying
@@ -96,7 +97,9 @@ def latest_view_sql(table, legacy_columns):
     return (
         'CREATE VIEW `{view}` AS SELECT {selected} FROM `{table}` r '
         'JOIN (SELECT symbol, report_date, MAX(disclosure_date) AS disclosure_date '
-        'FROM `{table}` GROUP BY symbol, report_date) latest '
+        'FROM `{table}` {filter}GROUP BY symbol, report_date) latest '
         'ON r.symbol = latest.symbol AND r.report_date = latest.report_date '
-        'AND r.disclosure_date = latest.disclosure_date'
-    ).format(view=view, selected=selected, table=table)
+        'AND r.disclosure_date = latest.disclosure_date{outer_filter}'
+    ).format(view=view, selected=selected, table=table,
+             filter="WHERE version_type = 'LATEST' " if versioned else '',
+             outer_filter=" WHERE r.version_type = 'LATEST'" if versioned else '')

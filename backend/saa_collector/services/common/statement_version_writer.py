@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from mysql.connector import IntegrityError
 
-from .financial_statement_contract import content_hash, disclosure_identity, financial_fields
+from .financial_statement_contract import content_hash, disclosure_identity, financial_fields, VERSION_TYPES
 
 
 class StatementVersionConflict(ValueError):
@@ -41,6 +41,7 @@ def conflict_issue(table, row, previous, *, existing=False):
             entry['candidates'].sort(key=lambda item: json.dumps(item, sort_keys=True))
         differences[field] = entry
     return dict(code='STATEMENT_VERSION_CONFLICT', provider=row['provider'],
+                version_type=row.get('version_type'),
                 symbol=row['symbol'], table=table,
                 report_date=row['report_date'].isoformat(),
                 disclosure_date=row['disclosure_date'].isoformat(),
@@ -50,10 +51,12 @@ def conflict_issue(table, row, previous, *, existing=False):
 def prepare_version(table, row):
     fields = financial_fields(table)
     allowed = set(fields) | {'symbol', 'report_date', 'disclosure_date',
-                             'provider', 'source_metadata'}
+                             'provider', 'source_metadata', 'version_type'}
     if set(row) - allowed:
         raise ValueError('Unexpected fields in financial snapshot')
     symbol, report_date, disclosure_date = disclosure_identity(row)
+    if 'version_type' in row and row['version_type'] not in VERSION_TYPES:
+        raise ValueError('Invalid financial version_type')
     if not re.fullmatch(r'[A-Za-z0-9]{1,8}', symbol) or disclosure_date < report_date:
         raise ValueError('Invalid normalized disclosure identity')
     provider = row.get('provider')
@@ -61,11 +64,20 @@ def prepare_version(table, row):
         raise ValueError('Invalid provider identifier')
     metadata = row.get('source_metadata')
     if metadata is not None:
-        keys = {'upstream', 'endpoint', 'report_type', 'client_version', 'update_flag', 'omitted_fields'}
+        keys = {'upstream', 'endpoint', 'report_type', 'client_version', 'update_flag',
+                'omitted_fields', 'ann_date', 'f_ann_date', 'migration_origin',
+                'snapshot_origin', 'derived_from_type', 'derived_from_hash'}
         if (not isinstance(metadata, dict) or set(metadata) - keys
                 or any(not isinstance(value, str) or not value.strip() or len(value) > 256
                        for key, value in metadata.items() if key != 'omitted_fields')):
             raise ValueError('Invalid source metadata; only bounded provenance fields are allowed')
+        if 'snapshot_origin' in metadata:
+            if (metadata['snapshot_origin'] != 'derived_latest'
+                    or row.get('version_type') != 'LATEST'
+                    or metadata.get('derived_from_type') not in {'ORIGINAL', 'RESTATED'}
+                    or metadata.get('derived_from_hash') != content_hash(table, row)
+                    or 'report_type' in metadata or 'update_flag' in metadata):
+                raise ValueError('Invalid derived latest provenance')
         omitted = metadata.get('omitted_fields', [])
         if (not isinstance(omitted, list) or len(omitted) > len(fields)
                 or any(not isinstance(field, str) or field not in fields for field in omitted)
@@ -76,11 +88,13 @@ def prepare_version(table, row):
     fingerprint = content_hash(table, row)
     result = dict(symbol=symbol, report_date=report_date, disclosure_date=disclosure_date,
                   provider=provider, source_metadata=metadata, content_hash=fingerprint)
+    if 'version_type' in row:
+        result['version_type'] = row['version_type']
     result.update((field, None if row[field] is None else Decimal(str(row[field]))) for field in fields)
     return result
 
 
-def _check_unique_keys(cursor, table):
+def _check_unique_keys(cursor, table, *, versioned=False):
     # Both constraints are required; retaining the old key would lose revisions.
     cursor.execute('SHOW INDEX FROM `{}`'.format(table))
     unique = {}
@@ -92,9 +106,45 @@ def _check_unique_keys(cursor, table):
                 (index['Seq_in_index'], index['Column_name']))
     keys = {name: tuple(field for _, field in sorted(parts)) for name, parts in unique.items()}
     expected = ('symbol', 'report_date', 'disclosure_date')
+    if versioned:
+        expected += ('version_type',)
     if (keys.get('PRIMARY') != ('id',) or expected not in keys.values()
             or any(key not in {('id',), expected} for key in keys.values())):
         raise ValueError('Financial table has not passed the daily-version key migration')
+
+
+def _is_derived(row):
+    metadata = row.get('source_metadata') or {}
+    if isinstance(metadata, str):
+        metadata = json.loads(metadata)
+    return metadata.get('snapshot_origin') == 'derived_latest'
+
+
+def _latest_precedence(cursor, table, row):
+    """Lock the period; retire only superseded synthetic latest projections."""
+    cursor.execute(
+        'SELECT id,disclosure_date,source_metadata,content_hash FROM `{}` '
+        "WHERE symbol=%s AND report_date=%s AND version_type='LATEST' FOR UPDATE".format(table),
+        (row['symbol'], row['report_date']))
+    existing = cursor.fetchall()
+    if _is_derived(row):
+        genuine = [old for old in existing if not _is_derived(old)]
+        if genuine:
+            newest = max(genuine, key=lambda old: old['disclosure_date'])
+            return dict(id=newest['id'], created=False, reason='GENUINE_LATEST_EXISTS'), []
+        newer = [old for old in existing if old['disclosure_date'] > row['disclosure_date']]
+        if newer:
+            newest = max(newer, key=lambda old: old['disclosure_date'])
+            return dict(id=newest['id'], created=False, reason='NEWER_DERIVED_LATEST_EXISTS'), []
+    retired = []
+    for old in existing:
+        if not _is_derived(old) or old['disclosure_date'] == row['disclosure_date']:
+            continue
+        cursor.execute('DELETE FROM `{}` WHERE id=%s AND version_type=\'LATEST\' '
+                       'AND content_hash=%s'.format(table), (old['id'], old['content_hash']))
+        retired.append(dict(id=old['id'], disclosure_date=old['disclosure_date'].isoformat(),
+                            content_hash=old['content_hash'], source_metadata=old['source_metadata']))
+    return None, retired
 
 
 def write_versions(connection, table, rows):
@@ -105,24 +155,44 @@ def write_versions(connection, table, rows):
     as unconditional updates. Retry the complete transaction where appropriate.
     """
     prepared = sorted([prepare_version(table, row) for row in rows],
-                      key=lambda row: (row['symbol'], row['report_date'], row['disclosure_date']))
+                      key=lambda row: (row['symbol'], row['report_date'], row['disclosure_date'],
+                                       row.get('version_type', '')))
     if not connection.in_transaction or connection.autocommit:
         raise ValueError('Version writes require an explicit caller-owned transaction')
     if not prepared:
         return []
+    versioned = 'version_type' in prepared[0]
+    if any(('version_type' in row) != versioned for row in prepared):
+        raise ValueError('Cannot mix legacy and typed financial identities')
+    identity_columns = ('symbol', 'report_date', 'disclosure_date')
+    if versioned:
+        identity_columns += ('version_type',)
     fields = financial_fields(table)
     columns = tuple(prepared[0])
     insert_sql = 'INSERT INTO `{}` ({}) VALUES ({})'.format(
         table, ','.join('`{}`'.format(column) for column in columns),
         ','.join(['%s'] * len(columns)))
-    select_sql = ('SELECT id,content_hash,{} FROM `{}` WHERE symbol=%s '
-                  'AND report_date=%s AND disclosure_date=%s FOR UPDATE').format(
-                      ','.join('`{}`'.format(field) for field in fields), table)
+    select_sql = ('SELECT id,content_hash,source_metadata,{} FROM `{}` WHERE symbol=%s '
+                  'AND report_date=%s AND disclosure_date=%s{} FOR UPDATE').format(
+                      ','.join('`{}`'.format(field) for field in fields), table,
+                      ' AND version_type=%s' if versioned else '')
     cursor = connection.cursor(dictionary=True)
     result = []
     try:
-        _check_unique_keys(cursor, table)
+        _check_unique_keys(cursor, table, versioned=versioned)
         for row in prepared:
+            retired = []
+            if row.get('version_type') == 'LATEST':
+                skipped, retired = _latest_precedence(cursor, table, row)
+                if skipped:
+                    result.append(skipped)
+                    continue
+
+            def record(entry):
+                if retired:
+                    entry['superseded_derived_latest'] = retired
+                result.append(entry)
+
             try:
                 cursor.execute(insert_sql, tuple(row[column] for column in columns))
             except IntegrityError as exc:
@@ -130,7 +200,7 @@ def write_versions(connection, table, rows):
                     raise
                 # A locking current read also sees a concurrent insert that just
                 # committed, even under MySQL's repeatable-read isolation.
-                identity = tuple(row[key] for key in ('symbol', 'report_date', 'disclosure_date'))
+                identity = tuple(row[key] for key in identity_columns)
                 cursor.execute(select_sql, identity)
                 existing = cursor.fetchone()
                 if existing is None:
@@ -138,11 +208,13 @@ def write_versions(connection, table, rows):
                 actual_hash = content_hash(table, existing)
                 if existing['content_hash'] != actual_hash:
                     raise StatementVersionConflict('Stored financial content hash mismatch') from exc
-                if actual_hash != row['content_hash']:
+                if (actual_hash != row['content_hash']
+                        or (_is_derived(existing) and not _is_derived(row))):
                     metadata = json.loads(row['source_metadata'] or '{}')
                     # The adapter resolves same-response candidates. update_flag
                     # is not permission to replace a previously stored snapshot.
-                    if row['provider'] == 'tushare' and metadata.get('report_type') in {'1', '4', '5'}:
+                    if ((row['provider'] == 'tushare' and metadata.get('report_type') in {'1', '4', '5'})
+                            or (_is_derived(row) and _is_derived(existing))):
                         audit = conflict_issue(table, row, existing, existing=True)
                         audit.update(code='STATEMENT_VERSION_REPLACED', action='REPLACE_SAME_DAY',
                                      previous_hash=actual_hash, content_hash=row['content_hash'])
@@ -151,15 +223,15 @@ def write_versions(connection, table, rows):
                             'UPDATE `{}` SET {} WHERE id=%s AND content_hash=%s'.format(
                                 table, ','.join('`{}`=%s'.format(field) for field in mutable)),
                             tuple(row[field] for field in mutable) + (existing['id'], actual_hash))
-                        result.append({'id': existing['id'], 'created': False,
+                        record({'id': existing['id'], 'created': False,
                                        'updated': True, 'audit': audit})
                         continue
                     raise StatementVersionConflict(
-                        '{} {} {} {} has conflicting content'.format(table, *identity),
+                        '{} {} has conflicting content'.format(table, identity),
                         issue=conflict_issue(table, row, existing, existing=True)) from exc
-                result.append({'id': existing['id'], 'created': False})
+                record({'id': existing['id'], 'created': False})
             else:
-                result.append({'id': cursor.lastrowid, 'created': True})
+                record({'id': cursor.lastrowid, 'created': True})
         return result
     finally:
         cursor.close()
