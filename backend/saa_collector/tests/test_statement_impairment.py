@@ -128,11 +128,15 @@ class ImpairmentContractTest(TestCase):
         rows[0]['total_opcost'] = None
         mapping = pd.read_excel(Path(__file__).parents[1] / 'config/table-config.xls',
                                 sheet_name='saa_raw_income_statement')
-        with self.assertRaises(UnresolvedImpairment) as caught:
-            tushare_snapshots('saa_raw_income_statement', rows, mapping, normalize_signs=True)
-        result = merge_issue({}, caught.exception.issue, '2026-11-02')
+        from saa_collector.services.common.statement_source_adapter import statement_field_issues
+        converted = tushare_snapshots('saa_raw_income_statement', rows, mapping, normalize_signs=True)
+        self.assertIsNone(converted[0]['asset_impairment_loss'])
+        self.assertEqual(converted[0]['source_metadata']['impairment_warning'],
+                         'Missing impairment reconciliation anchors')
+        result = merge_issue({}, statement_field_issues('saa_raw_income_statement', converted[0])[0], '2026-11-02')
         self.assertEqual(result['issue_count'], 1)
-        self.assertEqual(result['issues'][0]['code'], 'STATEMENT_SIGN_UNRESOLVED')
+        self.assertEqual(result['issues'][0]['code'], 'STATEMENT_FIELD_NULLIFIED')
+        self.assertEqual(result['issues'][0]['action'], 'STORE_NULL_CONTINUE')
 
     def test_real_financial_arbitration_and_unresolved_history(self):
         from saa_collector.services.common.statement_source_adapter import tushare_snapshots
@@ -150,5 +154,8 @@ class ImpairmentContractTest(TestCase):
             self.assertTrue(arbitrated)
             self.assertTrue(all(r['source_metadata']['comp_type'] == expected for r in arbitrated))
         missing = [r for r in raw if r['end_date'] == '20060630']
-        with self.assertRaises(UnresolvedImpairment):
-            tushare_snapshots('saa_raw_income_statement', missing, mapping, normalize_signs=True)
+        rows = tushare_snapshots('saa_raw_income_statement', missing, mapping, normalize_signs=True)
+        self.assertTrue(any(r['source_metadata'].get('impairment_warning') for r in rows))
+        for row in rows:
+            if row['source_metadata'].get('impairment_warning'):
+                self.assertIsNone(row['asset_impairment_loss'])

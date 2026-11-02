@@ -46,7 +46,7 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column prop="status_display" label="状态" width="100">
+        <el-table-column prop="status_display" label="状态" width="150">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">{{ row.status_display }}</el-tag>
           </template>
@@ -61,7 +61,7 @@
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="viewPlan(row.id)">查看</el-button>
-            <el-dropdown trigger="click" style="vertical-align: middle; margin-left: 8px;" v-if="row.status === 'PENDING' || row.status === 'QUEUED' || row.status === 'RUNNING' || row.status === 'STOPPED' || row.status === 'COMPLETED' || row.status === 'FAILED'">
+            <el-dropdown trigger="click" style="vertical-align: middle; margin-left: 8px;" v-if="row.status === 'PENDING' || row.status === 'QUEUED' || row.status === 'RUNNING' || row.status === 'STOPPED' || row.status === 'COMPLETED' || row.status === 'FAILED' || row.status === 'DEGRADED'">
               <el-button link type="info">
                 <el-icon><More /></el-icon>
               </el-button>
@@ -71,8 +71,8 @@
                   <el-dropdown-item v-if="row.status === 'PENDING'" @click="executePlan(row)">执行</el-dropdown-item>
                   <el-dropdown-item v-if="row.status === 'QUEUED' || row.status === 'RUNNING'" @click="stopPlan(row)">停止</el-dropdown-item>
                   <el-dropdown-item v-if="row.status === 'STOPPED'" @click="continuePlan(row)">继续</el-dropdown-item>
-                  <el-dropdown-item v-if="row.status === 'STOPPED' || row.status === 'FAILED' || row.status === 'COMPLETED'" @click="resetPlan(row)">重置</el-dropdown-item>
-                  <el-dropdown-item v-if="row.status === 'COMPLETED' || row.status === 'FAILED'" @click="executePlan(row)">重新执行</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'STOPPED' || row.status === 'FAILED' || row.status === 'COMPLETED' || row.status === 'DEGRADED'" @click="resetPlan(row)">重置</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 'COMPLETED' || row.status === 'FAILED' || row.status === 'DEGRADED'" @click="executePlan(row)">重新执行</el-dropdown-item>
                   <el-dropdown-item v-if="row.status === 'PENDING'" divided @click="deletePlan(row.id)">删除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -280,7 +280,7 @@ interface DisplayPlan {
 
 const getSuccessJobs = (plan: CollectPlan): number => {
   if (!plan.jobs) return 0
-  return plan.jobs.filter(j => j.status === 'SUCCESS').length
+  return plan.jobs.filter(j => j.status === 'SUCCESS' || j.status === 'DEGRADED').length
 }
 
 const displayPlans = computed<DisplayPlan[]>(() => {
@@ -357,6 +357,7 @@ const getStatusType = (status: string) => {
     'RUNNING': 'warning',
     'STOPPED': 'danger',
     'COMPLETED': 'success',
+    'DEGRADED': 'warning',
     'FAILED': 'danger'
   }
   return types[status] || 'info'

@@ -1,7 +1,7 @@
 """Pure financial source normalization; no requests, connections or writes.
 
 The frozen XLS mapping defines field coverage. Missing mapped response columns
-are errors, not NULL. The explicitly listed unmapped fields remain unsupported;
+become NULL with evidence. The explicitly listed unmapped fields remain unsupported;
 they are never inherited from another disclosure or provider.
 """
 from datetime import date, datetime
@@ -14,7 +14,7 @@ import pandas as pd
 from .financial_statement_contract import content_hash, financial_fields, financial_scale
 from .statement_version_writer import prepare_version, StatementVersionConflict, conflict_issue
 from .statement_impairment import normalize_impairment, UnresolvedImpairment, EVIDENCE_FIELDS
-from .statement_arbitration import arbitrate_candidates
+from .statement_arbitration import arbitrate_candidates, select_numeric_equivalent
 
 
 TUSHARE_RESOURCES = {
@@ -52,6 +52,26 @@ def disclosure_date(value):
 
 class CompleteStatementHistory(list):
     """Returned only after all three type queries and their pages succeeded."""
+
+
+def statement_field_issues(table, row):
+    """Build bounded job diagnostics from a committed row's provenance."""
+    metadata = row.get('source_metadata') or {}
+    issues = []
+    common = dict(provider=row['provider'], symbol=row['symbol'], table=table,
+                  report_date=row['report_date'].isoformat(),
+                  disclosure_date=row['disclosure_date'].isoformat(),
+                  version_type=row['version_type'], action='STORE_NULL_CONTINUE')
+    missing = json.loads(metadata.get('missing_source_fields', '{}'))
+    if missing:
+        issues.append(dict(common, code='STATEMENT_SOURCE_FIELDS_MISSING', differences={
+            field: dict(source_field=source, stored_value=None, reason='missing_source_column')
+            for field, source in missing.items()}))
+    if metadata.get('impairment_warning'):
+        issues.append(dict(common, code='STATEMENT_FIELD_NULLIFIED', differences={
+            'asset_impairment_loss': dict(source_value=metadata['impairment_source_value'],
+                                          stored_value=None, reason=metadata['impairment_warning'])}))
+    return issues
 
 
 def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=False,
@@ -100,6 +120,7 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                          if _missing(config.get('TushareField')) or config.get('TushareField') == '')
         if omitted:
             row['source_metadata']['omitted_fields'] = omitted
+        missing_fields = {}
         for field, config in configs.items():
             source = config.get('TushareField')
             if _missing(source) or source == '':
@@ -107,7 +128,9 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                 continue
             source = source.strip()
             if source not in raw:
-                raise ValueError('Missing source field: ' + source)
+                row[field] = None
+                missing_fields[field] = source
+                continue
             value = raw[source]
             if _missing(value):
                 row[field] = None
@@ -126,6 +149,8 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                     row[field] = number.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
             except InvalidOperation as exc:
                 raise ValueError('Invalid source financial value: ' + field) from exc
+        if missing_fields:
+            row['source_metadata']['missing_source_fields'] = json.dumps(missing_fields, sort_keys=True)
         prepare_version(table, row)
         key = (row['symbol'], row['report_date'], row['disclosure_date'], row['version_type'])
         versions.setdefault(key, []).append(row)
@@ -155,12 +180,11 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                 try:
                     effect, evidence = normalize_impairment(raw)
                 except UnresolvedImpairment as exc:
-                    exc.issue = dict(code='STATEMENT_SIGN_UNRESOLVED', provider='tushare',
-                        symbol=candidate['symbol'], table=table,
-                        report_date=candidate['report_date'].isoformat(),
-                        disclosure_date=candidate['disclosure_date'].isoformat(),
-                        version_type=candidate['version_type'], action='REJECT_SYMBOL_BATCH')
-                    raise
+                    effect = None
+                    evidence = dict(normalization_rule='impairment_unverified_null_v1',
+                                    impairment_source_field='assets_impair_loss',
+                                    impairment_source_value=str(raw.get('assets_impair_loss')),
+                                    impairment_cost_basis='unknown', impairment_warning=str(exc))
                 candidate['asset_impairment_loss'] = effect
                 metadata = candidate['source_metadata']
                 metadata.update(evidence)
@@ -175,6 +199,12 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
         row = eligible[0]
         conflicting = next((other for other in eligible
                             if content_hash(table, other) != content_hash(table, row)), None)
+        if conflicting is not None:
+            selected = select_numeric_equivalent(eligible, fields)
+            if selected is not None:
+                row = selected
+                prepare_version(table, row)
+                conflicting = None
         if conflicting is not None:
             changed = [field for field in fields if conflicting[field] != row[field]]
             raise StatementVersionConflict(

@@ -34,13 +34,13 @@
               :loading="continuing"
             >继续</el-button>
             <el-button
-              v-if="plan?.status === 'STOPPED' || plan?.status === 'FAILED' || plan?.status === 'COMPLETED'"
+              v-if="plan?.status === 'STOPPED' || plan?.status === 'FAILED' || plan?.status === 'COMPLETED' || plan?.status === 'DEGRADED'"
               @click="resetPlan"
               :loading="resetting"
             >重置</el-button>
             <el-button 
               type="primary" 
-              v-if="plan?.status === 'COMPLETED' || plan?.status === 'FAILED'"
+              v-if="plan?.status === 'COMPLETED' || plan?.status === 'FAILED' || plan?.status === 'DEGRADED'"
               @click="reExecutePlan"
               :loading="executing"
             >重新执行</el-button>
@@ -101,7 +101,7 @@
             {{ getJobEndDateDisplay(row) }}
           </template>
         </el-table-column>
-        <el-table-column prop="status_display" label="状态" width="100">
+        <el-table-column prop="status_display" label="状态" width="150">
           <template #default="{ row }">
             <el-tag :type="getJobStatusType(row.status)">{{ row.status_display }}</el-tag>
           </template>
@@ -312,6 +312,7 @@ const getStatusType = (status: string) => {
     'RUNNING': 'warning',
     'STOPPED': 'danger',
     'COMPLETED': 'success',
+    'DEGRADED': 'warning',
     'FAILED': 'danger'
   }
   return types[status] || 'info'
@@ -323,6 +324,7 @@ const getJobStatusType = (status: string) => {
     'RUNNING': 'warning',
     'STOPPED': 'danger',
     'SUCCESS': 'success',
+    'DEGRADED': 'warning',
     'FAILED': 'danger'
   }
   return types[status] || 'info'

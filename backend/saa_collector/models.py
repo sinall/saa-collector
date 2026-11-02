@@ -11,6 +11,7 @@ class CollectJob(models.Model):
         ('RUNNING', '执行中'),
         ('STOPPED', '已停止'),
         ('SUCCESS', '成功'),
+        ('DEGRADED', '完成，部分降级'),
         ('FAILED', '失败'),
     ]
 
@@ -42,7 +43,8 @@ class CollectJob(models.Model):
         self.save(update_fields=['status', 'start_time'])
 
     def complete(self, success=True, message=None):
-        self.status = 'SUCCESS' if success else 'FAILED'
+        from .services.collect_job_result import has_open_quality_issues
+        self.status = ('DEGRADED' if has_open_quality_issues(self.result) else 'SUCCESS') if success else 'FAILED'
         self.end_time = timezone.now()
         update_fields = ['status', 'end_time']
         if message:
@@ -141,6 +143,7 @@ class CollectPlan(models.Model):
         ('RUNNING', '执行中'),
         ('STOPPED', '已停止'),
         ('COMPLETED', '已完成'),
+        ('DEGRADED', '完成，部分降级'),
         ('FAILED', '失败'),
     ]
 
@@ -183,6 +186,13 @@ class CollectPlan(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.get_status_display()}"
+
+    def finished_status(self):
+        if self.jobs.filter(status='FAILED').exists():
+            return 'FAILED'
+        if self.jobs.filter(status='DEGRADED').exists():
+            return 'DEGRADED'
+        return 'COMPLETED'
 
 
 class CollectSchedule(models.Model):

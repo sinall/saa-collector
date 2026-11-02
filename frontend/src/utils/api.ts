@@ -831,7 +831,7 @@ export const fetchStocksMock = async (params?: {
 export interface CollectPlan {
   id: number
   name: string
-  status: 'QUEUED' | 'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'FAILED'
+  status: 'QUEUED' | 'PENDING' | 'RUNNING' | 'STOPPED' | 'COMPLETED' | 'DEGRADED' | 'FAILED'
   status_display: string
   source: 'MANUAL' | 'INTEGRITY' | 'SCHEDULE'
   source_display: string

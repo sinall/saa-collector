@@ -1,4 +1,5 @@
 from datetime import date
+import json
 from decimal import Decimal
 from itertools import permutations
 from unittest import TestCase
@@ -70,10 +71,60 @@ class TushareStatementVersionsTest(TestCase):
         self.assertEqual({v['value'] for v in issue['differences']['net_profit']['candidates']},
                          {'100.00', '123.45'})
 
-    def test_missing_mapped_field_is_not_implicit_null(self):
+    def test_small_symmetric_difference_selects_whole_row_stably_with_audit(self):
+        candidates = [dict(self.raw, net_profit=100, total_profit=104),
+                      dict(self.raw, net_profit=104, total_profit=100)]
+        expected = self.convert(candidates)
+        self.assertEqual(expected, self.convert(list(reversed(candidates))))
+        row = expected[0]
+        self.assertIn((row['net_profit'], row['total_profit']), [(100, 104), (104, 100)])
+        audit = json.loads(row['source_metadata']['numeric_tolerance_audit'])
+        self.assertEqual(audit['threshold'], '0.05')
+        self.assertEqual(len(audit['candidates']), 2)
+        from saa_collector.services.common.statement_version_writer import prepare_version
+        prepare_version(TABLE, row)
+
+    def test_symmetric_tolerance_boundary_and_negative_values(self):
+        for a, b in [(97.5, 102.5), (-97.5, -102.5), (100, 105)]:
+            with self.subTest(a=a, b=b):
+                self.assertEqual(len(self.convert([dict(self.raw, net_profit=a),
+                                                  dict(self.raw, net_profit=b)])), 1)
+        for a, b in [(97.49, 102.5), (100, 105.2), (-100, 100), (0, 0.01), (None, 100)]:
+            with self.subTest(a=a, b=b), self.assertRaisesRegex(ValueError, 'conflict'):
+                self.convert([dict(self.raw, net_profit=a), dict(self.raw, net_profit=b)])
+
+    def test_tolerance_compares_all_pairs_not_only_middle_candidate(self):
+        for candidates in permutations([dict(self.raw, net_profit=n) for n in (100, 104, 108)]):
+            with self.assertRaisesRegex(ValueError, 'conflict'):
+                self.convert(list(candidates))
+
+    def test_zero_and_rounding_follow_existing_field_precision(self):
+        rows = self.convert([dict(self.raw, net_profit='0.001'), dict(self.raw, net_profit='-0.001')])
+        self.assertEqual(rows[0]['net_profit'], 0)
+        self.assertNotIn('numeric_tolerance_audit', rows[0]['source_metadata'])
+
+    def test_one_large_field_difference_rejects_entire_candidate(self):
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            self.convert([dict(self.raw, net_profit=100, total_profit=100),
+                          dict(self.raw, net_profit=104, total_profit=120)])
+
+    def test_tolerance_does_not_override_source_priority(self):
+        rows = self.convert([dict(self.raw, net_profit=100, update_flag='0'),
+                             dict(self.raw, net_profit=104, update_flag='1')])
+        self.assertEqual(rows[0]['net_profit'], 104)
+        self.assertNotIn('numeric_tolerance_audit', rows[0]['source_metadata'])
+
+    def test_large_audit_is_rejected_not_truncated(self):
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            self.convert([dict(self.raw, net_profit=Decimal(100) + Decimal(i) / 100)
+                          for i in range(100)])
+
+    def test_missing_mapped_field_is_explicit_null_with_evidence(self):
         del self.raw['net_profit']
-        with self.assertRaisesRegex(ValueError, 'Missing source field'):
-            self.convert([self.raw])
+        row = self.convert([self.raw])[0]
+        self.assertIsNone(row['net_profit'])
+        self.assertEqual(json.loads(row['source_metadata']['missing_source_fields']),
+                         {'net_profit': 'net_profit'})
 
     def test_same_day_updated_snapshot_wins_independent_of_order(self):
         old = dict(self.raw, update_flag='0')
@@ -381,6 +432,60 @@ class TushareVersionServiceTest(TestCase):
         failed.assert_called_once_with('600036')
         success.assert_not_called()
         after.assert_called_once_with('600036')
+
+    def test_null_warning_survives_success_and_does_not_leak_to_next_symbol(self):
+        from saa_collector.services.collect_job_result import merge_issue, resolve_symbol
+        service = self.service()
+        issue = dict(code='STATEMENT_FIELD_NULLIFIED', symbol='600036',
+                     action='STORE_NULL_CONTINUE', differences={'asset_impairment_loss':
+                     {'source_value': '123', 'stored_value': None, 'reason': 'missing anchors'}})
+        result = {}
+        events = []
+
+        def produce(symbol, start_date):
+            if symbol == '600036':
+                service._committed_field_issues = [issue]
+
+        def success(symbol):
+            nonlocal result
+            events.append(('success', symbol))
+            result = resolve_symbol(result, symbol, 'now')
+
+        def record(payload):
+            nonlocal result
+            events.append(('warning', payload['symbol']))
+            result = merge_issue(result, payload, 'now')
+
+        service._produce_one = produce
+        failed = MagicMock()
+        with patch('saa_collector.services.impl.tushare.statement_service.ProgressLogger'):
+            service.produce(['600036', '600000'], on_symbol_issue=record,
+                            on_symbol_success=success, on_symbol_failure=failed)
+        failed.assert_not_called()
+        self.assertEqual(events, [('success', '600036'), ('warning', '600036'), ('success', '600000')])
+        self.assertIsNone(result['issues'][0]['resolved_at'])
+        self.assertEqual(result['issues'][0]['occurrences'], 1)
+
+    def test_field_warning_only_emitted_after_bundle_commit(self):
+        service = self.service()
+        fixture = TushareStatementVersionsTest()
+        fixture.setUp()
+        del fixture.raw['net_profit']
+        converted = fixture.convert([fixture.raw])
+        service.query_record = MagicMock(return_value=[])
+        service.build_fields = MagicMock(return_value='')
+        service.transform_records = MagicMock(return_value=converted)
+        service.collect_dividend = MagicMock()
+        service._committed_field_issues = []
+        with patch('saa_collector.services.impl.tushare.statement_service.save_version_bundle',
+                   side_effect=RuntimeError('rollback')):
+            with self.assertRaisesRegex(RuntimeError, 'rollback'):
+                service._collect_one('600036')
+        self.assertEqual(service._committed_field_issues, [])
+        with patch('saa_collector.services.impl.tushare.statement_service.save_version_bundle'):
+            service._collect_one('600036')
+        self.assertTrue(service._committed_field_issues)
+        self.assertEqual(service._committed_field_issues[0]['code'], 'STATEMENT_SOURCE_FIELDS_MISSING')
 
     def test_issue_persistence_failure_is_not_swallowed(self):
         service = self.service()

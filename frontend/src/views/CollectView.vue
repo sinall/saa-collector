@@ -24,7 +24,7 @@
         
         <el-table :data="jobs" stripe v-loading="loadingJobs">
           <el-table-column prop="data_type_display" label="数据类型" width="120" />
-          <el-table-column prop="status_display" label="状态" width="100">
+          <el-table-column prop="status_display" label="状态" width="150">
             <template #default="{ row }">
               <el-tag :type="getStatusType(row.status)">{{ row.status_display }}</el-tag>
             </template>
@@ -189,6 +189,7 @@ const getStatusType = (status: string): string => {
     'PENDING': 'info',
     'RUNNING': 'warning',
     'SUCCESS': 'success',
+    'DEGRADED': 'warning',
     'FAILED': 'danger',
   }
   return types[status] || 'info'

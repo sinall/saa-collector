@@ -86,7 +86,7 @@ def execute_plan(plan_id, task_id=None):
             plan.jobs.count(),
         )
 
-        jobs = list(plan.jobs.exclude(status='SUCCESS'))
+        jobs = list(plan.jobs.exclude(status__in=('SUCCESS', 'DEGRADED')))
 
         if plan.execution_mode == 'PARALLEL':
             threads = []
@@ -107,10 +107,8 @@ def execute_plan(plan_id, task_id=None):
         if plan.status == 'STOPPED':
             logger.info('Collect plan %s stopped before finalization', plan.id)
             return
-        if plan.jobs.filter(status='FAILED').exists():
-            plan.status = 'FAILED'
-        else:
-            plan.status = 'COMPLETED'
+        plan.status = plan.finished_status()
+        if plan.status != 'FAILED':
             update_report_items(plan)
             invalidate_heatmap_cache()
         plan.completed_at = timezone.now()
@@ -163,7 +161,7 @@ def execute_job(job_id, task_id=None, plan_id=None):
         refresh_django_db_connections('before marking job success')
         job = CollectJob.objects.get(id=job_id)
         job.complete(success=True, message=result_message(job.result) or '执行完成')
-        logger.info('Finished collect job: status=SUCCESS')
+        logger.info('Finished collect job: status=%s', job.status)
     except PlanExecutionStopped:
         logger.info('Collect job %s stopped', job_id)
         try:
@@ -440,7 +438,6 @@ def execute_collect(job):
             remaining_symbols = initialize_symbol_progress(job.id, symbols)
             if not remaining_symbols:
                 logger.info('Skipping financial statements collect: all %d symbols completed', len(symbols))
-                clear_symbol_progress(job.id)
                 return
 
             failed_symbols = []
@@ -611,10 +608,7 @@ def initialize_symbol_progress(job_id, symbols):
     remaining_symbols = get_remaining_symbols(job, symbols)
 
     config.pop(COMPLETED_SYMBOLS_KEY, None)
-    if remaining_symbols:
-        config[REMAINING_SYMBOLS_KEY] = remaining_symbols
-    else:
-        config.pop(REMAINING_SYMBOLS_KEY, None)
+    config[REMAINING_SYMBOLS_KEY] = remaining_symbols
     job.config = config
     result = dict(job.result or {})
     result.setdefault('schema_version', 1)
@@ -1289,7 +1283,6 @@ def execute_resumable_symbol_loop(job, symbols, collect_symbol, label=None, star
     remaining_symbols = initialize_symbol_progress(job.id, symbols)
     if not remaining_symbols:
         logger.info('Skipping %s collect: all %d symbols completed', data_type_label, len(symbols))
-        clear_symbol_progress(job.id)
         return
 
     failed_symbols = []
@@ -1373,10 +1366,8 @@ def update_symbol_progress(job_id, completed_symbol=None, failed_symbol=None):
             failed_symbols.append(failed_symbol)
 
     config.pop(COMPLETED_SYMBOLS_KEY, None)
-    if remaining_symbols:
-        config[REMAINING_SYMBOLS_KEY] = remaining_symbols
-    else:
-        config.pop(REMAINING_SYMBOLS_KEY, None)
+    # Empty means completed; a missing key means progress has not been initialized.
+    config[REMAINING_SYMBOLS_KEY] = remaining_symbols
 
     if failed_symbols:
         config[FAILED_SYMBOLS_KEY] = failed_symbols

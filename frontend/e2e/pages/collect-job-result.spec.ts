@@ -1,5 +1,33 @@
 import { test, expect } from '@playwright/test'
 
+test('degraded plan and job expose unresolved field evidence', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'isolated-test'))
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    let payload: unknown = { success: true, data: [] }
+    if (path.endsWith('/data-types/')) payload = { data_types: [], groups: [] }
+    if (path.endsWith('/collect-plans/8/')) payload = { success: true, data: {
+      id: 8, name: '字段降级验证', status: 'DEGRADED', status_display: '完成，部分降级', jobs: [
+        { id: 8, status: 'DEGRADED', status_display: '完成，部分降级', data_type_display: '财报' },
+      ],
+    } }
+    if (path.endsWith('/collect/jobs/8/')) payload = { success: true, data: { id: 8, result: {
+      schema_version: 1, issues: [{ symbol: '688709', code: 'STATEMENT_FIELD_NULLIFIED',
+        action: 'STORE_NULL_CONTINUE', report_date: '2023-03-31', resolved_at: null,
+        differences: { asset_impairment_loss: { source_value: '-383456.26', stored_value: null,
+          reason: 'Missing impairment reconciliation anchors' } },
+      }],
+    } } }
+    await route.fulfill({ json: payload })
+  })
+  await page.goto('/admin/collector/collect-plans/8')
+  await expect(page.getByText('完成，部分降级').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '重新执行' })).toBeVisible()
+  await page.getByRole('button', { name: '查看执行结果' }).click()
+  await page.getByText('688709').click()
+  await expect(page.getByText('-383456.26', { exact: false })).toBeVisible()
+})
+
 test('job details load structured conflicts on demand', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('token', 'isolated-test'))
   let detailRequests = 0

@@ -2492,7 +2492,7 @@ class CollectPlanContinueView(APIView):
                 'error': '只能继续已停止的计划'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        resume_jobs = plan.jobs.exclude(status='SUCCESS')
+        resume_jobs = plan.jobs.exclude(status__in=('SUCCESS', 'DEGRADED'))
         dispatch_plan(plan, jobs_queryset=resume_jobs)
         plan.refresh_from_db()
         return Response({'success': True, 'data': CollectPlanSerializer(plan).data})
@@ -2535,10 +2535,8 @@ class CollectPlanResetView(APIView):
                     self._execute_job(job.id)
 
             plan.refresh_from_db()
-            if plan.jobs.filter(status='FAILED').exists():
-                plan.status = 'FAILED'
-            else:
-                plan.status = 'COMPLETED'
+            plan.status = plan.finished_status()
+            if plan.status != 'FAILED':
                 self._update_report_items(plan)
                 from .services.heatmap_cache import invalidate_heatmap_cache
                 invalidate_heatmap_cache()
@@ -3387,21 +3385,20 @@ class CollectScheduleTriggerView(APIView):
             plan.started_at = timezone.now()
             plan.save()
 
-            all_success = True
             for job in plan.jobs.all():
                 try:
                     job.start()
                     self._execute_collect(job)
+                    job.refresh_from_db()
                     job.complete(success=True, message='执行完成')
                 except Exception as e:
                     logger.exception(f"Job {job.id} failed: {e}")
                     job.complete(success=False, message=str(e))
-                    all_success = False
 
-            plan.status = 'COMPLETED' if all_success else 'FAILED'
+            plan.status = plan.finished_status()
             plan.completed_at = timezone.now()
             plan.save()
-            if plan.status == 'COMPLETED':
+            if plan.status in ('COMPLETED', 'DEGRADED'):
                 from .services.heatmap_cache import invalidate_heatmap_cache
                 invalidate_heatmap_cache()
         except Exception as e:

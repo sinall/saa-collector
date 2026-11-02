@@ -12,6 +12,7 @@ from saa_collector.services.common.statement_ingestion import (
 )
 from saa_collector.services.common.statement_source_adapter import (
     TUSHARE_RESOURCES, TUSHARE_REPORT_TYPES, tushare_snapshots, CompleteStatementHistory,
+    statement_field_issues,
 )
 from saa_collector.services.common.statement_impairment import EVIDENCE_FIELDS
 from .basic_stock_service import BasicStockService
@@ -46,6 +47,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
             display_total_items=progress_total_symbols,
         )
         for symbol in symbols:
+            self._committed_field_issues = []
             try:
                 self._produce_one(symbol, start_date)
                 progress.finished('Finished producing statement', symbol)
@@ -64,6 +66,12 @@ class StatementServiceImpl(StatementService, BasicStockService):
                 if on_symbol_success:
                     on_symbol_success(symbol)
             finally:
+                # Emit after success callbacks so unresolved field warnings are
+                # not marked resolved merely because the security was collected.
+                for issue in self._committed_field_issues:
+                    self._logger.warning('Financial field stored as NULL: %s', issue)
+                    if on_symbol_issue:
+                        on_symbol_issue(issue)
                 if after_symbol:
                     after_symbol(symbol)
         if (failed_symbols and not on_symbol_failure
@@ -386,6 +394,8 @@ class StatementServiceImpl(StatementService, BasicStockService):
                     start_date=self.build_date_param(start_date))
                 bundle[table] = self.transform_records(raw, table)
             save_version_bundle(self.db_config, bundle)
+            self._committed_field_issues = [issue for table, rows in bundle.items()
+                                            for row in rows for issue in statement_field_issues(table, row)]
             self.collect_dividend(symbol, start_date, progress_enabled=False)
             return
         self.collect_balance_sheet(symbol, start_date, progress_enabled=False)

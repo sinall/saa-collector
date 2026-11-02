@@ -34,7 +34,7 @@ def dispatch_plan(plan, jobs_queryset=None):
 
 
 def reset_plan_for_dispatch(plan):
-    if plan.status in ('COMPLETED', 'FAILED', 'STOPPED'):
+    if plan.status in ('COMPLETED', 'DEGRADED', 'FAILED', 'STOPPED'):
         plan.status = 'PENDING'
         plan.started_at = None
         plan.completed_at = None

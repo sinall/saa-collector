@@ -70,10 +70,12 @@ def prepare_version(table, row):
                 'comp_type', 'normalization_rule', 'impairment_source_field',
                 'impairment_source_value', 'impairment_credit_effect',
                 'impairment_cost_basis', 'normalization_candidates',
-                'impairment_evidence', 'arbitration_rule'}
+                'impairment_evidence', 'arbitration_rule', 'numeric_tolerance_audit',
+                'impairment_warning', 'missing_source_fields'}
         if (not isinstance(metadata, dict) or set(metadata) - keys
                 or any(not isinstance(value, str) or not value.strip() or len(value) >
-                       (4096 if key in {'normalization_candidates', 'impairment_evidence'} else 256)
+                       (4096 if key in {'normalization_candidates', 'impairment_evidence',
+                                       'numeric_tolerance_audit', 'missing_source_fields'} else 256)
                        for key, value in metadata.items() if key != 'omitted_fields')):
             raise ValueError('Invalid source metadata; only bounded provenance fields are allowed')
         if 'snapshot_origin' in metadata:
@@ -240,7 +242,8 @@ def write_versions(connection, table, rows):
                     existing_metadata = json.loads(existing_metadata)
                 if (row['provider'] == 'tushare'
                         and existing.get('provider') == 'tushare'
-                        and incoming_metadata.get('normalization_rule')
+                        and any(incoming_metadata.get(key) for key in
+                                ('normalization_rule', 'missing_source_fields', 'numeric_tolerance_audit'))
                         and incoming_metadata.get('report_type') in {'1', '4', '5'}
                         and existing_metadata.get('report_type') == incoming_metadata.get('report_type')
                         and existing_metadata != incoming_metadata):

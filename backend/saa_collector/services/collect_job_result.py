@@ -44,16 +44,27 @@ def merge_issue(result, issue, now, *, max_issues=100, max_bytes=256 * 1024):
 def resolve_symbol(result, symbol, now):
     result = deepcopy(result or {})
     for item in result.get('issues', []):
-        if item.get('symbol') == symbol and not item.get('resolved_at'):
+        if (item.get('symbol') == symbol and not item.get('resolved_at')
+                and item.get('action') != 'STORE_NULL_CONTINUE'):
             item['resolved_at'] = now
     return result
+
+
+def has_open_quality_issues(result):
+    result = result or {}
+    return bool(result.get('truncated') or any(
+        item.get('action') == 'STORE_NULL_CONTINUE' and not item.get('resolved_at')
+        for item in result.get('issues', [])))
 
 
 def result_message(result):
     summary = (result or {}).get('summary', {})
     if not {'succeeded_symbols', 'failed_symbols'}.issubset(summary):
         return None
-    return '完成{}只，失败{}只'.format(summary['succeeded_symbols'], summary['failed_symbols'])
+    message = '完成{}只，失败{}只'.format(summary['succeeded_symbols'], summary['failed_symbols'])
+    if has_open_quality_issues(result):
+        message += '；存在字段降级或待审计问题，详见result'
+    return message
 
 
 def record_issue(job_id, issue):
