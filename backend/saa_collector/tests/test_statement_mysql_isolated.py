@@ -101,6 +101,47 @@ class IsolatedStatementMySQLTest(unittest.TestCase):
         self.assertEqual(self.query("SELECT JSON_UNQUOTE(JSON_EXTRACT(source_metadata, '$.report_type')) FROM " + table).stdout.strip(), '1')
         connection.close()
 
+    def test_signed_impairment_update_and_metadata_are_idempotent_and_rollbackable(self):
+        from decimal import Decimal
+        from saa_collector.services.common.statement_kind_migration import render_packet
+        table = 'saa_raw_income_statement'
+        self.query(render_packet()['01-version-kinds.sql'])
+        row = dict.fromkeys(contract.financial_fields(table))
+        row.update(symbol='600284', report_date=date(2018, 12, 31),
+                   disclosure_date=date(2019, 3, 12), provider='tushare',
+                   version_type='LATEST', asset_impairment_loss=Decimal('11574269.74'),
+                   source_metadata={'report_type': '1'})
+        connection = self.connection()
+        connection.rollback()
+        connection.start_transaction()
+        first = write_versions(connection, table, [row])[0]
+        connection.commit()
+        corrected = dict(row, asset_impairment_loss=Decimal('-11574269.74'),
+            source_metadata={'report_type': '1', 'normalization_rule': 'impairment_signed_v1'})
+        connection.start_transaction()
+        replacement = write_versions(connection, table, [corrected])[0]
+        self.assertTrue(replacement['updated'])
+        self.assertEqual(first['id'], replacement['id'])
+        connection.rollback()
+        self.assertEqual(self.query('SELECT asset_impairment_loss FROM ' + table).stdout.strip(),
+                         '11574269.74')
+        connection.start_transaction()
+        write_versions(connection, table, [corrected])
+        connection.commit()
+        connection.start_transaction()
+        duplicate = write_versions(connection, table, [corrected])[0]
+        self.assertEqual(duplicate, {'id': first['id'], 'created': False})
+        connection.commit()
+        proof = dict(corrected, source_metadata=dict(corrected['source_metadata'],
+                     impairment_source_value='11574269.74'))
+        connection.start_transaction()
+        self.assertTrue(write_versions(connection, table, [proof])[0]['metadata_updated'])
+        connection.commit()
+        connection.start_transaction()
+        self.assertEqual(write_versions(connection, table, [proof])[0], duplicate)
+        connection.commit()
+        connection.close()
+
     def test_version_kind_migration_and_typed_collection(self):
         from saa_collector.services.common.statement_kind_migration import render_packet
         from saa_collector.services.common.statement_version_writer import prepare_version

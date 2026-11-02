@@ -7,11 +7,14 @@ they are never inherited from another disclosure or provider.
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 import re
+import json
 
 import pandas as pd
 
 from .financial_statement_contract import content_hash, financial_fields, financial_scale
 from .statement_version_writer import prepare_version, StatementVersionConflict, conflict_issue
+from .statement_impairment import normalize_impairment, UnresolvedImpairment, EVIDENCE_FIELDS
+from .statement_arbitration import arbitrate_candidates
 
 
 TUSHARE_RESOURCES = {
@@ -51,7 +54,8 @@ class CompleteStatementHistory(list):
     """Returned only after all three type queries and their pages succeeded."""
 
 
-def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=False):
+def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=False,
+                      normalize_signs=False):
     endpoint = TUSHARE_RESOURCES[table]
     fields = financial_fields(table)
     selected = mapping[mapping['Field'].isin(fields)]
@@ -66,6 +70,7 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
             raise ValueError('Unreviewed unmapped financial field: ' + field)
 
     versions = {}
+    raw_by_row = {}
     for raw in raw_records:
         report_type = str(raw.get('report_type', ''))
         if report_type not in TUSHARE_REPORT_TYPES:
@@ -89,6 +94,8 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                 row['source_metadata'][name] = disclosure_date(raw[name]).strftime('%Y%m%d')
         if not _missing(raw.get('update_flag')):
             row['source_metadata']['update_flag'] = str(raw['update_flag'])
+        if not _missing(raw.get('comp_type')):
+            row['source_metadata']['comp_type'] = str(raw['comp_type'])
         omitted = sorted(field for field, config in configs.items()
                          if _missing(config.get('TushareField')) or config.get('TushareField') == '')
         if omitted:
@@ -122,12 +129,49 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
         prepare_version(table, row)
         key = (row['symbol'], row['report_date'], row['disclosure_date'], row['version_type'])
         versions.setdefault(key, []).append(row)
+        raw_by_row[id(row)] = raw
 
     result = []
+    references = [row for group in versions.values() for row in group]
     for key in sorted(versions):
         candidates = versions[key]
         updated = [row for row in candidates if row['source_metadata'].get('update_flag') == '1']
         eligible = updated or candidates
+        if normalize_signs and table == 'saa_raw_income_statement':
+            original_candidates = eligible
+            eligible, arbitration = arbitrate_candidates(eligible, references)
+            summaries = []
+            for candidate in original_candidates:
+                raw = raw_by_row[id(candidate)]
+                summaries.append(dict(candidate['source_metadata'],
+                    assets_impair_loss=None if _missing(raw.get('assets_impair_loss')) else
+                    str(Decimal(str(raw['assets_impair_loss'])).quantize(Decimal('.01')))))
+            summaries = sorted({json.dumps(item, sort_keys=True) for item in summaries})
+            audit = json.dumps([json.loads(item) for item in summaries], sort_keys=True)
+            if len(audit) > 4096:
+                raise ValueError('Too many impairment arbitration candidates')
+            for candidate in eligible:
+                raw = raw_by_row[id(candidate)]
+                try:
+                    effect, evidence = normalize_impairment(raw)
+                except UnresolvedImpairment as exc:
+                    exc.issue = dict(code='STATEMENT_SIGN_UNRESOLVED', provider='tushare',
+                        symbol=candidate['symbol'], table=table,
+                        report_date=candidate['report_date'].isoformat(),
+                        disclosure_date=candidate['disclosure_date'].isoformat(),
+                        version_type=candidate['version_type'], action='REJECT_SYMBOL_BATCH')
+                    raise
+                candidate['asset_impairment_loss'] = effect
+                metadata = candidate['source_metadata']
+                metadata.update(evidence)
+                metadata['normalization_candidates'] = audit
+                metadata['impairment_evidence'] = json.dumps({
+                    name: None if _missing(raw.get(name)) else str(raw[name])
+                    for name in EVIDENCE_FIELDS}, sort_keys=True)
+                if arbitration:
+                    metadata['arbitration_rule'] = arbitration
+                prepare_version(table, candidate)
+            eligible = sorted(eligible, key=lambda row: json.dumps(row['source_metadata'], sort_keys=True))
         row = eligible[0]
         conflicting = next((other for other in eligible
                             if content_hash(table, other) != content_hash(table, row)), None)

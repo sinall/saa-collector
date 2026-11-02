@@ -167,6 +167,20 @@ class StatementVersionWriterTest(unittest.TestCase):
         self.assertIn('FOR UPDATE', cursor.execute.call_args.args[0])
         self.assertFalse(any('UPDATE ' in call.args[0] for call in cursor.execute.call_args_list))
 
+    def test_equal_value_adds_normalization_evidence_without_changing_hash(self):
+        from mysql.connector import IntegrityError
+        connection, cursor = self.connection()
+        cursor.execute.side_effect = [None, IntegrityError(errno=1062), None, None]
+        old = dict(prepare_version(self.table, self.row()), id=4)
+        cursor.fetchone.return_value = old
+        incoming = self.row()
+        incoming['source_metadata']['normalization_rule'] = 'impairment_signed_v1'
+        result = write_versions(connection, self.table, [incoming])
+        self.assertTrue(result[0]['metadata_updated'])
+        sql, params = cursor.execute.call_args.args
+        self.assertIn('SET source_metadata=%s WHERE id=%s AND content_hash=%s', sql)
+        self.assertEqual(params[-2:], (4, old['content_hash']))
+
     def test_duplicate_conflict_is_not_overwritten(self):
         from mysql.connector import IntegrityError
         connection, cursor = self.connection()

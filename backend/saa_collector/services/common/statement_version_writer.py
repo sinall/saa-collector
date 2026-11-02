@@ -66,9 +66,14 @@ def prepare_version(table, row):
     if metadata is not None:
         keys = {'upstream', 'endpoint', 'report_type', 'client_version', 'update_flag',
                 'omitted_fields', 'ann_date', 'f_ann_date', 'migration_origin',
-                'snapshot_origin', 'derived_from_type', 'derived_from_hash'}
+                'snapshot_origin', 'derived_from_type', 'derived_from_hash',
+                'comp_type', 'normalization_rule', 'impairment_source_field',
+                'impairment_source_value', 'impairment_credit_effect',
+                'impairment_cost_basis', 'normalization_candidates',
+                'impairment_evidence', 'arbitration_rule'}
         if (not isinstance(metadata, dict) or set(metadata) - keys
-                or any(not isinstance(value, str) or not value.strip() or len(value) > 256
+                or any(not isinstance(value, str) or not value.strip() or len(value) >
+                       (4096 if key in {'normalization_candidates', 'impairment_evidence'} else 256)
                        for key, value in metadata.items() if key != 'omitted_fields')):
             raise ValueError('Invalid source metadata; only bounded provenance fields are allowed')
         if 'snapshot_origin' in metadata:
@@ -172,7 +177,7 @@ def write_versions(connection, table, rows):
     insert_sql = 'INSERT INTO `{}` ({}) VALUES ({})'.format(
         table, ','.join('`{}`'.format(column) for column in columns),
         ','.join(['%s'] * len(columns)))
-    select_sql = ('SELECT id,content_hash,source_metadata,{} FROM `{}` WHERE symbol=%s '
+    select_sql = ('SELECT id,provider,content_hash,source_metadata,{} FROM `{}` WHERE symbol=%s '
                   'AND report_date=%s AND disclosure_date=%s{} FOR UPDATE').format(
                       ','.join('`{}`'.format(field) for field in fields), table,
                       ' AND version_type=%s' if versioned else '')
@@ -229,7 +234,22 @@ def write_versions(connection, table, rows):
                     raise StatementVersionConflict(
                         '{} {} has conflicting content'.format(table, identity),
                         issue=conflict_issue(table, row, existing, existing=True)) from exc
-                record({'id': existing['id'], 'created': False})
+                incoming_metadata = json.loads(row['source_metadata'] or '{}')
+                existing_metadata = existing.get('source_metadata') or {}
+                if isinstance(existing_metadata, str):
+                    existing_metadata = json.loads(existing_metadata)
+                if (row['provider'] == 'tushare'
+                        and existing.get('provider') == 'tushare'
+                        and incoming_metadata.get('normalization_rule')
+                        and incoming_metadata.get('report_type') in {'1', '4', '5'}
+                        and existing_metadata.get('report_type') == incoming_metadata.get('report_type')
+                        and existing_metadata != incoming_metadata):
+                    cursor.execute(
+                        'UPDATE `{}` SET source_metadata=%s WHERE id=%s AND content_hash=%s'.format(table),
+                        (row['source_metadata'], existing['id'], actual_hash))
+                    record({'id': existing['id'], 'created': False, 'metadata_updated': True})
+                else:
+                    record({'id': existing['id'], 'created': False})
             else:
                 record({'id': cursor.lastrowid, 'created': True})
         return result

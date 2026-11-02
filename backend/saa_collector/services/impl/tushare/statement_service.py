@@ -13,6 +13,7 @@ from saa_collector.services.common.statement_ingestion import (
 from saa_collector.services.common.statement_source_adapter import (
     TUSHARE_RESOURCES, TUSHARE_REPORT_TYPES, tushare_snapshots, CompleteStatementHistory,
 )
+from saa_collector.services.common.statement_impairment import EVIDENCE_FIELDS
 from .basic_stock_service import BasicStockService
 
 
@@ -222,6 +223,9 @@ class StatementServiceImpl(StatementService, BasicStockService):
             fields.extend(['ann_date', 'f_ann_date'])
             if version_ingestion_enabled(self.config):
                 fields.append('report_type')
+                fields.append('comp_type')
+                if sub_resource == 'income':
+                    fields.extend(EVIDENCE_FIELDS)
         fields = [field.strip() for field in fields]
         fields = list(dict.fromkeys(fields))
         return ','.join(fields)
@@ -230,7 +234,8 @@ class StatementServiceImpl(StatementService, BasicStockService):
         if table in TUSHARE_RESOURCES and version_ingestion_enabled(self.config):
             return tushare_snapshots(
                 table, raw_records, self.config_service.get_table_config(table),
-                latest_query_complete=isinstance(raw_records, CompleteStatementHistory))
+                latest_query_complete=isinstance(raw_records, CompleteStatementHistory),
+                normalize_signs=True)
         if table not in self.RAW_STATEMENT_TABLES:
             return super().transform_records(raw_records, table)
 
