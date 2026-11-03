@@ -181,6 +181,22 @@ class StatementVersionWriterTest(unittest.TestCase):
         self.assertIn('SET source_metadata=%s WHERE id=%s AND content_hash=%s', sql)
         self.assertEqual(params[-2:], (4, old['content_hash']))
 
+    def test_same_value_legacy_row_keeps_conflict_null_evidence(self):
+        import json
+        from mysql.connector import IntegrityError
+        connection, cursor = self.connection()
+        cursor.execute.side_effect = [None, IntegrityError(errno=1062), None, None]
+        incoming = self.row()
+        incoming['source_metadata']['conflict_null_audit'] = '{}'
+        old = dict(prepare_version(self.table, self.row()), id=4, provider='unknown',
+                   source_metadata=json.dumps({'migration_origin': 'legacy_unclassified'}))
+        cursor.fetchone.return_value = old
+        result = write_versions(connection, self.table, [incoming])
+        self.assertTrue(result[0]['metadata_updated'])
+        metadata = json.loads(cursor.execute.call_args.args[1][0])
+        self.assertEqual(metadata['migration_origin'], 'legacy_unclassified')
+        self.assertEqual(metadata['conflict_null_audit'], '{}')
+
     def test_duplicate_conflict_is_not_overwritten(self):
         from mysql.connector import IntegrityError
         connection, cursor = self.connection()

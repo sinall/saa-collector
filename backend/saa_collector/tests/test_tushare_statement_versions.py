@@ -29,6 +29,58 @@ class TushareStatementVersionsTest(TestCase):
     def convert(self, rows):
         return tushare_snapshots(TABLE, rows, self.mapping)
 
+    def test_unresolved_candidates_null_only_disagreements_and_emit_quality(self):
+        from saa_collector.services.common.statement_source_adapter import statement_field_issues
+        from saa_collector.services.common.statement_version_writer import prepare_version
+        source = [dict(self.raw, net_profit=100, total_profit=200),
+                  dict(self.raw, net_profit=120, total_profit=200),
+                  dict(self.raw, net_profit=None, total_profit=200)]
+        expected = None
+        for candidates in permutations(source):
+            rows = self.convert(list(candidates))
+            self.assertIsNone(rows[0]['net_profit'])
+            self.assertEqual(rows[0]['total_profit'], 200)
+            if expected is None:
+                expected = rows
+            self.assertEqual(rows, expected)
+            issues = statement_field_issues(TABLE, rows[0])
+            self.assertEqual(issues[-1]['action'], 'STORE_NULL_CONTINUE')
+            values = issues[-1]['differences']['net_profit']['candidates']
+            self.assertEqual(set(values), {'100.00', '120.00', None})
+            prepare_version(TABLE, rows[0])
+        self.assertEqual(source[0]['net_profit'], 100)
+
+    def test_real_300202_conflict_keeps_profit_and_degrades_associate_income(self):
+        from saa_collector.services.common.statement_source_adapter import statement_field_issues
+        fixture = Path(__file__).parent / 'fixtures/tushare_conflict_300202.json'
+        source = json.loads(fixture.read_text())
+        mapping = pd.read_excel(Path(__file__).parents[1] / 'config/table-config.xls', sheet_name=TABLE)
+        out = tushare_snapshots(TABLE, source, mapping, normalize_signs=True)
+        self.assertEqual(out, tushare_snapshots(TABLE, source[::-1], mapping, normalize_signs=True))
+        row = out[0]
+        self.assertIsNone(row['share_of_profits_in_associates_and_joint_ventures'])
+        self.assertEqual(row['net_profit'], Decimal('-83984934.88'))
+        audit = json.loads(row['source_metadata']['conflict_null_audit'])
+        self.assertEqual(len(audit['sources']), 2)
+        self.assertEqual({r['metadata']['ann_date'] for r in audit['sources']},
+                         {'20260429', '20260430'})
+        self.assertTrue(statement_field_issues(TABLE, row))
+
+    def test_conflict_fallback_applies_to_all_statement_tables(self):
+        from saa_collector.services.common.statement_source_adapter import statement_field_issues
+        for table in ['saa_raw_balance_sheet', 'saa_raw_cash_flow_statement']:
+            fields = financial_fields(table)
+            mapping = pd.DataFrame([dict(Field=f, TushareField=f, TushareUnit=1) for f in fields])
+            raw = dict.fromkeys(fields, None)
+            raw.update(ts_code='600036.SH', end_date='20231231', f_ann_date='20240329', report_type='4')
+            field = fields[0]
+            out = tushare_snapshots(table, [dict(raw, **{field: 100}), dict(raw, **{field: 150})],
+                                    mapping, latest_query_complete=True)
+            self.assertEqual(len(out), 2)
+            for row in out:
+                self.assertIsNone(row[field])
+                self.assertEqual(statement_field_issues(table, row)[0]['action'], 'STORE_NULL_CONTINUE')
+
     def test_confirmed_absence_derives_latest_without_relabelling_history(self):
         rows = [dict(self.raw, report_type='5'),
                 dict(self.raw, report_type='4', net_profit=200)]
@@ -62,14 +114,11 @@ class TushareStatementVersionsTest(TestCase):
         self.assertEqual(rows[0]['source_metadata']['report_type'], '5')
         self.assertEqual(self.raw['net_profit'], 123.45)
 
-    def test_same_day_conflict_is_not_arbitrarily_deduplicated(self):
-        with self.assertRaisesRegex(ValueError, 'conflict.*net_profit') as caught:
-            self.convert([self.raw, dict(self.raw, net_profit=100)])
-        issue = caught.exception.issue
-        self.assertEqual(issue['symbol'], '600036')
-        self.assertFalse(issue['differences']['net_profit']['existing_present'])
-        self.assertEqual({v['value'] for v in issue['differences']['net_profit']['candidates']},
-                         {'100.00', '123.45'})
+    def test_same_day_conflict_nullifies_instead_of_arbitrary_selection(self):
+        row = self.convert([self.raw, dict(self.raw, net_profit=100)])[0]
+        self.assertIsNone(row['net_profit'])
+        audit = json.loads(row['source_metadata']['conflict_null_audit'])
+        self.assertEqual(set(audit['fields']['net_profit']), {'100.00', '123.45'})
 
     def test_small_symmetric_difference_selects_whole_row_stably_with_audit(self):
         candidates = [dict(self.raw, net_profit=100, total_profit=104),
@@ -90,23 +139,24 @@ class TushareStatementVersionsTest(TestCase):
                 self.assertEqual(len(self.convert([dict(self.raw, net_profit=a),
                                                   dict(self.raw, net_profit=b)])), 1)
         for a, b in [(97.49, 102.5), (100, 105.2), (-100, 100), (0, 0.01), (None, 100)]:
-            with self.subTest(a=a, b=b), self.assertRaisesRegex(ValueError, 'conflict'):
-                self.convert([dict(self.raw, net_profit=a), dict(self.raw, net_profit=b)])
+            with self.subTest(a=a, b=b):
+                row = self.convert([dict(self.raw, net_profit=a), dict(self.raw, net_profit=b)])[0]
+                self.assertIsNone(row['net_profit'])
 
     def test_tolerance_compares_all_pairs_not_only_middle_candidate(self):
         for candidates in permutations([dict(self.raw, net_profit=n) for n in (100, 104, 108)]):
-            with self.assertRaisesRegex(ValueError, 'conflict'):
-                self.convert(list(candidates))
+            self.assertIsNone(self.convert(list(candidates))[0]['net_profit'])
 
     def test_zero_and_rounding_follow_existing_field_precision(self):
         rows = self.convert([dict(self.raw, net_profit='0.001'), dict(self.raw, net_profit='-0.001')])
         self.assertEqual(rows[0]['net_profit'], 0)
         self.assertNotIn('numeric_tolerance_audit', rows[0]['source_metadata'])
 
-    def test_one_large_field_difference_rejects_entire_candidate(self):
-        with self.assertRaisesRegex(ValueError, 'conflict'):
-            self.convert([dict(self.raw, net_profit=100, total_profit=100),
-                          dict(self.raw, net_profit=104, total_profit=120)])
+    def test_failed_whole_row_tolerance_nullifies_all_disputed_fields(self):
+        row = self.convert([dict(self.raw, net_profit=100, total_profit=100),
+                            dict(self.raw, net_profit=104, total_profit=120)])[0]
+        self.assertIsNone(row['net_profit'])
+        self.assertIsNone(row['total_profit'])
 
     def test_tolerance_does_not_override_source_priority(self):
         rows = self.convert([dict(self.raw, net_profit=100, update_flag='0'),
@@ -135,10 +185,10 @@ class TushareStatementVersionsTest(TestCase):
             self.assertIsNone(result[0]['net_profit'])
             self.assertEqual(result[0]['source_metadata']['update_flag'], '1')
 
-    def test_conflicting_updated_snapshots_still_rejected(self):
-        with self.assertRaisesRegex(ValueError, 'conflict'):
-            self.convert([dict(self.raw, update_flag='1'),
-                          dict(self.raw, update_flag='1', net_profit=999)])
+    def test_conflicting_updated_snapshots_degrade(self):
+        row = self.convert([dict(self.raw, update_flag='1'),
+                            dict(self.raw, update_flag='1', net_profit=999)])[0]
+        self.assertIsNone(row['net_profit'])
 
     def test_report_types_coexist_independent_of_order(self):
         latest = dict(self.raw, report_type='1', update_flag='0', net_profit=None)
@@ -172,12 +222,11 @@ class TushareStatementVersionsTest(TestCase):
             self.assertEqual(rows['LATEST']['net_profit'], Decimal('20.00'))
             self.assertEqual(rows['RESTATED']['net_profit'], Decimal('30.00'))
 
-    def test_same_rank_adjusted_sign_conflict_is_still_rejected(self):
+    def test_same_rank_adjusted_sign_conflict_degrades(self):
         records = [dict(self.raw, report_type='4', update_flag='1', net_profit=value)
                    for value in (-172014721.27, 172014721.27)]
         for ordered in (records, records[::-1]):
-            with self.assertRaisesRegex(ValueError, 'conflict'):
-                self.convert(ordered)
+            self.assertIsNone(self.convert(ordered)[0]['net_profit'])
 
     def test_different_disclosure_dates_are_not_compared_by_report_type(self):
         records = [dict(self.raw, report_type='1', net_profit=10),

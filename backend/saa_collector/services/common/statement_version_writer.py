@@ -71,11 +71,11 @@ def prepare_version(table, row):
                 'impairment_source_value', 'impairment_credit_effect',
                 'impairment_cost_basis', 'normalization_candidates',
                 'impairment_evidence', 'arbitration_rule', 'numeric_tolerance_audit',
-                'impairment_warning', 'missing_source_fields'}
+                'impairment_warning', 'missing_source_fields', 'conflict_null_audit'}
         if (not isinstance(metadata, dict) or set(metadata) - keys
                 or any(not isinstance(value, str) or not value.strip() or len(value) >
                        (4096 if key in {'normalization_candidates', 'impairment_evidence',
-                                       'numeric_tolerance_audit', 'missing_source_fields'} else 256)
+                                       'numeric_tolerance_audit', 'missing_source_fields', 'conflict_null_audit'} else 256)
                        for key, value in metadata.items() if key != 'omitted_fields')):
             raise ValueError('Invalid source metadata; only bounded provenance fields are allowed')
         if 'snapshot_origin' in metadata:
@@ -240,16 +240,22 @@ def write_versions(connection, table, rows):
                 existing_metadata = existing.get('source_metadata') or {}
                 if isinstance(existing_metadata, str):
                     existing_metadata = json.loads(existing_metadata)
+                legacy_null_evidence = (incoming_metadata.get('conflict_null_audit')
+                    and existing.get('provider') == 'unknown'
+                    and not existing_metadata.get('report_type'))
+                if legacy_null_evidence:
+                    incoming_metadata = dict(existing_metadata, **incoming_metadata)
                 if (row['provider'] == 'tushare'
-                        and existing.get('provider') == 'tushare'
+                        and (existing.get('provider') == 'tushare' or legacy_null_evidence)
                         and any(incoming_metadata.get(key) for key in
-                                ('normalization_rule', 'missing_source_fields', 'numeric_tolerance_audit'))
+                                ('normalization_rule', 'missing_source_fields', 'numeric_tolerance_audit', 'conflict_null_audit'))
                         and incoming_metadata.get('report_type') in {'1', '4', '5'}
-                        and existing_metadata.get('report_type') == incoming_metadata.get('report_type')
+                        and (legacy_null_evidence or
+                             existing_metadata.get('report_type') == incoming_metadata.get('report_type'))
                         and existing_metadata != incoming_metadata):
                     cursor.execute(
                         'UPDATE `{}` SET source_metadata=%s WHERE id=%s AND content_hash=%s'.format(table),
-                        (row['source_metadata'], existing['id'], actual_hash))
+                        (json.dumps(incoming_metadata, sort_keys=True), existing['id'], actual_hash))
                     record({'id': existing['id'], 'created': False, 'metadata_updated': True})
                 else:
                     record({'id': existing['id'], 'created': False})

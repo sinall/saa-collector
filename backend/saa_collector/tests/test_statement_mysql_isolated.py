@@ -142,6 +142,38 @@ class IsolatedStatementMySQLTest(unittest.TestCase):
         connection.commit()
         connection.close()
 
+    def test_conflict_null_roundtrip_retains_quality_and_unchanged_profit(self):
+        import pandas as pd
+        from decimal import Decimal
+        from saa_collector.services.common.statement_kind_migration import render_packet
+        from saa_collector.services.common.statement_source_adapter import tushare_snapshots, statement_field_issues
+        table = 'saa_raw_income_statement'
+        self.query(render_packet()['01-version-kinds.sql'])
+        source = json.loads((Path(__file__).parent / 'fixtures/tushare_conflict_300202.json').read_text())
+        mapping = pd.read_excel(Path(__file__).parents[1] / 'config/table-config.xls', sheet_name=table)
+        rows = tushare_snapshots(table, source, mapping, normalize_signs=True)
+        connection = self.connection()
+        connection.rollback()
+        connection.start_transaction()
+        first = write_versions(connection, table, rows)
+        connection.commit()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute('SELECT * FROM ' + table + " WHERE symbol='300202'")
+        stored = cursor.fetchone()
+        self.assertIsNone(stored['share_of_profits_in_associates_and_joint_ventures'])
+        self.assertEqual(stored['net_profit'], Decimal('-83984934.88'))
+        self.assertEqual(stored['content_hash'], contract.content_hash(table, stored))
+        stored['source_metadata'] = json.loads(stored['source_metadata'])
+        self.assertTrue(statement_field_issues(table, stored))
+        connection.rollback()
+        connection.start_transaction()
+        second = write_versions(connection, table, rows)
+        self.assertEqual(second[0]['id'], first[0]['id'])
+        self.assertFalse(second[0].get('updated', False))
+        connection.commit()
+        cursor.close()
+        connection.close()
+
     def test_version_kind_migration_and_typed_collection(self):
         from saa_collector.services.common.statement_kind_migration import render_packet
         from saa_collector.services.common.statement_version_writer import prepare_version

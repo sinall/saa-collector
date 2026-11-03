@@ -71,7 +71,39 @@ def statement_field_issues(table, row):
         issues.append(dict(common, code='STATEMENT_FIELD_NULLIFIED', differences={
             'asset_impairment_loss': dict(source_value=metadata['impairment_source_value'],
                                           stored_value=None, reason=metadata['impairment_warning'])}))
+    if metadata.get('conflict_null_audit'):
+        audit = json.loads(metadata['conflict_null_audit'])
+        issues.append(dict(common, code='STATEMENT_FIELD_NULLIFIED', differences={
+            field: dict(candidates=values, stored_value=None, reason='same_identity_source_conflict')
+            for field, values in audit['fields'].items()}))
     return issues
+
+
+def _null_conflicting_fields(table, candidates, fields):
+    # A deterministic metadata carrier; no disputed financial value survives.
+    ordered = sorted(candidates, key=lambda row: (
+        json.dumps(row['source_metadata'], sort_keys=True), content_hash(table, row)))
+    differences = {}
+    for field in sorted(fields):
+        values = sorted({row[field] for row in candidates},
+                        key=lambda value: 'NULL' if value is None else str(value))
+        if len(values) > 1:
+            differences[field] = [None if value is None else str(value) for value in values]
+    audit = json.dumps(dict(rule='same_identity_conflict_null_v1', fields=differences,
+        sources=[dict(content_hash=content_hash(table, row),
+                      values={f: None if row[f] is None else str(row[f]) for f in differences},
+                      metadata={
+            k: v for k, v in row['source_metadata'].items() if k in
+            {'ann_date', 'f_ann_date', 'report_type', 'update_flag', 'comp_type',
+             'impairment_warning', 'missing_source_fields'}}) for row in ordered]), sort_keys=True)
+    if len(audit) > 4096:
+        raise StatementVersionConflict('Source conflict audit exceeds bounded metadata capacity')
+    row = dict(ordered[0], source_metadata=dict(ordered[0]['source_metadata']))
+    row.update(dict.fromkeys(differences))
+    row['source_metadata']['conflict_null_audit'] = audit
+    row['source_metadata']['arbitration_rule'] = 'same_identity_conflict_null_v1'
+    prepare_version(table, row)
+    return row
 
 
 def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=False,
@@ -206,11 +238,7 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                 prepare_version(table, row)
                 conflicting = None
         if conflicting is not None:
-            changed = [field for field in fields if conflicting[field] != row[field]]
-            raise StatementVersionConflict(
-                'Same-day source content conflict: table={} key={} fields={}'.format(
-                    table, key, ','.join(changed)),
-                issue=conflict_issue(table, row, conflicting))
+            row = _null_conflicting_fields(table, eligible, fields)
         result.append(row)
     if latest_query_complete:
         by_period = {}
