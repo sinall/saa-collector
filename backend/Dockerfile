@@ -29,6 +29,9 @@ RUN --mount=type=secret,id=GITHUB_TOKEN \
         git config --global --unset-all url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf; \
     fi
 
+# Exercise Redis transport client compatibility without connecting to a broker.
+RUN python -c "from types import SimpleNamespace; from kombu.transport.redis import Channel; Channel._get_client(SimpleNamespace(global_keyprefix=''))"
+
 COPY . .
 
 RUN python manage.py collectstatic --noinput

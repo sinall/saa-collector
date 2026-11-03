@@ -52,3 +52,10 @@ class CollectJobResultTest(TestCase):
     def test_future_schema_is_not_rewritten(self):
         with self.assertRaises(ValueError):
             merge_issue({'schema_version': 2}, {'code': 'FAILURE'}, 'now')
+
+    def test_retention_and_nonquarter_warnings_remain_degraded_after_success(self):
+        from saa_collector.services.collect_job_result import has_open_quality_issues
+        for action in ['RETAIN_EXISTING_CONTINUE', 'EXCLUDE_NONQUARTER_CONTINUE', 'SOURCE_ALIAS_CONTINUE']:
+            result = merge_issue({}, dict(code='QUALITY', symbol='000022', action=action), 'now')
+            result = resolve_symbol(result, '000022', 'later')
+            self.assertTrue(has_open_quality_issues(result))

@@ -12,10 +12,16 @@ from saa_collector.services.common.statement_ingestion import (
 )
 from saa_collector.services.common.statement_source_adapter import (
     TUSHARE_RESOURCES, TUSHARE_REPORT_TYPES, tushare_snapshots, CompleteStatementHistory,
+    disclosure_date as parse_source_date,
     statement_field_issues,
 )
 from saa_collector.services.common.statement_impairment import EVIDENCE_FIELDS
 from .basic_stock_service import BasicStockService
+
+
+# Verified issuer code change effective 2018-12-26 (cninfo 1205690369).
+# Source lookup only: never import new-code report periods into the retired code.
+FINANCIAL_SOURCE_ALIASES = {'000022': ('001872.SZ', '2018-12-26')}
 
 
 class StatementServiceImpl(StatementService, BasicStockService):
@@ -69,7 +75,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
                 # Emit after success callbacks so unresolved field warnings are
                 # not marked resolved merely because the security was collected.
                 for issue in self._committed_field_issues:
-                    self._logger.warning('Financial field stored as NULL: %s', issue)
+                    self._logger.warning('Financial collection quality diagnostic: %s', issue)
                     if on_symbol_issue:
                         on_symbol_issue(issue)
                 if after_symbol:
@@ -273,6 +279,7 @@ class StatementServiceImpl(StatementService, BasicStockService):
         if (sub_resource in self.DISCLOSURE_FIELD_RESOURCES
                 and version_ingestion_enabled(self.config)):
             records = []
+            source_code, alias_before = FINANCIAL_SOURCE_ALIASES.get(symbol, (self.to_code(symbol), None))
             requested = kwargs.pop('report_type', None)
             if requested is not None and requested not in TUSHARE_REPORT_TYPES:
                 raise ValueError('Unsupported financial report type')
@@ -281,13 +288,13 @@ class StatementServiceImpl(StatementService, BasicStockService):
             for report_type in (requested,) if requested else TUSHARE_REPORT_TYPES:
                 seen_pages = set()
                 for offset in range(0, 100000, 100):
-                    frame = self.pro.query(sub_resource, ts_code=self.to_code(symbol),
+                    frame = self.pro.query(sub_resource, ts_code=source_code,
                                            report_type=report_type, limit=100,
                                            offset=offset, **kwargs)
                     if frame is None or frame.columns.duplicated().any() or len(frame) > 100:
                         raise ValueError('Invalid financial source response')
                     rows = frame.to_dict('records')
-                    if any(row.get('ts_code') != self.to_code(symbol)
+                    if any(row.get('ts_code') != source_code
                            or str(row.get('report_type')) != report_type for row in rows):
                         raise ValueError('Financial source response scope mismatch')
                     fingerprint = tuple(sorted(pd.util.hash_pandas_object(frame, index=False).tolist()))
@@ -301,6 +308,12 @@ class StatementServiceImpl(StatementService, BasicStockService):
                         break
                 else:
                     raise ValueError('Financial source pagination exceeded safety limit')
+            if alias_before:
+                records = [dict(row, ts_code=self.to_code(symbol), source_ts_code=source_code,
+                    source_alias_rule='issuer_code_change_before_' + alias_before)
+                    for row in records if parse_source_date(row['end_date']) < parse_source_date(alias_before)]
+                self._logger.info('Historical financial source alias: symbol=%s source=%s before=%s rows=%d',
+                                  symbol, source_code, alias_before, len(records))
             if not records:
                 raise ValueError('No financial versions returned for ' + symbol)
             # An announcement-date slice may omit an older genuine LATEST for
@@ -381,7 +394,10 @@ class StatementServiceImpl(StatementService, BasicStockService):
 
     def _process_one(self, symbol, start_date=None):
         self._logger.info('Start to process statement for %s', symbol)
-        self.maintain_service.process(symbol)
+        self._committed_field_issues = getattr(self, '_committed_field_issues', [])
+        results = self.maintain_service.process(symbol)
+        for result in results or []:
+            self._committed_field_issues.extend(result.get('issues', []))
         self._logger.info('End up processing statement for %s', symbol)
 
     def _collect_one(self, symbol, start_date=None):
@@ -396,6 +412,11 @@ class StatementServiceImpl(StatementService, BasicStockService):
             save_version_bundle(self.db_config, bundle)
             self._committed_field_issues = [issue for table, rows in bundle.items()
                                             for row in rows for issue in statement_field_issues(table, row)]
+            if symbol in FINANCIAL_SOURCE_ALIASES:
+                source_code, before = FINANCIAL_SOURCE_ALIASES[symbol]
+                self._committed_field_issues.append(dict(code='STATEMENT_HISTORICAL_CODE_ALIAS',
+                    provider='tushare', symbol=symbol, action='SOURCE_ALIAS_CONTINUE',
+                    differences={'source_symbol': {'value': source_code, 'report_period_before': before}}))
             self.collect_dividend(symbol, start_date, progress_enabled=False)
             return
         self.collect_balance_sheet(symbol, start_date, progress_enabled=False)

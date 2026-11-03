@@ -5,8 +5,10 @@ authorize deletion or modify the legacy quarterly/null arithmetic. Full-market
 callers must enumerate securities and publish one bounded scope at a time.
 """
 import re
+import logging
+from datetime import date
 
-from .financial_statement_contract import financial_fields
+from .financial_statement_contract import financial_fields, is_standard_quarter
 from .statement_locks import statement_locks
 from saa_collector.utils.db import DB
 
@@ -22,7 +24,7 @@ CACHE_COLUMNS = (
 )
 
 
-def build_cache_candidates(service, symbol, rows, dividends, existing, cutoff):
+def build_cache_candidates(service, symbol, rows, dividends, existing):
     if not rows:
         raise ValueError('Empty financial candidate is not a withdrawal')
     years = {}
@@ -49,10 +51,13 @@ def build_cache_candidates(service, symbol, rows, dividends, existing, cutoff):
         if period.year in years:
             row['dividend'] = years[period.year]
         candidates.append(row)
-    if {row['report_date'] for row in existing} - periods:
-        raise ValueError('Unreviewed financial withdrawal; retaining both caches')
-    recent = [row for row in candidates if row['report_date'] >= cutoff]
-    ttm, missing = service.build_ttm_candidates(recent, NON_BALANCE_FIELDS)
+    standard_periods = {p for p in periods if is_standard_quarter(p)}
+    if not standard_periods:
+        return candidates, []
+    target = max(standard_periods)
+    input_start = date(target.year - 1, 1, 1)
+    ttm_inputs = [row for row in candidates if input_start <= row['report_date'] <= target and is_standard_quarter(row['report_date'])]
+    ttm, missing = service.build_ttm_candidates(ttm_inputs, NON_BALANCE_FIELDS)
     if missing or len(ttm) != 1:
         raise ValueError('Missing TTM dependencies; retaining both caches')
     return candidates, ttm
@@ -88,15 +93,26 @@ def publish_statement_caches(connection, service, symbol):
             dividends = cursor.fetchall()
             cursor.execute('SELECT report_date FROM saa_integrated_reports_cache WHERE symbol=%s', (symbol,))
             existing = cursor.fetchall()
-            cursor.execute('SELECT DATE_SUB(CURDATE(), INTERVAL 4 YEAR) AS cutoff')
-            cutoff = cursor.fetchone()['cutoff']
-            integrated, ttm = build_cache_candidates(service, symbol, rows, dividends, existing, cutoff)
+            integrated, ttm = build_cache_candidates(service, symbol, rows, dividends, existing)
             writer = DB()
             writer.to_sql(integrated, connection, 'saa_integrated_reports_cache',
                           ['symbol', 'report_date'], commit=False)
-            writer.to_sql(ttm, connection, 'saa_ttm_reports_interface', 'symbol', commit=False)
+            if ttm:
+                writer.to_sql(ttm, connection, 'saa_ttm_reports_interface', 'symbol', commit=False)
             connection.commit()
-            return {'symbol': symbol, 'integrated_rows': len(integrated), 'ttm_rows': len(ttm)}
+            issues = []
+            current_periods = {r['report_date'] for r in integrated}
+            for old in existing:
+                if old['report_date'] not in current_periods:
+                    issues.append(dict(code='STATEMENT_CACHE_PERIOD_RETAINED', provider='tushare',
+                        symbol=symbol, table='saa_integrated_reports_cache',
+                        report_date=old['report_date'].isoformat(), action='RETAIN_EXISTING_CONTINUE'))
+            if not ttm:
+                issues.append(dict(code='STATEMENT_NO_STANDARD_TTM_INPUT', provider='tushare',
+                    symbol=symbol, table='saa_ttm_reports_cache', action='RETAIN_EXISTING_CONTINUE'))
+            for issue in issues:
+                logging.getLogger(__name__).warning('Financial cache record retained: %s', issue)
+            return {'symbol': symbol, 'integrated_rows': len(integrated), 'ttm_rows': len(ttm), 'issues': issues}
         except BaseException:
             connection.rollback()
             raise

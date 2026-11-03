@@ -542,6 +542,34 @@ class IsolatedStatementMySQLTest(unittest.TestCase):
                        "VALUES ('600036','{}-12-31','{}-03-29',{})".format(table, year, year + 1, value))
         self.query("UPDATE cache_source SET `exchange`='SSE'")
 
+    def test_cache_publication_retains_absent_old_period_and_reports_it(self):
+        self.create_cache_fixture()
+        self.query("INSERT INTO saa_integrated_reports_cache (symbol,report_date,net_profit) "
+                   "VALUES ('600036','2006-12-31',0)")
+        connection = self.connection()
+        connection.rollback()
+        result = publish_statement_caches(connection, object.__new__(StatementMaintainService), '600036')
+        self.assertEqual(self.query("SELECT net_profit FROM saa_integrated_reports_cache "
+                                    "WHERE report_date='2006-12-31'").stdout.strip(), '0.00')
+        self.assertEqual(result['issues'][0]['action'], 'RETAIN_EXISTING_CONTINUE')
+        self.assertEqual(result['issues'][0]['report_date'], '2006-12-31')
+        self.assertEqual(self.query('SELECT net_profit FROM saa_ttm_reports_cache').stdout.strip(), '120.00')
+        connection.close()
+
+    def test_nonquarter_raw_record_survives_write_and_hash_validation(self):
+        from saa_collector.services.common.statement_kind_migration import render_packet
+        table = 'saa_raw_income_statement'
+        self.query(render_packet()['01-version-kinds.sql'])
+        row = self.version(report_date=date(2019, 8, 31),disclosure_date=date(2020, 1, 3))
+        row['version_type'] = 'LATEST'
+        connection = self.connection()
+        connection.rollback()
+        connection.start_transaction()
+        write_versions(connection, table, [row])
+        connection.commit()
+        self.assertEqual(self.query('SELECT report_date FROM '+table).stdout.strip(), '2019-08-31')
+        connection.close()
+
     def test_publisher_yearly_dividends_under_strict_group_by(self):
         self.create_cache_fixture()
         year = date.today().year - 1

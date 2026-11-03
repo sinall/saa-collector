@@ -11,7 +11,7 @@ import json
 
 import pandas as pd
 
-from .financial_statement_contract import content_hash, financial_fields, financial_scale
+from .financial_statement_contract import content_hash, financial_fields, financial_scale, is_standard_quarter
 from .statement_version_writer import prepare_version, StatementVersionConflict, conflict_issue
 from .statement_impairment import normalize_impairment, UnresolvedImpairment, EVIDENCE_FIELDS
 from .statement_arbitration import arbitrate_candidates, select_numeric_equivalent
@@ -62,6 +62,10 @@ def statement_field_issues(table, row):
                   report_date=row['report_date'].isoformat(),
                   disclosure_date=row['disclosure_date'].isoformat(),
                   version_type=row['version_type'], action='STORE_NULL_CONTINUE')
+    if not is_standard_quarter(row['report_date']):
+        issues.append(dict(common, code='STATEMENT_NONSTANDARD_PERIOD',
+            action='EXCLUDE_NONQUARTER_CONTINUE', differences={
+                'report_date': {'value': row['report_date'].isoformat(), 'usage': 'excluded_from_standard_ttm'}}))
     missing = json.loads(metadata.get('missing_source_fields', '{}'))
     if missing:
         issues.append(dict(common, code='STATEMENT_SOURCE_FIELDS_MISSING', differences={
@@ -131,8 +135,6 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
         if not isinstance(code, str) or not re.fullmatch(r'\d{6}\.(SH|SZ|BJ)', code):
             raise ValueError('Invalid Tushare security code')
         period = disclosure_date(raw.get('end_date'))
-        if (period.month, period.day) not in {(3, 31), (6, 30), (9, 30), (12, 31)}:
-            raise ValueError('Unsupported non-quarter-end report period')
         published = raw.get('f_ann_date')
         if _missing(published) or published == '':
             published = raw.get('ann_date')
@@ -141,6 +143,9 @@ def tushare_snapshots(table, raw_records, mapping, *, latest_query_complete=Fals
                    disclosure_date=disclosure_date(published), provider='tushare',
                    source_metadata=dict(upstream='tushare', endpoint=endpoint,
                                         report_type=report_type))
+        for name in ('source_ts_code', 'source_alias_rule'):
+            if raw.get(name):
+                row['source_metadata'][name] = raw[name]
         for name in ('ann_date', 'f_ann_date'):
             if not _missing(raw.get(name)) and raw[name] != '':
                 row['source_metadata'][name] = disclosure_date(raw[name]).strftime('%Y%m%d')

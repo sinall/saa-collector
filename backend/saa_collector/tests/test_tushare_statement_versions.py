@@ -81,6 +81,12 @@ class TushareStatementVersionsTest(TestCase):
                 self.assertIsNone(row[field])
                 self.assertEqual(statement_field_issues(table, row)[0]['action'], 'STORE_NULL_CONTINUE')
 
+    def test_nonquarter_period_is_preserved_with_exclusion_diagnostic(self):
+        from saa_collector.services.common.statement_source_adapter import statement_field_issues
+        row = self.convert([dict(self.raw, end_date='20190831', f_ann_date='20200103')])[0]
+        self.assertEqual(row['report_date'], date(2019, 8, 31))
+        self.assertEqual(statement_field_issues(TABLE, row)[0]['action'], 'EXCLUDE_NONQUARTER_CONTINUE')
+
     def test_confirmed_absence_derives_latest_without_relabelling_history(self):
         rows = [dict(self.raw, report_type='5'),
                 dict(self.raw, report_type='4', net_profit=200)]
@@ -247,7 +253,6 @@ class TushareStatementVersionsTest(TestCase):
         self.assertEqual(rows[0]['disclosure_date'], date(2024, 3, 29))
         for changes in ({'f_ann_date': 'invalid'},
                         {'ann_date': None, 'f_ann_date': None},
-                        {'end_date': '20231031'},
                         {'f_ann_date': '20230101'}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.convert([dict(self.raw, **changes)])
@@ -321,6 +326,32 @@ class TushareStatementVersionsTest(TestCase):
 
 
 class TushareVersionServiceTest(TestCase):
+    def test_verified_alias_filters_report_periods_and_preserves_request_identity(self):
+        service = self.service()
+        service.pro.query.return_value = pd.DataFrame([
+            dict(ts_code='001872.SZ', end_date=p, report_type='1')
+            for p in ['20180930', '20181231']])
+        rows = service.query_record('income', '000022', report_type='1')
+        self.assertEqual(service.pro.query.call_args.kwargs['ts_code'], '001872.SZ')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['ts_code'], '000022.SZ')
+        self.assertEqual(rows[0]['source_ts_code'], '001872.SZ')
+        self.assertEqual(rows[0]['end_date'], '20180930')
+
+    def test_alias_response_scope_is_checked_and_dates_not_changed(self):
+        service = self.service()
+        service.pro.query.return_value = pd.DataFrame([dict(ts_code='600036.SH', report_type='1', end_date='20180930')])
+        with self.assertRaisesRegex(ValueError, 'scope'):
+            service.query_record('income', '000022', report_type='1')
+
+    def test_cache_retention_diagnostics_propagate_to_producer(self):
+        service = self.service()
+        service.maintain_service = MagicMock()
+        issue = dict(code='STATEMENT_CACHE_PERIOD_RETAINED', action='RETAIN_EXISTING_CONTINUE')
+        service.maintain_service.process.return_value = [{'issues': [issue]}]
+        service._process_one('600036')
+        self.assertEqual(service._committed_field_issues, [issue])
+
     def test_full_page_is_followed_until_empty_page(self):
         service = self.service()
         first = pd.DataFrame([dict(ts_code='600036.SH', report_type='1', seq=i)

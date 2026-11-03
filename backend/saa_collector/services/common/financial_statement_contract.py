@@ -103,3 +103,7 @@ def latest_view_sql(table, legacy_columns, *, versioned=False):
     ).format(view=view, selected=selected, table=table,
              filter="WHERE version_type = 'LATEST' " if versioned else '',
              outer_filter=" WHERE r.version_type = 'LATEST'" if versioned else '')
+
+
+def is_standard_quarter(period):
+    return (period.month, period.day) in {(3, 31), (6, 30), (9, 30), (12, 31)}

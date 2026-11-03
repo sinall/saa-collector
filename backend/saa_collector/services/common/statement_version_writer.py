@@ -71,7 +71,8 @@ def prepare_version(table, row):
                 'impairment_source_value', 'impairment_credit_effect',
                 'impairment_cost_basis', 'normalization_candidates',
                 'impairment_evidence', 'arbitration_rule', 'numeric_tolerance_audit',
-                'impairment_warning', 'missing_source_fields', 'conflict_null_audit'}
+                'impairment_warning', 'missing_source_fields', 'conflict_null_audit',
+                'source_ts_code', 'source_alias_rule'}
         if (not isinstance(metadata, dict) or set(metadata) - keys
                 or any(not isinstance(value, str) or not value.strip() or len(value) >
                        (4096 if key in {'normalization_candidates', 'impairment_evidence',

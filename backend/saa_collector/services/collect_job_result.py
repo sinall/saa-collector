@@ -4,6 +4,9 @@ import hashlib
 import json
 
 
+QUALITY_ACTIONS = frozenset({'STORE_NULL_CONTINUE', 'RETAIN_EXISTING_CONTINUE',
+                             'EXCLUDE_NONQUARTER_CONTINUE', 'SOURCE_ALIAS_CONTINUE'})
+
 ISSUE_FIELDS = {'code', 'provider', 'symbol', 'table', 'report_date',
                 'disclosure_date', 'version_type', 'differences', 'action'}
 
@@ -45,7 +48,7 @@ def resolve_symbol(result, symbol, now):
     result = deepcopy(result or {})
     for item in result.get('issues', []):
         if (item.get('symbol') == symbol and not item.get('resolved_at')
-                and item.get('action') != 'STORE_NULL_CONTINUE'):
+                and item.get('action') not in QUALITY_ACTIONS):
             item['resolved_at'] = now
     return result
 
@@ -53,7 +56,7 @@ def resolve_symbol(result, symbol, now):
 def has_open_quality_issues(result):
     result = result or {}
     return bool(result.get('truncated') or any(
-        item.get('action') == 'STORE_NULL_CONTINUE' and not item.get('resolved_at')
+        item.get('action') in QUALITY_ACTIONS and not item.get('resolved_at')
         for item in result.get('issues', [])))
 
 
