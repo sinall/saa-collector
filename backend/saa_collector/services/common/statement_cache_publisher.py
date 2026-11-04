@@ -24,7 +24,7 @@ CACHE_COLUMNS = (
 )
 
 
-def build_cache_candidates(service, symbol, rows, dividends, existing):
+def build_cache_candidates(service, symbol, rows, dividends, existing, *, issues=None):
     if not rows:
         raise ValueError('Empty financial candidate is not a withdrawal')
     years = {}
@@ -58,8 +58,29 @@ def build_cache_candidates(service, symbol, rows, dividends, existing):
     input_start = date(target.year - 1, 1, 1)
     ttm_inputs = [row for row in candidates if input_start <= row['report_date'] <= target and is_standard_quarter(row['report_date'])]
     ttm, missing = service.build_ttm_candidates(ttm_inputs, NON_BALANCE_FIELDS)
-    if missing or len(ttm) != 1:
-        raise ValueError('Missing TTM dependencies; retaining both caches')
+    if missing:
+        annual_date = date(target.year - 1, 12, 31)
+        same_period = date(target.year - 1, target.month, target.day)
+        annual = next((r for r in ttm_inputs if r['report_date'] == annual_date), None)
+        diagnostic = dict(provider='tushare', symbol=symbol, table='saa_ttm_reports_cache',
+            report_date=target.isoformat(), differences={
+                'annual_report_date': {'value': annual_date.isoformat()},
+                'missing_report_dates': {'value': [p.isoformat() for p in
+                    (annual_date, same_period) if p not in standard_periods]}})
+        if annual is None:
+            diagnostic.update(code='STATEMENT_TTM_MISSING_ANNUAL', action='RETAIN_EXISTING_CONTINUE')
+            ttm = []
+        else:
+            # Flow totals use the complete annual row; current balance-sheet
+            # values and target metadata remain those of the latest quarter.
+            fallback = dict(next(r for r in ttm_inputs if r['report_date'] == target))
+            fallback.update({field: annual[field] for field in NON_BALANCE_FIELDS})
+            ttm = [fallback]
+            diagnostic.update(code='STATEMENT_TTM_ANNUAL_FALLBACK', action='ANNUAL_TTM_CONTINUE')
+        if issues is not None:
+            issues.append(diagnostic)
+    elif len(ttm) != 1:
+        raise ValueError('Invalid TTM candidate count')
     return candidates, ttm
 
 
@@ -93,25 +114,25 @@ def publish_statement_caches(connection, service, symbol):
             dividends = cursor.fetchall()
             cursor.execute('SELECT report_date FROM saa_integrated_reports_cache WHERE symbol=%s', (symbol,))
             existing = cursor.fetchall()
-            integrated, ttm = build_cache_candidates(service, symbol, rows, dividends, existing)
+            issues = []
+            integrated, ttm = build_cache_candidates(service, symbol, rows, dividends, existing, issues=issues)
             writer = DB()
             writer.to_sql(integrated, connection, 'saa_integrated_reports_cache',
                           ['symbol', 'report_date'], commit=False)
             if ttm:
                 writer.to_sql(ttm, connection, 'saa_ttm_reports_interface', 'symbol', commit=False)
             connection.commit()
-            issues = []
             current_periods = {r['report_date'] for r in integrated}
             for old in existing:
                 if old['report_date'] not in current_periods:
                     issues.append(dict(code='STATEMENT_CACHE_PERIOD_RETAINED', provider='tushare',
                         symbol=symbol, table='saa_integrated_reports_cache',
                         report_date=old['report_date'].isoformat(), action='RETAIN_EXISTING_CONTINUE'))
-            if not ttm:
+            if not ttm and not any(i['code'] == 'STATEMENT_TTM_MISSING_ANNUAL' for i in issues):
                 issues.append(dict(code='STATEMENT_NO_STANDARD_TTM_INPUT', provider='tushare',
                     symbol=symbol, table='saa_ttm_reports_cache', action='RETAIN_EXISTING_CONTINUE'))
             for issue in issues:
-                logging.getLogger(__name__).warning('Financial cache record retained: %s', issue)
+                logging.getLogger(__name__).warning('Financial cache quality diagnostic: %s', issue)
             return {'symbol': symbol, 'integrated_rows': len(integrated), 'ttm_rows': len(ttm), 'issues': issues}
         except BaseException:
             connection.rollback()

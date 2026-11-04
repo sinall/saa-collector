@@ -67,7 +67,6 @@ class StatementCachePublisherTest(TestCase):
     def test_duplicate_scope_missing_dependency_or_withdrawal_refuses_publication(self):
         service = object.__new__(StatementMaintainService)
         cases = [([self.row(), self.row()], [], []),
-                 ([self.row(date(2024, 9, 30))], [], []),
                  ([self.row()], [{'year': 2023, 'dividend': 1}, {'year': 2023, 'dividend': 2}], []),
                  ([], [], [])]
         for rows, dividends, existing in cases:
@@ -106,3 +105,60 @@ class StatementCachePublisherTest(TestCase):
         cnx.rollback.assert_called_once()
         self.assertEqual(db.return_value.to_sql.call_count, 2)
         self.assertTrue(all(call.kwargs['commit'] is False for call in db.return_value.to_sql.call_args_list))
+
+    def test_missing_same_quarter_uses_annual_flows_and_current_balance(self):
+        service = object.__new__(StatementMaintainService)
+        for month, day in [(3, 31), (6, 30), (9, 30)]:
+            with self.subTest(month=month):
+                annual = self.row(date(2025, 12, 31), 100)
+                annual['total_assets'] = 500
+                current = self.row(date(2026, month, day), 80)
+                current['total_assets'] = 600
+                issues = []
+                integrated, ttm = build_cache_candidates(
+                    service, '600036', [annual, current], [], [], issues=issues)
+                self.assertEqual(ttm[0]['net_profit'], 100)
+                self.assertEqual(ttm[0]['total_assets'], 600)
+                self.assertEqual(ttm[0]['report_date'], current['report_date'])
+                self.assertEqual(current['net_profit'], 80)
+                self.assertEqual(len(integrated), 2)
+                self.assertEqual(issues[0]['code'], 'STATEMENT_TTM_ANNUAL_FALLBACK')
+                self.assertEqual(issues[0]['differences']['annual_report_date']['value'], '2025-12-31')
+
+    def test_missing_annual_publishes_integrated_without_new_ttm(self):
+        service = object.__new__(StatementMaintainService)
+        issues = []
+        integrated, ttm = build_cache_candidates(service, '600036',
+            [self.row(date(2025, 6, 30), 60), self.row(date(2026, 6, 30), 80)],
+            [], [], issues=issues)
+        self.assertEqual(len(integrated), 2)
+        self.assertEqual(ttm, [])
+        self.assertEqual(issues[0]['code'], 'STATEMENT_TTM_MISSING_ANNUAL')
+
+    @patch('saa_collector.services.common.statement_cache_publisher.statement_locks')
+    @patch('saa_collector.services.common.statement_cache_publisher.DB')
+    def test_fallback_commits_with_persistent_quality_diagnostic(self, db, locks):
+        from saa_collector.services.collect_job_result import merge_issue, resolve_symbol, has_open_quality_issues
+        cnx = MagicMock(autocommit=False, in_transaction=False)
+        cnx.cursor.return_value.fetchall.side_effect = [
+            [self.row(date(2025, 12, 31), 100), self.row(date(2026, 9, 30), 80)], [], []]
+        result = publish_statement_caches(cnx, object.__new__(StatementMaintainService), '600036')
+        cnx.commit.assert_called_once()
+        self.assertEqual(db.return_value.to_sql.call_args_list[1].args[0][0]['net_profit'], 100)
+        issue = result['issues'][0]
+        self.assertEqual(issue['code'], 'STATEMENT_TTM_ANNUAL_FALLBACK')
+        self.assertEqual(issue['action'], 'ANNUAL_TTM_CONTINUE')
+        state = merge_issue({}, issue, '2026-11-04T01:00:00+00:00')
+        state = resolve_symbol(state, '600036', '2026-11-04T01:01:00+00:00')
+        self.assertTrue(has_open_quality_issues(state))
+
+    @patch('saa_collector.services.common.statement_cache_publisher.statement_locks')
+    @patch('saa_collector.services.common.statement_cache_publisher.DB')
+    def test_no_annual_commits_integrated_and_retains_old_ttm(self, db, locks):
+        cnx = MagicMock(autocommit=False, in_transaction=False)
+        cnx.cursor.return_value.fetchall.side_effect = [[self.row(date(2026, 9, 30), 80)], [], []]
+        result = publish_statement_caches(cnx, object.__new__(StatementMaintainService), '600036')
+        cnx.commit.assert_called_once()
+        self.assertEqual(db.return_value.to_sql.call_count, 1)
+        self.assertEqual(result['ttm_rows'], 0)
+        self.assertEqual(result['issues'][0]['code'], 'STATEMENT_TTM_MISSING_ANNUAL')

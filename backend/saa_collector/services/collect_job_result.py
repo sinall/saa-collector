@@ -5,7 +5,8 @@ import json
 
 
 QUALITY_ACTIONS = frozenset({'STORE_NULL_CONTINUE', 'RETAIN_EXISTING_CONTINUE',
-                             'EXCLUDE_NONQUARTER_CONTINUE', 'SOURCE_ALIAS_CONTINUE'})
+                             'EXCLUDE_NONQUARTER_CONTINUE', 'SOURCE_ALIAS_CONTINUE',
+                             'ANNUAL_TTM_CONTINUE'})
 
 ISSUE_FIELDS = {'code', 'provider', 'symbol', 'table', 'report_date',
                 'disclosure_date', 'version_type', 'differences', 'action'}

@@ -556,6 +556,25 @@ class IsolatedStatementMySQLTest(unittest.TestCase):
         self.assertEqual(self.query('SELECT net_profit FROM saa_ttm_reports_cache').stdout.strip(), '120.00')
         connection.close()
 
+    def test_annual_fallback_and_missing_annual_preserve_cache_boundaries(self):
+        self.create_cache_fixture()
+        year = date.today().year
+        self.query("INSERT INTO cache_source (symbol,report_date,disclosure_date,net_profit,total_assets) "
+                   "VALUES ('600036','{0}-09-30','{0}-10-30',90,600)".format(year))
+        connection = self.connection()
+        connection.rollback()
+        result = publish_statement_caches(connection, object.__new__(StatementMaintainService), '600036')
+        self.assertEqual(result['issues'][0]['code'], 'STATEMENT_TTM_ANNUAL_FALLBACK')
+        self.assertEqual(self.query('SELECT net_profit,total_assets FROM saa_ttm_reports_cache').stdout.strip(),
+                         '120.00\t600.00')
+        self.query("DELETE FROM cache_source WHERE MONTH(report_date)=12")
+        connection.rollback()
+        result = publish_statement_caches(connection, object.__new__(StatementMaintainService), '600036')
+        self.assertEqual(result['ttm_rows'], 0)
+        self.assertEqual(result['issues'][0]['code'], 'STATEMENT_TTM_MISSING_ANNUAL')
+        self.assertEqual(self.query('SELECT net_profit FROM saa_ttm_reports_cache').stdout.strip(), '120.00')
+        connection.close()
+
     def test_nonquarter_raw_record_survives_write_and_hash_validation(self):
         from saa_collector.services.common.statement_kind_migration import render_packet
         table = 'saa_raw_income_statement'
