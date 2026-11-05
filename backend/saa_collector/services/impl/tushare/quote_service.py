@@ -5,11 +5,14 @@ from datetime import datetime
 import pandas as pd
 
 from saa_collector.services.abstract.quote_service import QuoteService
+from saa_collector.services.common.stock_utils import StockUtils
 from .basic_stock_service import BasicStockService
 
 
 class QuoteServiceImpl(QuoteService, BasicStockService):
     BATCH_SIZE = 50
+    # The monthly endpoint documents a 4,500-row response limit.
+    MONTHLY_BATCH_ROW_BUDGET = 4000
     ADJUST_FACTOR_FIELDS = 'ts_code,trade_date,adj_factor'
 
     def __init__(self):
@@ -68,14 +71,18 @@ class QuoteServiceImpl(QuoteService, BasicStockService):
                 return
             all_frames.append(df)
         else:
+            months = (end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1
+            batch_size = min(self.BATCH_SIZE, max(1, self.MONTHLY_BATCH_ROW_BUDGET // months))
             symbol_batches = [
-                symbols[index:index + self.BATCH_SIZE]
-                for index in range(0, len(symbols), self.BATCH_SIZE)
+                symbols[index:index + batch_size]
+                for index in range(0, len(symbols), batch_size)
             ]
             for batch_index, batch in enumerate(symbol_batches, start=1):
                 query_kwargs = {
                     **base_query_kwargs,
-                    'ts_code': batch,
+                    'ts_code': ','.join(
+                        f'{symbol}.{StockUtils.to_exchange(symbol)}' for symbol in batch
+                    ),
                 }
                 self._logger.info(
                     "Querying Tushare monthly quotes: batch=%d/%d symbols=%d "

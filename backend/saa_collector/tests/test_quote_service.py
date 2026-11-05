@@ -104,7 +104,7 @@ class TushareQuoteServiceTest(SimpleTestCase):
 
         service.pro.monthly.assert_called_once()
         query_kwargs = service.pro.monthly.call_args.kwargs
-        self.assertEqual(query_kwargs['ts_code'], ['000001', '000002', '000003'])
+        self.assertEqual(query_kwargs['ts_code'], '000001.SZ,000002.SZ,000003.SZ')
         self.assertEqual(query_kwargs['start_date'], '20260301')
         self.assertEqual(query_kwargs['end_date'], '20260630')
         self.assertNotIn('trade_date', query_kwargs)
@@ -165,11 +165,52 @@ class TushareQuoteServiceTest(SimpleTestCase):
         self.assertEqual(service.pro.monthly.call_count, 2)
         first_call = service.pro.monthly.call_args_list[0].kwargs
         second_call = service.pro.monthly.call_args_list[1].kwargs
-        self.assertEqual(first_call['ts_code'], symbols[:50])
-        self.assertEqual(second_call['ts_code'], symbols[50:])
+        self.assertEqual(first_call['ts_code'], ','.join(f'{code}.SZ' for code in symbols[:50]))
+        self.assertEqual(second_call['ts_code'], ','.join(f'{code}.SZ' for code in symbols[50:]))
         service.save_records.assert_called_once()
         records = service.save_records.call_args.args[0]
         self.assertEqual([record['code'] for record in records], ['000001', '000051'])
+
+    def test_long_ranges_reduce_symbol_batch_to_avoid_row_truncation(self):
+        service = self._make_service()
+        symbols = [f'{index:06d}' for index in range(1, 53)]
+        service.build_symbols.return_value = symbols
+        service.pro.monthly.return_value = pd.DataFrame()
+        service.collect_historical(
+            symbols=symbols,
+            start_date=pd.Timestamp('2009-01-01'),
+            end_date=pd.Timestamp('2026-06-30'),
+        )
+        self.assertEqual(service.pro.monthly.call_count, 3)
+        queried = []
+        for call in service.pro.monthly.call_args_list:
+            codes = call.kwargs['ts_code'].split(',')
+            self.assertLessEqual(len(codes) * 210, 4000)
+            queried.extend(codes)
+        self.assertEqual(queried, [f'{code}.SZ' for code in symbols])
+
+    def test_range_query_uses_provider_stock_code_string(self):
+        service = self._make_service()
+        service.build_symbols.return_value = ['000034', '600036']
+
+        def provider_response(**kwargs):
+            # Observed provider behavior: list/bare codes succeed with zero rows.
+            if kwargs.get('ts_code') != '000034.SZ,600036.SH':
+                return pd.DataFrame()
+            return pd.DataFrame([{
+                'ts_code': '000034.SZ', 'trade_date': '20130131',
+                'open': 4.10, 'close': 4.14, 'high': 4.60, 'low': 3.99,
+                'vol': 1087187, 'amount': 466709.465,
+            }])
+
+        service.pro.monthly.side_effect = provider_response
+        service.collect_historical(
+            symbols=['000034', '600036'],
+            start_date=pd.Timestamp('2013-01-01'),
+            end_date=pd.Timestamp('2013-01-31'),
+        )
+        service.save_records.assert_called_once()
+        self.assertEqual(service.save_records.call_args.args[0][0]['close'], 4.14)
 
     def test_collect_historical_queries_monthly_quotes_by_trade_date_for_scoped_month(self):
         service = self._make_service()
